@@ -1,0 +1,83 @@
+name: CLI Benchmark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - bench/**
+      - tsdown.config.ts
+      - tsdown.bench.config.ts
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/cli-bench.yml
+
+concurrency:
+  group: cli-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HISTORY_BRANCH: cli-framework-benchmarks
+  HISTORY_FILE: history.csv
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run benchmark
+        run: |
+          pnpm bench --samples=150 --csv-out "$GITHUB_WORKSPACE/bench-row.csv" \
+            | tee bench-output.txt
+
+      - name: Publish results to job summary
+        if: always()
+        run: |
+          {
+            echo '## @clo4/cli benchmark'
+            echo
+            echo '> Shared CI runners are noisy — compare medians, not absolute numbers.'
+            echo
+            echo '```'
+            cat bench-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record benchmark history
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          work="$(mktemp -d)"
+          if git fetch origin "$HISTORY_BRANCH" 2>/dev/null; then
+            git worktree add -B "$HISTORY_BRANCH" "$work" FETCH_HEAD
+          else
+            # First run: start the branch as a fresh root with no shared history.
+            git worktree add --orphan -b "$HISTORY_BRANCH" "$work"
+          fi
+
+          hist="$work/$HISTORY_FILE"
+          if [ -f "$hist" ] && grep -q ",$GITHUB_SHA," "$hist"; then
+            echo "Commit $GITHUB_SHA already recorded; skipping."
+          else
+            if [ -f "$hist" ]; then
+              tail -n +2 "$GITHUB_WORKSPACE/bench-row.csv" >> "$hist"
+            else
+              cp "$GITHUB_WORKSPACE/bench-row.csv" "$hist"
+            fi
+            git -C "$work" add "$HISTORY_FILE"
+            git -C "$work" commit -m "bench: record $GITHUB_SHA"
+            git -C "$work" push origin "$HISTORY_BRANCH"
+          fi
+
+          git worktree remove --force "$work"

@@ -1,0 +1,4 @@
+[tools]
+node = "latest"
+# Keep equal to package.json `packageManager`.
+pnpm = "12.16.1"
