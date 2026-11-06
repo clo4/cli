@@ -116,12 +116,22 @@ test("run: option actions bypass missing command inputs", async () => {
 
 test("run: reports parse errors with help", async () => {
   const result = await captureConsole(() =>
-    run({ name: "demo", options: [{ name: "--known" }] }, ["--missing"]),
+    run({ name: "demo", options: [{ name: "--known" }] }, ["--konwn"]),
   );
 
   expect(result.code).toBe(1);
   expect(result.stderr).toMatch(/looks like a flag/);
   expect(result.stderr).toMatch(/Did you mean '--known'/);
+});
+
+test("run: doesn't suggest an unrelated option", async () => {
+  const result = await captureConsole(() =>
+    run({ name: "demo", options: [{ name: "--known" }] }, ["--missing"]),
+  );
+
+  expect(result.code).toBe(1);
+  expect(result.stderr).toMatch(/looks like a flag/);
+  expect(result.stderr).not.toMatch(/Did you mean/);
 });
 
 test("run: awaits async actions and returns the resolved code", async () => {

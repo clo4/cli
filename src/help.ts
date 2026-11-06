@@ -1,6 +1,5 @@
-import { closest } from "fastest-levenshtein";
-
 import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } from "./types.js";
+import { closestChoice } from "./suggest.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";
 
 function getNamed<T extends { name: SingleOrArray<string> }>(
@@ -49,7 +48,7 @@ export function getHelp(path: NonEmptyArray<Subcommand>, config: HelpConfig = {}
   const { description = true, usage = true, didYouMean } = config;
   const sections = getSections(path);
   if (didYouMean) {
-    sections.didYouMean = closest(didYouMean.input, didYouMean.choices as string[]);
+    sections.didYouMean = closestChoice(didYouMean.input, didYouMean.choices);
   }
   if (!description) {
     sections.description = undefined;
