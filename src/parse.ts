@@ -490,7 +490,10 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
       if (!option.dependsOn) continue;
       for (const name of option.dependsOn) {
         if (!options.has(name)) {
-          throw new ParseError(ctx(), `${option.name} requires ${name}, add it to fix this error`);
+          throw new ParseError(
+            ctx(),
+            `${asArray(option.name).join("/")} requires ${name}, add it to fix this error`,
+          );
         }
       }
     }
@@ -498,7 +501,10 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
       if (!option.exclusiveOn) continue;
       for (const name of option.exclusiveOn) {
         if (options.has(name)) {
-          throw new ParseError(ctx(), `${option.name} can't be used together with ${name}`);
+          throw new ParseError(
+            ctx(),
+            `${asArray(option.name).join("/")} can't be used together with ${name}`,
+          );
         }
       }
     }
