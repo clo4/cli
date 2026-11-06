@@ -4,8 +4,8 @@
  * The `completion` subcommand prints a short script for a supported shell. On
  * every Tab, that script runs the CLI's hidden `completion complete` command
  * with the command line typed so far. The CLI then works out the candidates
- * with the same `analyze` the parser uses, so completion always matches what
- * the parser accepts at that position: subcommands, options with their
+ * with the parser's own `scan`, so completion always matches what the parser
+ * accepts at that position: subcommands, options with their
  * relationship rules, and argument values from `template`, `suggestions` and
  * `generators`.
  *
@@ -14,7 +14,7 @@
 
 import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
 import { asArray, makeArray, print, printActionError } from "./util.js";
-import { analyze } from "./analyze.js";
+import { scan } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -49,12 +49,7 @@ interface Candidate {
   description?: string;
 }
 
-/**
- * The completion-relevant state of a partial command line, derived by reusing
- * `analyze` (which already handles `--`, separators, prefix-matching, and
- * posix-noncompliance) plus a small non-throwing pass for option-arg consumption
- * and positional counting.
- */
+/** The completion-relevant state of a partial command line. */
 interface CompletionState {
   /** Commands from the root to the current one. */
   path: Subcommand[];
@@ -75,52 +70,31 @@ interface CompletionState {
   sawPositional: boolean;
 }
 
-function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
-  const { tokens, finalState } = analyze<Subcommand, Option>(before, spec);
+/**
+ * Read the line typed so far with the parser in lenient mode, which skips
+ * anything invalid instead of throwing.
+ */
+function readLine(spec: Spec, before: readonly string[]): CompletionState {
+  const scanned = scan(before, spec, false);
+  const path = scanned.path as unknown as Subcommand[];
 
-  const path: Subcommand[] = [spec as unknown as Subcommand];
-  let current: Subcommand = spec as unknown as Subcommand;
-  let positionalIndex = 0;
-  let forceArgs = false;
-  let sawPositional = false;
+  // Positionals can't come before a subcommand, so every arg belongs to the
+  // current command.
   const presentNames = new Set<string>();
   const countByOption = new Map<Option, number>();
-
-  for (const token of tokens) {
-    switch (token.kind) {
-      case "subcommand": {
-        current = token.subcommand;
-        path.push(current);
-        positionalIndex = 0;
-        sawPositional = false;
-        break;
-      }
-      case "option": {
-        const option = token.option;
-        for (const name of makeArray(option.name)) presentNames.add(name);
-        countByOption.set(option, (countByOption.get(option) ?? 0) + 1);
-        break;
-      }
-      case "arg": {
-        positionalIndex += 1;
-        sawPositional = true;
-        break;
-      }
-      case "arg-separator": {
-        forceArgs = true;
-        break;
-      }
-    }
+  for (const option of scanned.seenOptions) {
+    for (const name of makeArray(option.name)) presentNames.add(name);
+    countByOption.set(option, (countByOption.get(option) ?? 0) + 1);
   }
 
-  const open = finalState.openOption;
+  const open = scanned.openOption;
   const pending = open ? { option: open.option, argIndex: open.valueCount } : null;
 
   // An option is available if one of its names still refers to it: a later
   // option with the same name shadows an earlier one.
   const availableOptions: Option[] = [];
   const seen = new Set<Option>();
-  for (const list of [finalState.localOptions, finalState.persistentOptions]) {
+  for (const list of [scanned.localOptions, scanned.persistentOptions]) {
     const byName = new Map<string, Option>();
     for (const option of list) {
       for (const name of makeArray(option.name)) byName.set(name, option);
@@ -135,14 +109,14 @@ function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
 
   return {
     path,
-    current,
+    current: path[path.length - 1],
     availableOptions,
     pending,
-    positionalIndex,
+    positionalIndex: scanned.args.length,
     presentNames,
     countByOption,
-    forceArgs,
-    sawPositional,
+    forceArgs: scanned.argSeparatorIndex !== -1,
+    sawPositional: scanned.args.length > 0,
   };
 }
 
@@ -265,12 +239,12 @@ export interface CompletionRequest {
 }
 
 /**
- * Resolve completion candidates for a partial command line, reusing the parser
- * (`analyze`) for context. Dispatches between completing a option's value and
+ * Resolve completion candidates for a partial command line, reading it with the
+ * parser's `scan` for context. Dispatches between completing a option's value and
  * completing a fresh token (subcommand / positional / option).
  */
 export async function completeRuntime(req: CompletionRequest): Promise<Candidate[]> {
-  const state = analyzeState(req.spec, req.before);
+  const state = readLine(req.spec, req.before);
   const separators = separatorsOnPath(state.path);
 
   const optionValue = await resolveOptionValue(state, req, separators);

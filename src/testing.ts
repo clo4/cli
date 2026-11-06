@@ -544,7 +544,7 @@ export function assertOptionNameReferencesExist(spec: Subcommand): void {
 export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void {
   forEachSubcommand(spec, (subcommand, path) => {
     // Mirror the parser's default: prefix matching is OFF unless a command on
-    // the path turns it on. `analyze.ts` initializes the flag to `false` and
+    // the path turns it on. `scan` in parse.ts initializes the flag to `false` and
     // only ever sets it `true`, so the ambiguity this guards against can only
     // arise when some ancestor (or the command itself) opts in.
     const matchesPrefix = path.some(

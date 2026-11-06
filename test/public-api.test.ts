@@ -16,7 +16,7 @@ test("public API stays minimal and namespace-friendly", () => {
   expect(typeof CLI.help).toBe("object");
   expect(typeof CLI.helpCommand).toBe("object");
   expect(typeof CLI.completion).toBe("object");
-  expect("analyze" in CLI).toBe(false);
+  expect("scan" in CLI).toBe(false);
   expect("parse" in CLI).toBe(false);
 });
 

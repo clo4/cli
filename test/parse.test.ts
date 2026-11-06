@@ -936,8 +936,8 @@ test("parse: argument given to a option that takes none throws", () => {
     name: "command",
     options: [{ name: "--bare" }],
   };
-  // `analyze` still splits `--bare=oops` into a option + option-arg; the parser
-  // rejects the stray argument.
+  // `--bare=oops` is still read as the option plus a value, and the value is
+  // rejected.
   expect(() => parse(["--bare=oops"], spec)).toThrow(/Option --bare doesn't take arguments/);
 });
 
