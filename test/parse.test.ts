@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { usage } from "../src/help.js";
-import { UnknownOption } from "../src/errors.js";
+import { MissingRequiredOption, TooFewOptionArguments, UnknownOption } from "../src/errors.js";
 import { getMaxArgs, getMinArgs, parse } from "../src/parse.js";
 import type { Action, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
@@ -1009,4 +1009,127 @@ test("parse: an exact alias wins over prefix matches in prefix mode", () => {
   expect(parse(["reb"], spec).path[1]).toBe(spec.subcommands![1]);
   // "r" is an ambiguous prefix, so it's an argument, which this spec rejects.
   expect(() => parse(["r"], spec)).toThrow();
+});
+
+test("parse: a parent's required non-persistent option isn't required by its subcommand", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--token", isRequired: true, args: {} }],
+    subcommands: [{ name: "sub" }],
+  };
+  expect(parse(["sub"], spec).path).toEqual([spec, spec.subcommands![0]]);
+  // The root command still requires it.
+  expect(() => parse([], spec)).toThrow(MissingRequiredOption);
+});
+
+test("parse: a subcommand's own required option is still enforced", () => {
+  const spec: Spec = {
+    name: "test",
+    subcommands: [{ name: "sub", options: [{ name: "--name", isRequired: true, args: {} }] }],
+  };
+  expect(() => parse(["sub"], spec)).toThrow(MissingRequiredOption);
+  expect(parse(["sub", "--name", "x"], spec).options).toEqual(map({ "--name": ["x"] }));
+});
+
+test("parse: a long option splits at the first separator in the token", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionArgSeparators: ["=", ":"] },
+    options: [{ name: "--define", args: {} }],
+  };
+  expect(parse(["--define=k:v"], spec).options).toEqual(map({ "--define": ["k:v"] }));
+  expect(parse(["--define:k=v"], spec).options).toEqual(map({ "--define": ["k=v"] }));
+});
+
+test("parse: a repeatable option with an argument collects a value from each use", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: ["-I", "--include"], isRepeatable: true, args: {} }],
+  };
+  expect(parse(["-I", "a"], spec).options.get("-I")).toEqual(["a"]);
+  expect(parse(["-Ia"], spec).options.get("-I")).toEqual(["a"]);
+  expect(parse(["-I", "a", "-Ib", "--include=c"], spec).options).toEqual(
+    map({ "-I": ["a", "b", "c"], "--include": ["a", "b", "c"] }),
+  );
+});
+
+test("parse: a repeatable option with an argument still limits its uses", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "-I", isRepeatable: 2, args: {} }],
+  };
+  expect(parse(["-I", "a", "-I", "b"], spec).options.get("-I")).toEqual(["a", "b"]);
+  expect(() => parse(["-I", "a", "-I", "b", "-I", "c"], spec)).toThrow("Too many repetitions");
+});
+
+test("parse: a repeatable option with a required argument rejects a missing value", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "-I", isRepeatable: true, args: {} }],
+  };
+  expect(() => parse(["-I"], spec)).toThrow(TooFewOptionArguments);
+});
+
+test("parse: an empty argument doesn't prefix-match a subcommand", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isOptional: true },
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [{ name: "build" }],
+  };
+  const result = parse([""], spec);
+  expect(result.path).toEqual([spec]);
+  expect(result.args).toEqual([""]);
+});
+
+test("parse: a subcommand can turn off optionsMustPrecedeArguments", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionsMustPrecedeArguments: true },
+    subcommands: [
+      {
+        name: "sub",
+        args: { isVariadic: true },
+        parserDirectives: { optionsMustPrecedeArguments: false },
+        options: [{ name: "-v" }],
+      },
+    ],
+  };
+  const result = parse(["sub", "a", "-v"], spec);
+  expect(result.args).toEqual(["a"]);
+  expect(result.options).toEqual(map({ "-v": [] }));
+});
+
+test("parse: a subcommand can turn off subcommandsMatchUniquePrefix", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      {
+        name: "sub",
+        args: { isOptional: true },
+        parserDirectives: { subcommandsMatchUniquePrefix: false },
+        subcommands: [{ name: "build" }],
+      },
+    ],
+  };
+  const result = parse(["sub", "bu"], spec);
+  expect(result.path).toEqual([spec, spec.subcommands![0]]);
+  expect(result.args).toEqual(["bu"]);
+});
+
+test("parse: a dependsOn error joins the option's aliases with a slash", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: ["-a", "--all"], dependsOn: ["-b"] }, { name: "-b" }],
+  };
+  expect(() => parse(["--all"], spec)).toThrow("-a/--all requires -b");
+});
+
+test("parse: an exclusiveOn error joins the option's aliases with a slash", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: ["-a", "--all"], exclusiveOn: ["-b"] }, { name: "-b" }],
+  };
+  expect(() => parse(["--all", "-b"], spec)).toThrow("-a/--all can't be used together with -b");
 });
