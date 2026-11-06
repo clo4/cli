@@ -171,7 +171,12 @@ export interface Option {
   /** Only allow arguments to be supplied with a separator. */
   requiresSeparator?: true | string;
 
-  /** Allow this option to be supplied multiple times. */
+  /**
+   * Allow this option to be supplied multiple times. `true` allows any number
+   * of uses, and a number is the most uses allowed. An option with arguments
+   * collects the values from every use, in order. Without arguments, each use
+   * adds an empty string, so `count()` returns the number of uses.
+   */
   isRepeatable?: true | number;
 
   /** Require this option to be supplied before the selected action runs. */

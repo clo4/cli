@@ -86,27 +86,6 @@ test("testing: testSpec rejects a clash with a parent option", async () => {
   await expect(Testing.testSpec(spec)()).rejects.toThrow(/same names/);
 });
 
-test("testing: assertRepeatableOptionsHaveNoArguments", () => {
-  Testing.assertRepeatableOptionsHaveNoArguments({ name: "test" });
-  Testing.assertRepeatableOptionsHaveNoArguments({
-    name: "test",
-    options: [{ name: "one" }],
-  });
-  Testing.assertRepeatableOptionsHaveNoArguments({
-    name: "test",
-    options: [
-      { name: "one", isRepeatable: true },
-      { name: "two", isRepeatable: 2 },
-    ],
-  });
-  expect(() =>
-    Testing.assertRepeatableOptionsHaveNoArguments({
-      name: "test",
-      options: [{ name: "one", isRepeatable: true, args: {} }],
-    }),
-  ).toThrow();
-});
-
 test("testing: assertSubcommandsHaveLocallyUniqueNames", () => {
   Testing.assertSubcommandsHaveLocallyUniqueNames({ name: "test" });
   Testing.assertSubcommandsHaveLocallyUniqueNames({
@@ -764,7 +743,6 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
   const steps = await collectSteps(validSpec());
   expect(steps).toEqual([
     "Required arguments don't follow optional arguments",
-    "Repeatable options don't have arguments",
     "Repeatable options that are numbers are integers greater than 1",
     "Long option names don't start with a single dash",
     "Option names all start with dashes",

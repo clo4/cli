@@ -119,10 +119,17 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
 
   // The values of the last option, checked against its arity when it ends.
   // Unlike the counts above, this includes values attached with a separator.
+  // A repeatable option keeps adding to the same array, so this use's values
+  // start at `valuesStart`.
   let values: string[] | null = null;
+  let valuesStart = 0;
   let valuesMin = 0;
   let valuesMax = 0;
   let requiredSeparator: string | boolean = false;
+
+  // How many times each repeatable option has been used, keyed by the array
+  // its names share in `options`.
+  const repeatCounts: Map<string[], number> = new Map();
 
   const ctx = (): ErrorContext => ({ path });
 
@@ -168,7 +175,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
   // Every token except an option's value, or an unknown option, ends the
   // previous option.
   const endOption = () => {
-    if (strict && values && values.length < valuesMin) {
+    if (strict && values && values.length - valuesStart < valuesMin) {
       throw new TooFewOptionArguments(valuesMin, valuesMax, ctx());
     }
     values = null;
@@ -186,8 +193,10 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     if (option.action) optionActions.push(option.action);
     const names = asArray(option.name);
 
-    // Repeatable options count uses instead of collecting values.
+    let optionValues: string[];
     if (option.isRepeatable) {
+      // A repeatable option collects the values from every use. Without
+      // arguments, each use adds an empty string, so the values count the uses.
       const maxRepeat = option.isRepeatable === true ? Infinity : option.isRepeatable;
       // The count carries over from a parent's identical option. A subcommand
       // option with a name of its own keeps a separate count.
@@ -201,21 +210,30 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
         uses = [];
         for (const other of names) options.set(other, uses);
       }
-      if (strict && uses.length >= maxRepeat) {
+      const count = repeatCounts.get(uses) ?? uses.length;
+      if (strict && count >= maxRepeat) {
         throw new ParseError(ctx(), "Too many repetitions");
       }
-      uses.push("");
-      return;
+      repeatCounts.set(uses, count + 1);
+      if (!option.args) {
+        uses.push("");
+        return;
+      }
+      optionValues = uses;
+    } else {
+      // The last use of an option wins, so a user can override a flag that a
+      // shell alias already sets.
+      optionValues = [];
+      for (const other of names) options.set(other, optionValues);
     }
 
     valuesMin = valueMin;
     valuesMax = getMaxArgs(option.args);
     requiredSeparator = option.requiresSeparator ?? false;
-    // The last use of an option wins, so a user can override a flag that a
-    // shell alias already sets.
-    const optionValues: string[] = [];
-    for (const other of names) options.set(other, optionValues);
-    if (valuesMax > 0) values = optionValues;
+    if (valuesMax > 0) {
+      values = optionValues;
+      valuesStart = optionValues.length;
+    }
   };
 
   const addValue = (index: number, start: number, end: number, value: string, separator: string) => {

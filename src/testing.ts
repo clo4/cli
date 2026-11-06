@@ -113,18 +113,6 @@ export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcom
   });
 }
 
-/** Asserts that options with `isRepeatable: true` don't have arguments */
-export function assertRepeatableOptionsHaveNoArguments(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of options.entries()) {
-      assert(
-        !(option.args && option.isRepeatable),
-        `The option ${namedArrayToString(...path, option)} (index ${index}) has arguments and is repeatable. Repeatable options cannot have arguments, but you can use a variadic argument instead.`,
-      );
-    }
-  });
-}
-
 /** Asserts that `isRepeatable` is only assigned a positive integer */
 export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): void {
   forEachOptionArray(spec, (options, path) => {
@@ -638,16 +626,6 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       }),
       () => {
         assertRequiredArgumentsDoNotFollowOptionalArguments(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Repeatable options don't have arguments",
-        function: "assertRepeatableOptionsHaveNoArguments",
-      }),
-      () => {
-        assertRepeatableOptionsHaveNoArguments(spec);
       },
     );
     await runStep(
