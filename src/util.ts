@@ -50,19 +50,69 @@ export function assert(expr: unknown, msg = ""): asserts expr {
   }
 }
 
-export function error(...strings: unknown[]): void {
-  console.error("%cError:", "color: red", ...strings);
+// Output {{{
+
+interface WriteSyncFs {
+  writeSync(fd: number, buffer: Uint8Array, offset: number, length: number): number;
 }
+
+interface NodeProcess {
+  getBuiltinModule?(id: "node:fs"): WriteSyncFs;
+  stdout?: { write(data: Uint8Array): unknown };
+  stderr?: { write(data: Uint8Array): unknown };
+}
+
+const nodeProcess = (globalThis as { process?: NodeProcess }).process;
+
+/**
+ * Write text to stdout (1) or stderr (2) with a synchronous `write` on the file
+ * descriptor.
+ *
+ * The first `console.log` in a Node process builds the stdout stream, which
+ * costs 1-3 ms. That's more than parsing takes, so all of this library's output
+ * goes through here instead. Without `node:fs` it falls back to `console`.
+ */
+function writeFd(fd: 1 | 2, text: string): void {
+  const fs = nodeProcess?.getBuiltinModule?.("node:fs");
+  if (!fs) {
+    (fd === 1 ? console.log : console.error)(text.endsWith("\n") ? text.slice(0, -1) : text);
+    return;
+  }
+  const bytes = new TextEncoder().encode(text);
+  let offset = 0;
+  try {
+    while (offset < bytes.length) {
+      offset += fs.writeSync(fd, bytes, offset, bytes.length - offset);
+    }
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    // A non-blocking pipe that's full: let Node's stream queue the rest.
+    if (code === "EAGAIN") {
+      (fd === 1 ? nodeProcess?.stdout : nodeProcess?.stderr)?.write(bytes.subarray(offset));
+    }
+    // Anything else, like EPIPE from `cli --help | head -1`, is dropped, the
+    // same as `console` does.
+  }
+}
+
+/**
+ * Where this library's output goes. Tests replace `write` to capture output.
+ *
+ * @internal
+ */
+export const output: { write: (fd: 1 | 2, text: string) => void } = { write: writeFd };
 
 /** Print a message to stdout, trimming trailing whitespace. */
 export function print(text: string): void {
-  console.log(text.trimEnd());
+  output.write(1, `${text.trimEnd()}\n`);
 }
 
 /** Print an error message to stderr with the shared `Error:` prefix. */
 export function printActionError(message: string): void {
-  console.error("Error:", message);
+  output.write(2, `Error: ${message}\n`);
 }
+
+// }}}
 
 /**
  * Returns the minimum number of arguments that satisfies the args.

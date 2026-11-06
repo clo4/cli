@@ -59,13 +59,11 @@ demo completion fish > ~/.config/fish/completions/demo.fish
 
 Completion describes the whole CLI from the root spec regardless of where the subcommand is placed. Hidden options and subcommands are excluded; persistent options are offered on the descendants that inherit them.
 
-### Completion modes: `--runtime` (default) and `--shell`
+### How completion works
 
-By default, `completion <shell>` emits a a shim that executes itself as `<cli> completion complete -- <commandline>`, allowing it to reuse its own parser. This is slower on average, but allows it to provide native-feeling completions that respect your nitpicky parser options. So long as you keep the startup time of your CLI acceptable, there isn't much of a downside to this.
+`completion <shell>` prints a short script. On every Tab, the script runs `<cli> completion complete -- <commandline>`, and the CLI answers using its own parser. Completions therefore follow every parser option and relationship rule (`exclusiveOn`, `isRepeatable`, `dependsOn`, and so on). Each Tab starts the CLI once, so keep its startup fast.
 
-Alternatively, `completion <shell> --shell` emits a self-contained shell completion script. It can't track line state, so relationship filters like `exclusiveOn`/`isRepeatable` aren't applied. Dynamic generators still call back via `completion generate-suggestions`.
-
-In runtime mode, the bash and fish shims pass `--gate-options`, so options are only offered once the word starts with `-` (matching fish/bash convention); zsh omits it and surfaces options as usual. Flip this by editing which shims pass the option.
+The bash and fish scripts pass `--gate-options`, so options are only offered once the word starts with `-`, which is the bash and fish convention. The zsh script leaves it out and offers options as usual.
 
 ### Argument suggestions
 
@@ -96,4 +94,4 @@ Arguments can declare completion metadata. These are only used for completions, 
 
 - `template` (`"filepaths"` / `"folders"`) completes paths.
 - `suggestions` is a static list (strings or `{ name, description }`).
-- `generators.custom(tokens)` returns dynamic suggestions: in runtime mode it runs in-process, in `--shell` mode it is reached via the hidden `completion generate-suggestions <location>` callback.
+- `generators.custom(tokens)` returns dynamic suggestions. It runs inside the CLI when the shell asks for completions.

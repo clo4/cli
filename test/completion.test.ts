@@ -32,7 +32,7 @@ const fixture: Spec = {
 };
 
 // ---------------------------------------------------------------------------
-// Runtime resolver (the default --runtime mode's engine)
+// Runtime resolver
 // ---------------------------------------------------------------------------
 
 const values = (cands: { value: string }[]) => cands.map((c) => c.value);
@@ -249,10 +249,10 @@ test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate o
 });
 
 // ---------------------------------------------------------------------------
-// Mode dispatch + the `complete` / shells subcommands
+// The shim and the `completion` / `complete` subcommands
 // ---------------------------------------------------------------------------
 
-test("default mode emits the thin runtime shim", () => {
+test("getCompletion emits the shim", () => {
   const bash = getCompletion(fixture, "bash");
   expectIncludes(bash, "completion complete --");
   expectIncludes(bash, 'command -v "$bin"'); // guarded
@@ -285,15 +285,10 @@ test("complete subcommand honors --gate-options", async () => {
   expectIncludes(ungated.stdout, "--out");
 });
 
-test("completion subcommand defaults to runtime, --shell opts out", async () => {
-  const runtime = await captureConsole(() => run(fixture, ["completion", "bash"]));
-  expect(runtime.code).toBe(0);
-  expectIncludes(runtime.stdout, "completion complete --");
-
-  const shell = await captureConsole(() => run(fixture, ["completion", "bash", "--shell"]));
-  expect(shell.code).toBe(0);
-  expectIncludes(shell.stdout, "complete -F _forge 'forge'");
-  expectNotIncludes(shell.stdout, "completion complete --");
+test("completion subcommand prints the shim", async () => {
+  const result = await captureConsole(() => run(fixture, ["completion", "bash"]));
+  expect(result.code).toBe(0);
+  expectIncludes(result.stdout, "completion complete --");
 });
 
 test("completion subcommand lists shells when none is given", async () => {
@@ -314,76 +309,4 @@ test("complete subcommand prints resolver candidates", async () => {
   );
   expect(result.code).toBe(0);
   expectIncludes(result.stdout, "remove");
-});
-
-// ---------------------------------------------------------------------------
-// Static --shell mode: bug fixes (positional emission, fish -x, guards)
-// ---------------------------------------------------------------------------
-
-const genSpec: Spec = {
-  name: "forge",
-  subcommands: [
-    {
-      name: "deploy",
-      options: [
-        {
-          name: "--target",
-          description: "Target",
-          args: {
-            name: "t",
-            generators: { custom: async () => ["staging", "production"] },
-          },
-        },
-        { name: "--config", args: { name: "f", template: "filepaths" } },
-        { name: "--mode", args: { name: "m", suggestions: ["fast", "slow"] } },
-        { name: "--out", args: { name: "dir", template: "folders" } },
-      ],
-    },
-    completion,
-  ],
-};
-
-test("static fish uses -x so its own candidates don't leak file completion", () => {
-  const script = getCompletion(genSpec, "fish", "shell");
-  // static suggestions and generators: exclusive, no file fallback
-  expectIncludes(script, "-l 'mode' -x -a 'fast slow'");
-  expectIncludes(script, "-l 'out' -x -a '(__fish_complete_directories)'");
-  expectIncludes(script, "-l 'target' -x -a '(set -l c");
-  // filepaths still wants files: -r re-enables fish's file completion
-  expectIncludes(script, "-l 'config' -r");
-});
-
-test("static fish guards the generator callback and supports a relative binary", () => {
-  const script = getCompletion(genSpec, "fish", "shell");
-  expectIncludes(script, 'command -q -- $c; or test -x "$c"');
-  expectIncludes(script, "completion generate-suggestions ");
-});
-
-test("static modes emit positional argument completion", () => {
-  const bash = getCompletion(fixture, "bash", "shell");
-  // build's filepaths positional -> file completion appended to the node
-  expectIncludes(bash, "compgen -f");
-  const fish = getCompletion(fixture, "fish", "shell");
-  // completion's shell positional (suggestions) -> -a candidates
-  expectIncludes(fish, "bash zsh fish");
-});
-
-test("static generate-suggestions round-trips the encoded location", async () => {
-  const script = getCompletion(genSpec, "fish", "shell");
-  const match = script.match(/generate-suggestions (\S+) /);
-  expect(match).not.toBeNull();
-  const location = match![1];
-  const result = await captureConsole(() =>
-    run(genSpec, ["completion", "generate-suggestions", location, "--", "deploy", "--target"]),
-  );
-  expect(result.code).toBe(0);
-  expect(result.stdout).toBe("staging\nproduction\n");
-});
-
-test("generate-suggestions rejects an invalid location", async () => {
-  const result = await captureConsole(() =>
-    run(genSpec, ["completion", "generate-suggestions", "@@not-base64@@"]),
-  );
-  expect(result.code).toBe(1);
-  expect(result.stderr).toMatch(/Unknown generator location/);
 });

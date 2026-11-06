@@ -2,6 +2,7 @@ import type { ActionInit, Spec } from "./types.js";
 import { getHelp } from "./help.js";
 import { ParseError, UnknownOption } from "./errors.js";
 import { parse } from "./parse.js";
+import { output } from "./util.js";
 import type { ParseResult } from "./parse.js";
 
 /**
@@ -66,8 +67,9 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
   return Math.min(Math.max(exitCode ?? 0, 0), 255);
 }
 
+/** Print `Error:` and the given values to stderr, separated by spaces. */
 export function printError(...strings: unknown[]): void {
-  console.error("Error:", ...strings);
+  output.write(2, `${["Error:", ...strings].map(String).join(" ")}\n`);
 }
 
 function defaultArgs(): readonly string[] {

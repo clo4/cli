@@ -230,9 +230,8 @@ export interface Suggestion {
 /**
  * Generates dynamic completion suggestions.
  *
- * Generators run by re-invoking the CLI's hidden `completion
- * generate-suggestions` command, so `custom` executes in the CLI's own
- * process. Completions only — no effect on parsing.
+ * `custom` runs inside the CLI when the shell asks it for completions. It only
+ * affects completion and has no effect on parsing.
  */
 export interface Generator {
   /** Produce suggestions from the current command-line tokens. */

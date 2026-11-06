@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import { usage } from "../src/help.js";
+import { UnknownOption } from "../src/errors.js";
 import { getMaxArgs, getMinArgs, parse } from "../src/parse.js";
 import type { Action, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
@@ -996,4 +997,25 @@ test("parse: requiresSeparator string rejects the wrong separator on a variadic 
   };
   expect(parse(["--sep:val"], spec).options).toEqual(map({ "--sep": ["val"] }));
   expect(() => parse(["--sep=val"], spec)).toThrow(/Incorrect separator/);
+});
+
+test("parse: an unknown option after a requiresSeparator option is reported as unknown", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--tag", args: {}, requiresSeparator: true }],
+  };
+  expect(() => parse(["--tag", "--nope"], spec)).toThrow(UnknownOption);
+});
+
+test("parse: an exact alias wins over prefix matches in prefix mode", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [{ name: ["release", "re"] }, { name: "rebuild" }],
+  };
+  // "re" is a prefix of both commands, but it's also an exact alias of one.
+  expect(parse(["re"], spec).path[1]).toBe(spec.subcommands![0]);
+  expect(parse(["reb"], spec).path[1]).toBe(spec.subcommands![1]);
+  // "r" is an ambiguous prefix, so it's an argument, which this spec rejects.
+  expect(() => parse(["r"], spec)).toThrow();
 });
