@@ -395,12 +395,19 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
         // Any token can be an option if it matches an option name, and if it's
         // not an option then it's just a regular argument.
 
-        // The last separator that appears in the token wins.
+        // The token splits at the separator that appears first in it, so the
+        // value can contain the other separators. When two separators start
+        // at the same place, the longer one wins.
         let foundSep = "";
         let foundSepIndex = -1;
         for (const sep of separators) {
           const at = token.indexOf(sep);
-          if (at !== -1) {
+          if (at === -1) continue;
+          if (
+            foundSepIndex === -1 ||
+            at < foundSepIndex ||
+            (at === foundSepIndex && sep.length > foundSep.length)
+          ) {
             foundSep = sep;
             foundSepIndex = at;
           }

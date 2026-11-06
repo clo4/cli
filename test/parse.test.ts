@@ -1040,6 +1040,16 @@ test("parse: a long option splits at the first separator in the token", () => {
   expect(parse(["--define:k=v"], spec).options).toEqual(map({ "--define": ["k=v"] }));
 });
 
+test("parse: the longer of two separators that start at the same place wins", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionArgSeparators: ["=", "=="] },
+    options: [{ name: "--define", args: {} }],
+  };
+  expect(parse(["--define==v"], spec).options).toEqual(map({ "--define": ["v"] }));
+  expect(parse(["--define=v==w"], spec).options).toEqual(map({ "--define": ["v==w"] }));
+});
+
 test("parse: a repeatable option with an argument collects a value from each use", () => {
   const spec: Spec = {
     name: "test",
