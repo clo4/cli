@@ -293,8 +293,9 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     if (!hasFoundArg && !valueIsRequired && subcommands) {
       // A literal match always wins. A short optional value could be a prefix
       // of a subcommand's name, so only an exact match can end an option that
-      // still has room.
-      const allowPrefix = subcommandsMatchUniquePrefix && !hasRoomForValue;
+      // still has room. An empty token is a prefix of every name, so it never
+      // matches by prefix.
+      const allowPrefix = subcommandsMatchUniquePrefix && !hasRoomForValue && token !== "";
       let command: Subcommand | null = null;
       let prefixCount = 0;
       commands: for (const candidate of subcommands) {
