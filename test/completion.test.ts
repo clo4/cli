@@ -101,6 +101,63 @@ test("runtime: an attached =value completes the option value", async () => {
   expect(v).toEqual(["--mode=fast", "--mode=slow"]);
 });
 
+const openOptionSpec: Spec = {
+  name: "open",
+  args: { name: "path", isOptional: true, isVariadic: true, suggestions: ["P1", "P2"] },
+  options: [
+    { name: "--color", args: { isOptional: true, suggestions: ["auto", "never"] } },
+    { name: "--tags", args: { isVariadic: true, suggestions: ["T1"] } },
+    { name: "--names", args: { isVariadic: true } },
+    { name: "--watch" },
+  ],
+};
+
+test("runtime: '--' closes an open option", async () => {
+  for (const before of [
+    ["--color", "--"],
+    ["--tags", "a", "--"],
+    ["--tags", "a", "--", "b"],
+  ]) {
+    expect(values(await resolve(openOptionSpec, before, ""))).toEqual(["P1", "P2"]);
+  }
+});
+
+test("runtime: a variadic option offers values and options after its first value", async () => {
+  for (const before of [["--tags=a"], ["--tags", "a"]]) {
+    const v = values(await resolve(openOptionSpec, before, ""));
+    expect(v).toContain("T1");
+    expect(v).toContain("--watch");
+    expect(v).not.toContain("--tags");
+    expect(v).not.toContain("P1");
+  }
+});
+
+test("runtime: a variadic option without suggestions still offers options", async () => {
+  expect(values(await resolve(openOptionSpec, ["--names=a"], ""))).toContain("--watch");
+});
+
+test("runtime: gateOptions applies after a variadic option's first value", async () => {
+  expect(values(await resolve(openOptionSpec, ["--tags=a"], "", true))).toEqual(["T1"]);
+  const dashed = values(await resolve(openOptionSpec, ["--tags=a"], "-", true));
+  expect(dashed).toContain("--watch");
+  expect(dashed).not.toContain("T1");
+});
+
+test("runtime: a required option value is offered alone", async () => {
+  expect(values(await resolve(openOptionSpec, ["--tags"], ""))).toEqual(["T1"]);
+});
+
+test("runtime: subcommands are offered after an option's value", async () => {
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: "-C", args: {} }],
+    subcommands: [{ name: "status" }, { name: "log" }],
+  };
+  for (const before of [["-C", "/repo"], ["-C=/repo"]]) {
+    expect(values(await resolve(spec, before, ""))).toEqual(["status", "log"]);
+  }
+});
+
 test("runtime: a custom generator receives the current tokens", async () => {
   const spec: Spec = {
     name: "x",

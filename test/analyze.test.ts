@@ -212,3 +212,35 @@ test("analyze: subcommandsMatchUniquePrefix", () => {
   expectTokens(analyze(["long-n"], spec), [$subcommand(0, 0, 6, "long-n", spec.subcommands[0])]);
   expectTokens(analyze(["n"], spec), [$subcommand(0, 0, 1, "n", spec.subcommands[0])]);
 });
+
+test("analyze: a separate option value is an option-arg", () => {
+  const spec = { name: "test", options: [{ name: "--option", args: {} }] };
+  expectTokens(analyze(["--option", "abc", "def"], spec), [
+    $option(0, 0, 8, "--option", spec.options[0]),
+    $optionArg(1, 0, 3, "abc", "--option", ""),
+    $arg(2, 0, 3, "def"),
+  ]);
+});
+
+test("analyze: an option with room for values is reported as open", () => {
+  const option = { name: "--tags", args: { isVariadic: true } };
+  const spec = { name: "test", options: [option] };
+  expect(analyze(["--tags"], spec).finalState.openOption).toEqual({ option, valueCount: 0 });
+  expect(analyze(["--tags=a", "b"], spec).finalState.openOption).toEqual({
+    option,
+    valueCount: 2,
+  });
+});
+
+test("analyze: '--' closes an open option", () => {
+  const option = { name: "--tags", args: { isVariadic: true } };
+  const spec = { name: "test", options: [option] };
+  expect(analyze(["--tags", "a", "--"], spec).finalState.openOption).toBeNull();
+  expect(analyze(["--tags", "--", "b"], spec).finalState.openOption).toBeNull();
+});
+
+test("analyze: an option that requires a separator is never left open", () => {
+  const option = { name: "--option", args: {}, requiresSeparator: true };
+  const spec = { name: "test", options: [option] };
+  expect(analyze(["--option"], spec).finalState.openOption).toBeNull();
+});

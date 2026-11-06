@@ -1,10 +1,13 @@
-import { asArray, setEach } from "./util.js";
+import { asArray, getMaxArgs, getMinArgs, setEach } from "./util.js";
 
 interface MinOption {
   name: string | readonly string[];
-  args?: unknown;
+  args?:
+    | { isOptional?: boolean; isVariadic?: boolean }
+    | readonly { isOptional?: boolean; isVariadic?: boolean }[];
   isPersistent?: boolean;
   isRequired?: boolean;
+  requiresSeparator?: boolean | string;
 }
 
 interface MinSubcommand<Option extends MinOption> {
@@ -173,6 +176,8 @@ export interface AnalyzeResult<Subcommand, Option> {
     persistentOptions: Map<string, Option>;
     localRequiredOptions: Map<string, Option>;
     persistentRequiredOptions: Map<string, Option>;
+    /** The option still able to take a value, and how many values it has. */
+    openOption: { option: Option; valueCount: number } | null;
   };
 
   /** The list of tokens and their data */
@@ -182,9 +187,11 @@ export interface AnalyzeResult<Subcommand, Option> {
 /**
  * Lex the input, output some tokens
  *
- * This generator uses the options and subcommands to categorize the
- * input tokens. It will not track or reject arguments - tokens that
- * don't match an option or subcommand are yielded as arguments.
+ * This uses the options and subcommands to categorize the input tokens, and is
+ * the only code that decides what a token is, so a value belonging to an option
+ * is always an `option-arg`. It never rejects input. Checking that the sequence
+ * of tokens is valid is the job of `parse`, and completion reads partial input
+ * through this too.
  */
 export function analyze<Subcommand extends MinSubcommand<Option>, Option extends MinOption>(
   input: readonly string[],
@@ -218,6 +225,7 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
         persistentOptions,
         localRequiredOptions,
         persistentRequiredOptions,
+        openOption: null,
       },
       tokens,
     };
@@ -235,13 +243,49 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
   let posixCompliantOptions = true;
   let subcommandsMatchUniquePrefix = false;
   let optionsMustPrecedeArguments = false;
-  let hasUsedNonPersistentOption = false;
+  // The option that can still take values. While it has room, a token that
+  // isn't an option or `--` becomes its value. A subcommand's exact name ends
+  // the option unless a value is required.
+  let openOption: Option | null = null;
+  let openOptionName = "";
+  let optionArgCount = 0;
+  let optionArgMin = 0;
+  let optionArgMax = 0;
+
+  const startOption = (option: Option, name: string) => {
+    openOption = option;
+    openOptionName = name;
+    optionArgCount = 0;
+    optionArgMin = getMinArgs(option.args);
+    // Options that require a separator only take attached values.
+    optionArgMax = option.requiresSeparator ? 0 : getMaxArgs(option.args);
+  };
+
+  const closeOption = () => {
+    openOption = null;
+    optionArgCount = 0;
+    optionArgMin = 0;
+    optionArgMax = 0;
+  };
+
+  const hasRoomForValue = () => optionArgCount < optionArgMax;
+
+  const pushOptionArg = (
+    index: number,
+    start: number,
+    end: number,
+    literal: string,
+    separator: string,
+  ) => {
+    optionArgCount += 1;
+    tokens.push($optionArg(index, start, end, literal, openOptionName, separator));
+  };
 
   const getOption = (name: string) => localOptions.get(name) ?? persistentOptions.get(name) ?? null;
 
   const hasOption = (name: string) => localOptions.has(name) || persistentOptions.has(name);
 
-  const getSubcommand = (name: string) => {
+  const getSubcommand = (name: string, allowPrefix: boolean) => {
     if (!localSubcommands) {
       return null;
     }
@@ -258,7 +302,7 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
         if (cmdName === name) {
           return command;
         }
-        if (subcommandsMatchUniquePrefix && cmdName.startsWith(name)) {
+        if (allowPrefix && subcommandsMatchUniquePrefix && cmdName.startsWith(name)) {
           prefixMatch = command;
           prefixCount += 1;
           // One matching name is enough; checking the rest would double-count.
@@ -320,6 +364,7 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
     // "--" as a token disables option & subcommand parsing, so this needs
     // to be checked first.
     if (token === "--") {
+      closeOption();
       tokens.push($argSeparator(index, 0, token.length, token));
       index += 1;
       for (; index < input.length; index++) {
@@ -333,9 +378,15 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
     // A common case is for the first argument to be a subcommand,
     // so we can exit early instead of building the whole map if the
     // argument is a subcommand.
-    if (!hasFoundArg && !hasUsedNonPersistentOption && localSubcommands) {
-      const command = getSubcommand(token);
+    // A required or variadic option value takes priority over a subcommand.
+    const valueIsRequired =
+      optionArgCount < optionArgMin || (hasRoomForValue() && optionArgMax === Infinity);
+    if (!hasFoundArg && !valueIsRequired && localSubcommands) {
+      // A short optional value could be a prefix of a subcommand's name, so only
+      // an exact match can end an option that still has room.
+      const command = getSubcommand(token, !hasRoomForValue());
       if (command) {
+        closeOption();
         localOptions.clear();
         updateCurrentCommand(command);
         tokens.push($subcommand(index, 0, token.length, token, command));
@@ -360,8 +411,9 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
         // - the first non-leading character isn't an option
         const dashOption = getOption(leadingChar);
         if (dashOption?.args && !hasOption(token.slice(0, 2))) {
+          startOption(dashOption, leadingChar);
           tokens.push($option(index, 0, 1, leadingChar, dashOption));
-          tokens.push($optionArg(index, 1, token.length, token.slice(1), leadingChar, ""));
+          pushOptionArg(index, 1, token.length, token.slice(1), "");
           continue tokens;
         }
 
@@ -371,6 +423,11 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
           const optionName = `${leadingChar}${token[char]}`;
           const option = getOption(optionName);
           if (!option) {
+            // An open option takes anything unknown as a value, like `-5`.
+            if (char === 1 && hasRoomForValue()) {
+              pushOptionArg(index, 0, token.length, token, "");
+              continue tokens;
+            }
             tokens.push(
               $unknownOption(index, char, char + 1, optionName, [
                 ...localOptions.keys(),
@@ -380,25 +437,19 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
             continue chars;
           }
 
-          if (!hasUsedNonPersistentOption && !option.isPersistent) {
-            hasUsedNonPersistentOption = true;
-          }
-
+          startOption(option, optionName);
           tokens.push($option(index, char, char + 1, optionName, option));
 
           if (option.args && char < token.length - 1) {
             const remainingChars = token.slice(char + 1);
             const sep = separators.find((sep) => remainingChars.startsWith(sep)) || "";
             const argStartOffset = char + sep.length;
-            tokens.push(
-              $optionArg(
-                index,
-                argStartOffset + 1,
-                token.length,
-                token.slice(argStartOffset + 1),
-                optionName,
-                sep,
-              ),
+            pushOptionArg(
+              index,
+              argStartOffset + 1,
+              token.length,
+              token.slice(argStartOffset + 1),
+              sep,
             );
             break;
           }
@@ -429,22 +480,21 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
           const optionName = token.slice(0, foundSepIndex);
           const option = getOption(optionName);
           if (option) {
-            if (!hasUsedNonPersistentOption && !option.isPersistent) {
-              hasUsedNonPersistentOption = true;
-            }
+            startOption(option, optionName);
             tokens.push($option(index, 0, foundSepIndex, token.slice(0, foundSepIndex), option));
-            tokens.push(
-              $optionArg(
-                index,
-                foundSepIndex + foundSep.length,
-                token.length,
-                token.slice(foundSepIndex + foundSep.length),
-                optionName,
-                foundSep,
-              ),
+            pushOptionArg(
+              index,
+              foundSepIndex + foundSep.length,
+              token.length,
+              token.slice(foundSepIndex + foundSep.length),
+              foundSep,
             );
             continue tokens;
           } else if (posixCompliantOptions) {
+            if (hasRoomForValue()) {
+              pushOptionArg(index, 0, token.length, token, "");
+              continue tokens;
+            }
             // If we're here, we know the option is invalid and we're parsing a
             // posix-compliant option, so that's an "unknown option" instead of arg.
             const optionName = token.slice(0, foundSepIndex);
@@ -470,12 +520,14 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
         } else {
           const option = getOption(token);
           if (option) {
-            if (!hasUsedNonPersistentOption && !option.isPersistent) {
-              hasUsedNonPersistentOption = true;
-            }
+            startOption(option, token);
             tokens.push($option(index, 0, token.length, token, option));
             continue tokens;
           } else if (posixCompliantOptions) {
+            if (hasRoomForValue()) {
+              pushOptionArg(index, 0, token.length, token, "");
+              continue tokens;
+            }
             // If we're here, we know the option is invalid and we're parsing a
             // posix-compliant option, so that's an "unknown option" instead of arg.
             tokens.push(
@@ -490,9 +542,11 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
       }
     }
 
-    if (!hasFoundArg) {
-      hasFoundArg = true;
+    if (hasRoomForValue()) {
+      pushOptionArg(index, 0, token.length, token, "");
+      continue tokens;
     }
+    hasFoundArg = true;
     tokens.push($arg(index, 0, token.length, token));
   }
 
@@ -502,6 +556,8 @@ export function analyze<Subcommand extends MinSubcommand<Option>, Option extends
       persistentOptions,
       localRequiredOptions,
       persistentRequiredOptions,
+      openOption:
+        openOption && hasRoomForValue() ? { option: openOption, valueCount: optionArgCount } : null,
     },
     tokens,
   };

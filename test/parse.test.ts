@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import { usage } from "../src/help.js";
 import { getMaxArgs, getMinArgs, parse } from "../src/parse.js";
-import type { Action, Spec, Subcommand } from "../src/types.js";
+import type { Action, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 
 test("getMinArgs", () => {
@@ -441,13 +441,183 @@ test("parse: persistent options can be used before a subcommand", () => {
   expect(parse(["--persistent", "subcommand"], spec).options).toEqual(map({ "--persistent": [] }));
 });
 
-test("parse: non-persistent options prevent subcommands from being used", () => {
+test("parse: non-persistent options can be used before a subcommand", () => {
+  const subcommand: Subcommand = { name: "subcommand" };
   const spec: Spec = {
     name: "test",
     options: [{ name: "--not-persistent" }],
-    subcommands: [{ name: "subcommand" }],
+    subcommands: [subcommand],
   };
-  expect(() => parse(["--not-persistent", "subcommand"], spec)).toThrow();
+  const result = parse(["--not-persistent", "subcommand"], spec);
+  expect(result.path).toEqual([spec, subcommand]);
+  expect(result.options).toEqual(map({ "--not-persistent": [] }));
+  expect(() => parse(["subcommand", "--not-persistent"], spec)).toThrow();
+});
+
+test("parse: a parent's required option is supplied before the subcommand", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--req", isRequired: true }],
+    subcommands: [{ name: "sub" }],
+  };
+  expect(parse(["--req", "sub"], spec).path).toHaveLength(2);
+  expect(() => parse(["sub"], spec)).toThrow();
+  expect(() => parse(["sub", "--req"], spec)).toThrow();
+});
+
+test("parse: an option's value doesn't stop subcommand matching", () => {
+  const status: Subcommand = { name: "status" };
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: "-C", args: { name: "path" } }],
+    subcommands: [status],
+  };
+  for (const input of [
+    ["-C", "/repo", "status"],
+    ["-C/repo", "status"],
+  ]) {
+    const result = parse(input, spec);
+    expect(result.path).toEqual([spec, status]);
+    expect(result.options).toEqual(map({ "-C": ["/repo"] }));
+  }
+  expect(() => parse(["status", "-C", "/repo"], spec)).toThrow();
+});
+
+test("parse: a persistent option's value doesn't stop subcommand matching", () => {
+  const evalCommand: Subcommand = { name: "eval" };
+  const spec: Spec = {
+    name: "nix",
+    args: { isOptional: true, isVariadic: true },
+    options: [{ name: "--features", isPersistent: true, args: {} }],
+    subcommands: [evalCommand],
+  };
+  for (const input of [
+    ["--features", "a", "eval"],
+    ["--features=a", "eval"],
+    ["eval", "--features", "a"],
+  ]) {
+    const result = parse(input, spec);
+    expect(result.path).toEqual([spec, evalCommand]);
+    expect(result.args).toEqual([]);
+    expect(result.options).toEqual(map({ "--features": ["a"] }));
+  }
+});
+
+test("parse: a required option value can match a subcommand name", () => {
+  const status: Subcommand = { name: "status" };
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: "-C", args: {} }],
+    subcommands: [status],
+  };
+  const result = parse(["-C", "status", "status"], spec);
+  expect(result.path).toEqual([spec, status]);
+  expect(result.options).toEqual(map({ "-C": ["status"] }));
+});
+
+test("parse: a subcommand ends an option whose optional value is missing", () => {
+  const sub: Subcommand = { name: "sub" };
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--color", args: { isOptional: true } }],
+    subcommands: [sub],
+  };
+  expect(parse(["--color", "sub"], spec).path).toEqual([spec, sub]);
+  expect(parse(["--color", "auto", "sub"], spec).options).toEqual(map({ "--color": ["auto"] }));
+});
+
+test("parse: a subcommand closes the option before it", () => {
+  const sub: Subcommand = { name: "sub", args: { isOptional: true } };
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--color", args: { isOptional: true } }],
+    subcommands: [sub],
+  };
+  const result = parse(["--color", "sub", "value"], spec);
+  expect(result.path).toEqual([spec, sub]);
+  expect(result.args).toEqual(["value"]);
+  expect(result.options).toEqual(map({ "--color": [] }));
+});
+
+test("parse: an optional value only gives way to an exact subcommand name", () => {
+  const sync: Subcommand = { name: "always-sync" };
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    options: [{ name: "--color", args: { isOptional: true } }],
+    subcommands: [sync, { name: "build" }],
+  };
+  const prefix = parse(["--color", "a"], spec);
+  expect(prefix.path).toEqual([spec]);
+  expect(prefix.options).toEqual(map({ "--color": ["a"] }));
+  const empty = parse(["--color", ""], { ...spec, subcommands: [{ name: "build" }] });
+  expect(empty.path).toHaveLength(1);
+  expect(empty.options).toEqual(map({ "--color": [""] }));
+  expect(parse(["--color", "always-sync"], spec).path).toEqual([spec, sync]);
+  expect(parse(["al"], spec).path).toEqual([spec, sync]);
+  expect(parse(["--color", "auto", "al"], spec).path).toEqual([spec, sync]);
+});
+
+test("parse: distinct long names keep both values when short names clash", () => {
+  const blame: Subcommand = {
+    name: "blame",
+    args: { isOptional: true },
+    options: [{ name: ["-C", "--moved-or-copied"] }],
+  };
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: ["-C", "--cd"], args: {} }],
+    subcommands: [blame],
+  };
+  for (const input of [
+    ["-C", "/repo", "blame", "-C", "file"],
+    ["--cd", "/repo", "blame", "--moved-or-copied", "file"],
+  ]) {
+    const result = parse(input, spec);
+    expect(result.args).toEqual(["file"]);
+    expect(result.options.get("--cd")).toEqual(["/repo"]);
+    expect(result.options.get("--moved-or-copied")).toEqual([]);
+  }
+});
+
+test("parse: a repeatable option's count follows its names across commands", () => {
+  const verbose: Option = { name: ["-v", "--verbose"], isRepeatable: true };
+  const count = (spec: Spec, name: string) =>
+    parse(["-v", "-v", "sub", "-v"], spec).options.get(name)?.length;
+  const withChild = (option: Option): Spec => ({
+    name: "test",
+    options: [verbose],
+    subcommands: [{ name: "sub", options: [option] }],
+  });
+  expect(count(withChild(verbose), "-v")).toBe(3);
+  expect(count(withChild({ ...verbose }), "-v")).toBe(3);
+  const separate = withChild({ name: ["-v", "--inner"], isRepeatable: true });
+  expect(count(separate, "--verbose")).toBe(2);
+  expect(count(separate, "--inner")).toBe(1);
+});
+
+test("parse: a subcommand can reuse a parent option's name", () => {
+  const blame: Subcommand = { name: "blame", args: {}, options: [{ name: "-C" }] };
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: "-C", args: {} }],
+    subcommands: [blame],
+  };
+  const result = parse(["-C", "/repo", "blame", "-C", "file"], spec);
+  expect(result.path).toEqual([spec, blame]);
+  expect(result.args).toEqual(["file"]);
+});
+
+test("parse: option values don't count towards optionsMustPrecedeArguments", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isOptional: true, isVariadic: true },
+    parserDirectives: { optionsMustPrecedeArguments: true },
+    options: [{ name: "--a", args: {} }, { name: "--b" }],
+  };
+  const result = parse(["--a", "1", "--b", "x", "--b"], spec);
+  expect(result.options).toEqual(map({ "--a": ["1"], "--b": [] }));
+  expect(result.args).toEqual(["x", "--b"]);
 });
 
 test("parse: '--' token causes all tokens after it to become args", () => {
@@ -481,9 +651,15 @@ test("parse: '--' cannot be provided after all the arguments", () => {
   expect(() => parse(["--"], { name: "command" })).toThrow();
 });
 
-test("parse: non-repeatable options cannot be repeated", () => {
-  const spec: Spec = { name: "command", options: [{ name: "--normal" }] };
-  expect(() => parse(["--normal", "--normal"], spec)).toThrow();
+test("parse: the last use of a non-repeatable option wins", () => {
+  const spec: Spec = {
+    name: "command",
+    options: [{ name: "--flag" }, { name: ["-c", "--color"], args: {} }],
+  };
+  expect(parse(["--flag", "--flag"], spec).options).toEqual(map({ "--flag": [] }));
+  expect(parse(["--color", "always", "-c", "never"], spec).options).toEqual(
+    map({ "-c": ["never"], "--color": ["never"] }),
+  );
 });
 
 test("parse: repeatable options definitely have one item in the array", () => {

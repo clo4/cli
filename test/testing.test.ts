@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { helpCommand } from "../src/help.js";
+import { help, helpCommand } from "../src/help.js";
 import type { Option, Spec } from "../src/types.js";
 import * as Testing from "../src/testing.js";
 
@@ -30,6 +30,62 @@ test("testing: assertOptionsHaveLocallyUniqueNames", () => {
       options: [{ name: ["one", "one"] }],
     }),
   ).toThrow();
+});
+
+test("testing: assertOptionsHaveDifferentNamesFromParents", () => {
+  const check = Testing.assertOptionsHaveDifferentNamesFromParents;
+  const withChild = (parent: Option, child: Option): Spec => ({
+    name: "test",
+    options: [parent],
+    subcommands: [{ name: "sub", options: [child] }],
+  });
+
+  // Different options with exactly the same names
+  expect(() => check(withChild({ name: "-C", args: {} }, { name: "-C" }))).toThrow();
+  expect(() =>
+    check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["--cd", "-C"] })),
+  ).toThrow();
+  expect(() =>
+    check({
+      name: "test",
+      options: [{ name: "-C", args: {} }],
+      subcommands: [{ name: "mid", subcommands: [{ name: "leaf", options: [{ name: "-C" }] }] }],
+    }),
+  ).toThrow();
+
+  // Each option has a name of its own
+  check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["-C", "--moved"] }));
+  check(withChild({ name: "-a" }, { name: "-b" }));
+
+  // Identical options
+  const constant: Option = { name: ["-v", "--verbose"], description: "Print more." };
+  check(withChild(constant, constant));
+  check(withChild(constant, { ...constant }));
+  check(withChild(constant, { ...constant, name: ["--verbose", "-v"] }));
+  check(withChild(help, help));
+  check(withChild({ name: "--help", action() {} }, { name: "--help", action() {} }));
+  check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tag" } }));
+
+  // Persistent parents belong to assertOptionsDoNotShadowPersistentOptions
+  check(withChild({ name: "-C", isPersistent: true, args: {} }, { name: "-C" }));
+
+  // Same shape except for a property that changes the meaning
+  expect(() =>
+    check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tags" } })),
+  ).toThrow();
+});
+
+test("testing: testSpec rejects a clash with a parent option", async () => {
+  const spec: Spec = {
+    name: "test",
+    description: "Test.",
+    options: [{ name: "-C", description: "Directory.", args: { name: "path" } }],
+    subcommands: [
+      { name: "one", description: "One.", options: [{ name: "-C", description: "Copies." }] },
+      { name: "two", description: "Two." },
+    ],
+  };
+  await expect(Testing.testSpec(spec)()).rejects.toThrow(/same names/);
 });
 
 test("testing: assertRepeatableOptionsHaveNoArguments", () => {
@@ -720,6 +776,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Option names all start with dashes",
     "Options have locally unique names",
     "Options don't shadow persistent options",
+    "Different options on a subcommand and its parents have different names",
     "Subcommands have locally unique names",
     "Nothing is named '--'",
     "Option arg separators are not an empty string",

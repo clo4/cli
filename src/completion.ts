@@ -23,7 +23,6 @@
 import type { Arg, Option, Generator, Spec, Subcommand, Template } from "./types.js";
 import { asArray, makeArray, print, printActionError } from "./util.js";
 import { analyze } from "./analyze.js";
-import { getMaxArgs } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -559,8 +558,6 @@ interface CompletionState {
   forceArgs: boolean;
   /** A positional has been consumed by the current command. */
   sawPositional: boolean;
-  /** A non-persistent option has been used (blocks subcommand matching). */
-  usedNonPersistentOption: boolean;
 }
 
 function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
@@ -568,13 +565,9 @@ function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
 
   const path: Subcommand[] = [spec as unknown as Subcommand];
   let current: Subcommand = spec as unknown as Subcommand;
-  let pending: CompletionState["pending"] = null;
-  let pendingFilled = 0;
-  let pendingMax = 0;
   let positionalIndex = 0;
   let forceArgs = false;
   let sawPositional = false;
-  let usedNonPersistentOption = false;
   const presentNames = new Set<string>();
   const countByOption = new Map<Option, number>();
 
@@ -585,54 +578,28 @@ function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
         path.push(current);
         positionalIndex = 0;
         sawPositional = false;
-        pending = null;
         break;
       }
       case "option": {
         const option = token.option;
         for (const name of makeArray(option.name)) presentNames.add(name);
         countByOption.set(option, (countByOption.get(option) ?? 0) + 1);
-        if (!option.isPersistent) usedNonPersistentOption = true;
-        const max = getMaxArgs(option.args);
-        // requiresSeparator options only take an attached value, never a
-        // following separate token, so they never leave a pending value.
-        if (max > 0 && !option.requiresSeparator) {
-          pending = { option, argIndex: 0 };
-          pendingFilled = 0;
-          pendingMax = max;
-        } else {
-          pending = null;
-        }
-        break;
-      }
-      case "option-arg": {
-        // An attached value (`--option=v`, `-fv`) satisfies the preceding option.
-        pending = null;
         break;
       }
       case "arg": {
-        if (pending && pendingFilled < pendingMax) {
-          pendingFilled += 1;
-          pending = { option: pending.option, argIndex: pendingFilled };
-          if (pendingFilled >= pendingMax) pending = null;
-        } else {
-          positionalIndex += 1;
-          sawPositional = true;
-          pending = null;
-        }
+        positionalIndex += 1;
+        sawPositional = true;
         break;
       }
       case "arg-separator": {
         forceArgs = true;
-        pending = null;
-        break;
-      }
-      case "unknown-option": {
-        pending = null;
         break;
       }
     }
   }
+
+  const open = finalState.openOption;
+  const pending = open ? { option: open.option, argIndex: open.valueCount } : null;
 
   const availableOptions: Option[] = [];
   const seen = new Set<Option>();
@@ -655,7 +622,6 @@ function analyzeState(spec: Spec, before: readonly string[]): CompletionState {
     countByOption,
     forceArgs,
     sawPositional,
-    usedNonPersistentOption,
   };
 }
 
@@ -739,13 +705,31 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
   return candidates;
 }
 
-/** Pick the argument being completed at a positional index (honors variadic). */
-function positionalArg(command: Subcommand, index: number): Arg | undefined {
-  const args = asArray(command.args) as readonly Arg[];
+/** Pick the argument at an index, reusing a final variadic argument. */
+function argAt(args: readonly Arg[], index: number): Arg | undefined {
   if (args.length === 0) return undefined;
   if (index < args.length) return args[index];
   const last = args[args.length - 1];
   return last?.isVariadic ? last : undefined;
+}
+
+/** Pick the argument being completed at a positional index (honors variadic). */
+function positionalArg(command: Subcommand, index: number): Arg | undefined {
+  return argAt(asArray(command.args) as readonly Arg[], index);
+}
+
+/** Decide which kinds of candidate the word being completed can use. */
+function wantedCandidates(state: CompletionState, req: CompletionRequest) {
+  const posixNoncompliant = directiveOnPath(state.path, "flagsArePosixNoncompliant");
+  const partialIsOption =
+    !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
+  // When gating, a dashed word completes options only; everything else completes
+  // commands/positionals. Posix-noncompliant options have no dash, so they're
+  // exempt and always offered alongside the other candidates.
+  return {
+    wantValues: !(req.gateOptions && partialIsOption),
+    wantOptions: !req.gateOptions || partialIsOption || posixNoncompliant,
+  };
 }
 
 /** Inputs for the runtime completion resolver. */
@@ -807,8 +791,19 @@ async function resolveOptionValue(
 
   // The separate-token value of a option that expects one.
   if (state.pending) {
-    const arg = (asArray(state.pending.option.args) as Arg[])[state.pending.argIndex];
-    return arg ? argValues(arg, tokens, req.partial) : [];
+    const { option, argIndex } = state.pending;
+    const args = asArray(option.args) as readonly Arg[];
+    const arg = argAt(args, argIndex);
+    if (argIndex < args.length) {
+      return arg ? argValues(arg, tokens, req.partial) : [];
+    }
+    // Past its declared args, a variadic option takes another value or gives
+    // way to the next option.
+    const { wantValues, wantOptions } = wantedCandidates(state, req);
+    return [
+      ...(arg && wantValues ? await argValues(arg, tokens, req.partial) : []),
+      ...(wantOptions ? allowedOptionCandidates(state, separators) : []),
+    ];
   }
 
   return null;
@@ -823,14 +818,7 @@ async function freshTokenCandidates(
   const candidates: Candidate[] = [];
   const tokens = [...req.before];
 
-  const posixNoncompliant = directiveOnPath(state.path, "flagsArePosixNoncompliant");
-  const partialIsOption =
-    !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
-  // When gating, a dashed word completes options only; everything else completes
-  // commands/positionals. Posix-noncompliant options have no dash, so they're
-  // exempt and always offered alongside the other candidates.
-  const wantValues = !(req.gateOptions && partialIsOption);
-  const wantOptions = !req.gateOptions || partialIsOption || posixNoncompliant;
+  const { wantValues, wantOptions } = wantedCandidates(state, req);
 
   if (wantValues) {
     const positional = positionalArg(state.current, state.positionalIndex);
@@ -841,7 +829,7 @@ async function freshTokenCandidates(
     if (state.forceArgs) return candidates;
 
     // Subcommands — only while the parser would still match one.
-    if (!state.sawPositional && !state.usedNonPersistentOption) {
+    if (!state.sawPositional) {
       for (const sub of state.current.subcommands ?? []) {
         if (sub.hidden) continue;
         const description = firstLine(sub.description);
@@ -855,14 +843,18 @@ async function freshTokenCandidates(
     return candidates;
   }
 
-  // Options — unless they must precede arguments and one was already seen.
-  const optionsBlocked =
-    state.sawPositional && directiveOnPath(state.path, "optionsMustPrecedeArguments");
-  if (wantOptions && !optionsBlocked) {
-    candidates.push(...optionCandidates(state, separators));
+  if (wantOptions) {
+    candidates.push(...allowedOptionCandidates(state, separators));
   }
 
   return candidates;
+}
+
+/** Option candidates, unless options must precede arguments and one was seen. */
+function allowedOptionCandidates(state: CompletionState, separators: string[]): Candidate[] {
+  const optionsBlocked =
+    state.sawPositional && directiveOnPath(state.path, "optionsMustPrecedeArguments");
+  return optionsBlocked ? [] : optionCandidates(state, separators);
 }
 
 /** Eligible option candidates after relationship filtering. */

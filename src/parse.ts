@@ -1,7 +1,7 @@
-import type { Action, CommandPath, NonEmptyArray, Option, Spec, Subcommand } from "./types.js";
+import type { Action, CommandPath, Option, Spec, Subcommand } from "./types.js";
 import { analyze } from "./analyze.js";
 import type { BaseToken, TokenOption, TokenSubcommand } from "./analyze.js";
-import { assert, isArray, setEach } from "./util.js";
+import { asArray, getMaxArgs, getMinArgs, setEach } from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -23,66 +23,7 @@ export interface ParseResult {
   optionActions: Action[];
 }
 
-const enum State {
-  ParseArgs,
-  ParseOptionArgs,
-  ParseOptionArgRequireSeparator,
-}
-
-/**
- * Returns the minimum number of arguments that satisfies the args.
- *
- * Accepts the raw spec value (a single arg, an array, or `undefined`) so the
- * hot path doesn't have to copy it into an array first.
- */
-export function getMinArgs(
-  args: { isOptional?: boolean } | readonly { isOptional?: boolean }[] | undefined,
-): number {
-  if (args === undefined) return 0;
-  if (!isArray(args)) return args.isOptional ? 0 : 1;
-  let count = 0;
-  for (let i = 0; i < args.length; i++) {
-    if (args[i].isOptional) {
-      break;
-    }
-    count++;
-  }
-  return count;
-}
-
-/** Returns the maximum number of arguments that satisfies the args. */
-export function getMaxArgs(
-  args: { isVariadic?: boolean } | readonly { isVariadic?: boolean }[] | undefined,
-): number {
-  if (args === undefined) return 0;
-  if (!isArray(args)) return args.isVariadic ? Infinity : 1;
-  // Loop over the array backwards because variadic arguments are
-  // more likely to be at the end of the array. They don't _need_
-  // to be, but it's more idiomatic.
-  for (let i = 0; i < args.length; i++) {
-    if (args[args.length - 1 - i].isVariadic) {
-      return Infinity;
-    }
-  }
-  // None of the arguments are variadic, max is the number of args
-  return args.length;
-}
-
-/** Check if a map has a key or any key from an array */
-function has<K>(map: Map<K, unknown>, key: K | NonEmptyArray<K>): boolean {
-  if (isArray(key)) {
-    return map.has(key[0]);
-  }
-  return map.has(key);
-}
-
-/** Get a value from a map by a key or any key from an array */
-function get<K, V>(map: Map<K, V>, key: K | NonEmptyArray<K>): V | undefined {
-  if (isArray(key)) {
-    return map.get(key[0]);
-  }
-  return map.get(key);
-}
+export { getMaxArgs, getMinArgs };
 
 // TODO: Replace all instances of ParseError with a bespoke error type
 
@@ -113,9 +54,8 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
   const foundArgs: string[] = [];
   const foundOptions: Map<string, string[]> = new Map();
 
-  // These have to be type assertions otherwise TS will incorrectly
-  // infer that the variables are never reassigned
-  let state = State.ParseArgs as State;
+  // This has to be a type assertion otherwise TS will incorrectly
+  // infer that the variable is never reassigned
   let optionArgs = null as string[] | null;
   let optionArgsMin = 0;
   let optionArgsMax = 0;
@@ -129,11 +69,6 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
 
   const parseOption = (token: TokenOption<Option>) => {
     const option = token.option;
-
-    // Don't allow repeating non-repeatable options
-    if (!option.isRepeatable && has(foundOptions, option.name)) {
-      throw new ParseError(ctx(), "Repeated option");
-    }
 
     if (option.exclusiveOn) {
       exclusiveOnOptions.push(option);
@@ -151,7 +86,12 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
     // *have* to branch on this.
     if (option.isRepeatable) {
       const maxRepeat = option.isRepeatable === true ? Infinity : option.isRepeatable;
-      let arr = get(foundOptions, option.name);
+      // The count carries over from a parent's identical option. A subcommand
+      // option with a name of its own keeps a separate count.
+      const names = asArray(option.name);
+      const existing = foundOptions.get(names[0]);
+      const isSharedCount = names.every((name) => foundOptions.get(name) === existing);
+      let arr = isSharedCount ? existing : undefined;
       if (!arr) {
         arr = [];
         setEach(foundOptions, option.name, arr);
@@ -165,23 +105,22 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
 
     optionArgsMin = getMinArgs(option.args);
     optionArgsMax = getMaxArgs(option.args);
+    requiredSeparator = option.requiresSeparator ?? false;
 
-    optionArgs = [];
-    setEach(foundOptions, option.name, optionArgs);
-
-    if (optionArgsMax === 0) {
-      optionArgs = null;
-      state = State.ParseArgs;
-      return;
+    // The last use of an option wins, so a user can override a flag that a shell
+    // alias already sets.
+    const values: string[] = [];
+    setEach(foundOptions, option.name, values);
+    if (optionArgsMax > 0) {
+      optionArgs = values;
     }
+  };
 
-    if (option.requiresSeparator) {
-      state = State.ParseOptionArgRequireSeparator;
-      requiredSeparator = option.requiresSeparator;
-    } else {
-      state = State.ParseOptionArgs;
+  const closeOption = () => {
+    if (optionArgs && optionArgs.length < optionArgsMin) {
+      throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
     }
-    return;
+    optionArgs = null;
   };
 
   const parseArg = (token: BaseToken) => {
@@ -202,7 +141,6 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
       );
     }
     argSeparatorIndex = foundArgs.length;
-    state = State.ParseArgs;
   };
 
   const parseSubcommand = (token: TokenSubcommand<Subcommand>) => {
@@ -221,141 +159,41 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
   const { finalState, tokens } = analyze<Subcommand, Option>(input, spec);
 
   for (const token of tokens) {
-    switch (state) {
-      case State.ParseArgs: {
-        switch (token.kind) {
-          case "subcommand": {
-            parseSubcommand(token);
-            break;
-          }
-          case "arg": {
-            parseArg(token);
-            break;
-          }
-          case "option": {
-            parseOption(token);
-            break;
-          }
-          case "unknown-option": {
-            throw new UnknownOption(token, ctx());
-          }
-          case "option-arg": {
-            throw new InvalidOptionArg(token, ctx());
-          }
-          case "arg-separator": {
-            parseArgSeparator();
-            break;
-          }
-          default: {
-            throw new ParseError(ctx(), "Unreachable");
-          }
-        }
+    switch (token.kind) {
+      case "subcommand": {
+        closeOption();
+        parseSubcommand(token);
         break;
       }
-      case State.ParseOptionArgs: {
-        assert(
-          Array.isArray(optionArgs),
-          "Invalid state, must have an array to store option arguments",
-        );
-        switch (token.kind) {
-          case "option-arg":
-          case "arg": {
-            if (optionArgs.length < optionArgsMax) {
-              optionArgs.push(token.literal);
-            } else {
-              optionArgs = null;
-              state = State.ParseArgs;
-              parseArg(token);
-            }
-            break;
-          }
-          case "option": {
-            if (optionArgs.length < optionArgsMin) {
-              throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
-            }
-            parseOption(token);
-            break;
-          }
-          case "unknown-option": {
-            if (optionArgs.length < optionArgsMax) {
-              optionArgs.push(token.literal);
-            } else {
-              throw new UnknownOption(token, ctx());
-            }
-            break;
-          }
-          case "arg-separator": {
-            if (optionArgs.length < optionArgsMin) {
-              throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
-            }
-            parseArgSeparator();
-            break;
-          }
-          case "subcommand": {
-            throw new ParseError(ctx(), "Unexpected token");
-          }
-          // The analyzer can't output a subcommand here, and if it does
-          // then that's an error anyway
-          default: {
-            throw new ParseError(ctx(), "Unreachable");
-          }
-        }
+      case "arg": {
+        closeOption();
+        parseArg(token);
         break;
       }
-      case State.ParseOptionArgRequireSeparator: {
-        assert(
-          Array.isArray(optionArgs),
-          "Invalid state, must have an array to store option arguments",
-        );
-        assert(requiredSeparator, "Invalid state, a separator must be set");
-        switch (token.kind) {
-          case "option-arg": {
-            if (typeof requiredSeparator === "string" && token.separator !== requiredSeparator) {
-              throw new ParseError(
-                ctx(),
-                `Incorrect separator, use '${requiredSeparator}' instead of '${token.separator}'`,
-              );
-            }
-            // If this is true, we know thanks to the test suite that
-            // the option takes a minimum of one argument
-            optionArgs.push(token.literal);
-            state = State.ParseArgs;
-            break;
-          }
-          case "arg": {
-            if (optionArgsMin > 0) {
-              throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
-            }
-            optionArgs = null;
-            state = State.ParseArgs;
-            parseArg(token);
-            break;
-          }
-          case "option": {
-            if (optionArgsMin > 0) {
-              throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
-            }
-            parseOption(token);
-            break;
-          }
-          case "unknown-option": {
-            throw new UnknownOption(token, ctx());
-          }
-          case "arg-separator": {
-            throw new ParseError(ctx(), "Unexpected token");
-          }
-          case "subcommand": {
-            if (optionArgsMin > 0) {
-              throw new TooFewOptionArguments(optionArgsMin, optionArgsMax, ctx());
-            }
-            parseSubcommand(token);
-            state = State.ParseArgs;
-            break;
-          }
-          default: {
-            throw new ParseError(ctx(), "Unreachable");
-          }
+      case "option": {
+        closeOption();
+        parseOption(token);
+        break;
+      }
+      case "option-arg": {
+        if (!optionArgs) {
+          throw new InvalidOptionArg(token, ctx());
         }
+        if (typeof requiredSeparator === "string" && token.separator !== requiredSeparator) {
+          throw new ParseError(
+            ctx(),
+            `Incorrect separator, use '${requiredSeparator}' instead of '${token.separator}'`,
+          );
+        }
+        optionArgs.push(token.literal);
+        break;
+      }
+      case "unknown-option": {
+        throw new UnknownOption(token, ctx());
+      }
+      case "arg-separator": {
+        closeOption();
+        parseArgSeparator();
         break;
       }
     }

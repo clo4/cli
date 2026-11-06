@@ -68,6 +68,27 @@ function joinNames(names: SingleOrArray<string>) {
     .join("|");
 }
 
+function isSameName(a: string | readonly string[], b: string | readonly string[]) {
+  if (isArray(a) && isArray(b)) {
+    return a.every((item) => b.includes(item)) && b.every((item) => a.includes(item));
+  }
+  // This might compare a string to an array, but if that happens the correct
+  // result is `false` anyway, so this behaves correctly
+  return a === b;
+}
+
+/** Compares spec values by shape. Any two functions count as the same shape. */
+function isSameStructure(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a === "function" && typeof b === "function") return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => isSameStructure(left[key], right[key]));
+}
+
 function namedArrayToString(...parts: { name: SingleOrArray<string> }[]) {
   const names = parts.map((named) => joinNames(named.name));
   return `\`${names.join(" ")}\``;
@@ -162,6 +183,38 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
           !persistentOptionNames.has(name),
           `The option ${namedArrayToString(...path, option)} (index ${index}) shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
         );
+      }
+    }
+  });
+}
+
+/**
+ * Asserts that a subcommand's option isn't a different option with exactly the
+ * same names as one on a parent.
+ *
+ * Parsed values are looked up by name, so that parent's value would be
+ * unreadable. A shared name is fine when each option has a name of its own, and
+ * when the options are identical, such as an option kept in a constant.
+ *
+ * This skips persistent parent options, because
+ * {@link assertOptionsDoNotShadowPersistentOptions} covers those and
+ * `allowShadowingPersistentOptions` opts out of it.
+ */
+export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): void {
+  forEachOptionArray(spec, (options, path) => {
+    const parents = path.slice(0, -1);
+    for (const [index, option] of options.entries()) {
+      for (const parent of parents) {
+        for (const parentOption of makeArray(parent.options)) {
+          const isClash =
+            !parentOption.isPersistent &&
+            isSameName(parentOption.name, option.name) &&
+            !isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 });
+          assert(
+            !isClash,
+            `The option ${namedArrayToString(...path, option)} (index ${index}) has the same names as a different option, ${namedArrayToString(parent, parentOption)}, so the parent's value can't be read. Add a name that only one of them uses.`,
+          );
+        }
       }
     }
   });
@@ -424,14 +477,6 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
 }
 
 export function assertCommonOptionsArePersistent(spec: Subcommand): void {
-  const isSameName = (a: string | readonly string[], b: string | readonly string[]) => {
-    if (isArray(a) && isArray(b)) {
-      return a.every((item) => b.includes(item)) && b.every((item) => a.includes(item));
-    }
-    // This might compare a string to an array, but if that happens the correct
-    // result is `false` anyway, so this behaves correctly
-    return a === b;
-  };
   const failures: [string | readonly string[], string][] = [];
   forEachSubcommand(spec, (subcommand, path) => {
     if (!subcommand.subcommands) {
@@ -670,6 +715,16 @@ export function test(
         },
       );
     }
+    await runStep(
+      t,
+      getName(namingStyle, {
+        sentence: "Different options on a subcommand and its parents have different names",
+        function: "assertOptionsHaveDifferentNamesFromParents",
+      }),
+      () => {
+        assertOptionsHaveDifferentNamesFromParents(spec);
+      },
+    );
     await runStep(
       t,
       getName(namingStyle, {
