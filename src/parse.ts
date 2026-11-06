@@ -215,20 +215,11 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     if (valuesMax > 0) values = optionValues;
   };
 
-  const addValue = (
-    index: number,
-    start: number,
-    end: number,
-    value: string,
-    separator: string,
-  ) => {
+  const addValue = (index: number, start: number, end: number, value: string, separator: string) => {
     valueCount += 1;
     if (!values) {
       if (strict) {
-        throw new InvalidOptionArg(
-          { option: openOptionName, arg: value, index, start, end },
-          ctx(),
-        );
+        throw new InvalidOptionArg({ option: openOptionName, arg: value, index, start, end }, ctx());
       }
       return;
     }
@@ -262,10 +253,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     if (token === "--") {
       endOption();
       if (strict && args.length >= commandArgsMax) {
-        throw new ParseError(
-          ctx(),
-          "Unexpected argument '--', did you mean to use an option instead?",
-        );
+        throw new ParseError(ctx(), "Unexpected argument '--', did you mean to use an option instead?");
       }
       argSeparatorIndex = args.length;
       openOption = null;
@@ -280,8 +268,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
 
     // 1. Try to parse as a subcommand
     // A required or variadic option value takes priority over a subcommand.
-    const valueIsRequired =
-      valueCount < valueMin || (hasRoomForValue && separateValueMax === Infinity);
+    const valueIsRequired = valueCount < valueMin || (hasRoomForValue && separateValueMax === Infinity);
     if (!hasFoundArg && !valueIsRequired && subcommands) {
       // A literal match always wins. A short optional value could be a prefix
       // of a subcommand's name, so only an exact match can end an option that

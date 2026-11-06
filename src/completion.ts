@@ -144,10 +144,7 @@ async function enumeratePaths(partial: string, template: Template): Promise<Cand
   // @types/node; this only runs inside the (Node-only) completion runtime.
   const specifier = "node:fs";
   const { readdirSync } = (await import(specifier)) as {
-    readdirSync(
-      path: string,
-      options: { withFileTypes: true },
-    ): { name: string; isDirectory(): boolean }[];
+    readdirSync(path: string, options: { withFileTypes: true }): { name: string; isDirectory(): boolean }[];
   };
   const slash = partial.lastIndexOf("/");
   const dir = slash >= 0 ? partial.slice(0, slash + 1) : "";
@@ -216,8 +213,7 @@ function positionalArg(command: Subcommand, index: number): Arg | undefined {
 /** Decide which kinds of candidate the word being completed can use. */
 function wantedCandidates(state: CompletionState, req: CompletionRequest) {
   const posixNoncompliant = directiveOnPath(state.path, "flagsArePosixNoncompliant");
-  const partialIsOption =
-    !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
+  const partialIsOption = !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
   // When gating, a dashed word completes options only; everything else completes
   // commands/positionals. Posix-noncompliant options have no dash, so they're
   // exempt and always offered alongside the other candidates.
@@ -270,9 +266,7 @@ async function resolveOptionValue(
     const at = req.partial.indexOf(separator);
     if (at <= 0) continue;
     const optionName = req.partial.slice(0, at);
-    const option = state.availableOptions.find((candidate) =>
-      makeArray(candidate.name).includes(optionName),
-    );
+    const option = state.availableOptions.find((candidate) => makeArray(candidate.name).includes(optionName));
     const arg = option && (asArray(option.args) as Arg[])[0];
     if (option && arg) {
       const valuePrefix = req.partial.slice(at + separator.length);
@@ -347,8 +341,7 @@ async function freshTokenCandidates(
 
 /** Option candidates, unless options must precede arguments and one was seen. */
 function allowedOptionCandidates(state: CompletionState, separators: string[]): Candidate[] {
-  const optionsBlocked =
-    state.sawPositional && directiveOnPath(state.path, "optionsMustPrecedeArguments");
+  const optionsBlocked = state.sawPositional && directiveOnPath(state.path, "optionsMustPrecedeArguments");
   return optionsBlocked ? [] : optionCandidates(state, separators);
 }
 

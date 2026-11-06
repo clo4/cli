@@ -48,9 +48,7 @@ const spec = {
             { name: ["-t", "--tag"], description: "Attach a tag.", args: { name: "tag" } },
           ],
           action({ args, options }) {
-            console.log(
-              `add:${args[0]}:${args[1]}:${options.has("--force")}:${options.get("--tag") ?? "-"}`,
-            );
+            console.log(`add:${args[0]}:${args[1]}:${options.has("--force")}:${options.get("--tag") ?? "-"}`);
           },
         },
         {

@@ -139,9 +139,7 @@ test("complex: requiresSubcommand reports an unknown subcommand", async () => {
 // --- Variadic args + options --------------------------------------------------
 
 test("complex: variadic args interspersed with a option", async () => {
-  const result = await captureConsole(() =>
-    run(forge(), ["build", "a", "b", "--out", "dist", "c"]),
-  );
+  const result = await captureConsole(() => run(forge(), ["build", "a", "b", "--out", "dist", "c"]));
   expect(result.code).toBe(0);
   expect(result.stdout).toBe("build:[a,b,c]:out=dist:mode=-:watch=false:retry=0:v0\n");
 });
@@ -149,9 +147,7 @@ test("complex: variadic args interspersed with a option", async () => {
 // --- Persistent + repeatable options -----------------------------------------
 
 test("complex: persistent repeatable option counts across nesting (separate + chained)", async () => {
-  const separate = await captureConsole(() =>
-    run(forge(), ["remote", "add", "origin", "-v", "-v"]),
-  );
+  const separate = await captureConsole(() => run(forge(), ["remote", "add", "origin", "-v", "-v"]));
   expect(separate.code).toBe(0);
   expect(separate.stdout).toBe("add:origin:-:force=false:tag=-:v2\n");
 
@@ -163,17 +159,13 @@ test("complex: persistent repeatable option counts across nesting (separate + ch
 // --- requiresSeparator ------------------------------------------------------
 
 test("complex: requiresSeparator accepts an attached arg", async () => {
-  const result = await captureConsole(() =>
-    run(forge(), ["remote", "add", "origin", "--tag=stable"]),
-  );
+  const result = await captureConsole(() => run(forge(), ["remote", "add", "origin", "--tag=stable"]));
   expect(result.code).toBe(0);
   expect(result.stdout).toBe("add:origin:-:force=false:tag=stable:v0\n");
 });
 
 test("complex: requiresSeparator rejects a detached arg", async () => {
-  const result = await captureConsole(() =>
-    run(forge(), ["remote", "add", "origin", "--tag", "stable"]),
-  );
+  const result = await captureConsole(() => run(forge(), ["remote", "add", "origin", "--tag", "stable"]));
   expect(result.code).toBe(1);
   expect(result.stderr).toMatch(/argument/);
 });

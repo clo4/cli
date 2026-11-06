@@ -147,27 +147,11 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
 
     try {
       for (let i = 0; i < warmup; i += 1) {
-        await runRound(
-          baseline,
-          measuredLibraries,
-          false,
-          results,
-          baselineScenario,
-          progress,
-          interrupt,
-        );
+        await runRound(baseline, measuredLibraries, false, results, baselineScenario, progress, interrupt);
       }
 
       for (let i = 0; i < samples; i += 1) {
-        await runRound(
-          baseline,
-          measuredLibraries,
-          true,
-          results,
-          baselineScenario,
-          progress,
-          interrupt,
-        );
+        await runRound(baseline, measuredLibraries, true, results, baselineScenario, progress, interrupt);
       }
     } catch (error) {
       if (error instanceof BenchmarkInterrupted) {
@@ -183,28 +167,10 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     progress.finish();
 
     console.log(
-      formatRow([
-        "library",
-        "scenario",
-        "self med",
-        "self min",
-        "self max",
-        "total med",
-        "n",
-        "statuses",
-      ]),
+      formatRow(["library", "scenario", "self med", "self min", "self max", "total med", "n", "statuses"]),
     );
     console.log(
-      formatRow([
-        "-------",
-        "--------",
-        "--------",
-        "--------",
-        "--------",
-        "---------",
-        "-",
-        "--------",
-      ]),
+      formatRow(["-------", "--------", "--------", "--------", "--------", "---------", "-", "--------"]),
     );
     printRow(results.get(keyFor("baseline", baselineScenario)), "baseline", baselineScenario);
     for (const [library] of measuredLibraries) {
@@ -237,12 +203,7 @@ function buildCsv(
   samples: number,
 ): string {
   const header = ["timestamp_utc", "commit", "node_version", "samples"];
-  const row = [
-    new Date().toISOString(),
-    process.env.GITHUB_SHA ?? "local",
-    process.version,
-    String(samples),
-  ];
+  const row = [new Date().toISOString(), process.env.GITHUB_SHA ?? "local", process.version, String(samples)];
 
   const cell = (value: number): string => (Number.isFinite(value) ? value.toFixed(4) : "");
 
@@ -425,10 +386,7 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
   );
 }
 
-function printComparison(
-  results: Map<string, Bucket>,
-  measuredLibraries: readonly Library[],
-): void {
+function printComparison(results: Map<string, Bucket>, measuredLibraries: readonly Library[]): void {
   const lode = measuredLibraries.find(([library]) => library === "@clo4/cli");
   if (lode === undefined) {
     return;
@@ -449,12 +407,7 @@ function printComparison(
     for (const [scenario] of scenarios) {
       const lodeMedian = stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median;
       const otherMedian = stats(results.get(keyFor(library, scenario))?.selfTimes ?? []).median;
-      if (
-        Number.isFinite(lodeMedian) &&
-        Number.isFinite(otherMedian) &&
-        lodeMedian > 0 &&
-        otherMedian > 0
-      ) {
+      if (Number.isFinite(lodeMedian) && Number.isFinite(otherMedian) && lodeMedian > 0 && otherMedian > 0) {
         lodeMedians.push(lodeMedian);
         otherMedians.push(otherMedian);
       }
@@ -463,12 +416,7 @@ function printComparison(
     const lodeMean = geometricMean(lodeMedians);
     const otherMean = geometricMean(otherMedians);
     console.log(
-      formatComparisonRow([
-        library,
-        fmt(lodeMean),
-        fmt(otherMean),
-        comparisonText(lodeMean, otherMean),
-      ]),
+      formatComparisonRow([library, fmt(lodeMean), fmt(otherMean), comparisonText(lodeMean, otherMean)]),
     );
   }
 }
@@ -481,9 +429,7 @@ function comparisonText(lode: number, other: number): string {
   if (Math.abs(ratio - 1) < 0.005) {
     return "same speed";
   }
-  return ratio > 1
-    ? `@clo4/cli ${ratio.toFixed(2)}x faster`
-    : `@clo4/cli ${(1 / ratio).toFixed(2)}x slower`;
+  return ratio > 1 ? `@clo4/cli ${ratio.toFixed(2)}x faster` : `@clo4/cli ${(1 / ratio).toFixed(2)}x slower`;
 }
 
 function geometricMean(values: readonly number[]): number {
@@ -503,8 +449,7 @@ function stats(values: readonly number[]): { median: number; min: number; max: n
   }
   const sorted = values.toSorted((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
-  const median =
-    sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+  const median = sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
   return {
     median,
     min: sorted[0],

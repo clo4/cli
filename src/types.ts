@@ -206,11 +206,7 @@ export interface Option {
  * Resolves to the shell's native path completion. Completions only — no effect
  * on parsing.
  */
-export type Template =
-  | "filepaths"
-  | "folders"
-  | ["folders", "filepaths"]
-  | ["filepaths", "folders"];
+export type Template = "filepaths" | "folders" | ["folders", "filepaths"] | ["filepaths", "folders"];
 
 /**
  * A single completion suggestion.

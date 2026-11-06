@@ -171,9 +171,7 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
         .slice(0, -1)
         .flatMap((subcommand) =>
           subcommand.options
-            ? subcommand.options
-                .filter((option) => option.isPersistent)
-                .flatMap((option) => option.name)
+            ? subcommand.options.filter((option) => option.isPersistent).flatMap((option) => option.name)
             : [],
         ),
     );
@@ -255,11 +253,7 @@ export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand):
     for (const [index, option] of makeArray(options).entries()) {
       for (const name of makeArray(option.name)) {
         assert(
-          !(
-            (name.startsWith("-") || name.startsWith("+")) &&
-            !name.startsWith("--") &&
-            name.length > 2
-          ),
+          !((name.startsWith("-") || name.startsWith("+")) && !name.startsWith("--") && name.length > 2),
           `Option ${namedArrayToString(...path, option)} (index ${index}) has a name that the parser is unable to parse, as it starts with a single '${name[0]}'. Tokens starting with that character are interpreted as short options, so passing '${name}' will be interpreted as '${Array.from(name.slice(1), (letter) => name[0] + letter).join(" ")}'. \`parserDirectives.flagsArePosixNoncompliant\` must be \`true\` on an ancestor command.`,
         );
       }
@@ -514,9 +508,7 @@ export function assertOptionNameReferencesExist(spec: Subcommand): void {
         .slice(0, -1)
         .flatMap((subcommand) =>
           subcommand.options
-            ? subcommand.options
-                .filter((option) => option.isPersistent)
-                .flatMap((option) => option.name)
+            ? subcommand.options.filter((option) => option.isPersistent).flatMap((option) => option.name)
             : [],
         ),
       ...options.flatMap((option) => option.name),
@@ -547,9 +539,7 @@ export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void
     // the path turns it on. `scan` in parse.ts initializes the flag to `false` and
     // only ever sets it `true`, so the ambiguity this guards against can only
     // arise when some ancestor (or the command itself) opts in.
-    const matchesPrefix = path.some(
-      (cmd) => cmd.parserDirectives?.subcommandsMatchUniquePrefix === true,
-    );
+    const matchesPrefix = path.some((cmd) => cmd.parserDirectives?.subcommandsMatchUniquePrefix === true);
 
     if (!matchesPrefix) return;
 
@@ -631,10 +621,7 @@ async function runStep(
  * may ignore these issues, producing correct output that _appears_ to be
  * wrong.
  */
-export function test(
-  spec: Subcommand,
-  options: TestOptions = {},
-): (t?: TestContextLike) => Promise<void> {
+export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestContextLike) => Promise<void> {
   const {
     allowShadowingPersistentOptions = false,
     allowNoDescription = false,
@@ -833,8 +820,7 @@ export function test(
       await runStep(
         t,
         getName(namingStyle, {
-          sentence:
-            "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
+          sentence: "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
           function: "assertPrefixMatchCommandsHaveNoArguments",
         }),
         () => {

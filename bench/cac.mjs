@@ -17,9 +17,7 @@ cli
       ? options.verbose.length
       : Number(Boolean(options.verbose));
     console.log(
-      `build:${inputs.join(",")}:${options.out}:${options.mode ?? "-"}:${Boolean(
-        options.watch,
-      )}:${verbose}`,
+      `build:${inputs.join(",")}:${options.out}:${options.mode ?? "-"}:${Boolean(options.watch)}:${verbose}`,
     );
   });
 

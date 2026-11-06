@@ -279,9 +279,7 @@ test("complete subcommand honors --gate-options", async () => {
   expect(gated.code).toBe(0);
   expectNotIncludes(gated.stdout, "--out");
 
-  const ungated = await captureConsole(() =>
-    run(fixture, ["completion", "complete", "--", "build", ""]),
-  );
+  const ungated = await captureConsole(() => run(fixture, ["completion", "complete", "--", "build", ""]));
   expectIncludes(ungated.stdout, "--out");
 });
 
@@ -304,9 +302,7 @@ test("completion subcommand rejects an unknown shell", async () => {
 });
 
 test("complete subcommand prints resolver candidates", async () => {
-  const result = await captureConsole(() =>
-    run(fixture, ["completion", "complete", "--", "remote", ""]),
-  );
+  const result = await captureConsole(() => run(fixture, ["completion", "complete", "--", "remote", ""]));
   expect(result.code).toBe(0);
   expectIncludes(result.stdout, "remove");
 });

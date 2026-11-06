@@ -679,9 +679,7 @@ test("parse: infinitely repeatable options work", () => {
   expect(parse(["--rep", "--rep", "--rep", "--rep"], spec).options).toEqual(
     map({ "--rep": ["", "", "", ""], "-r": ["", "", "", ""] }),
   );
-  expect(parse(["-rrrr"], spec).options).toEqual(
-    map({ "--rep": ["", "", "", ""], "-r": ["", "", "", ""] }),
-  );
+  expect(parse(["-rrrr"], spec).options).toEqual(map({ "--rep": ["", "", "", ""], "-r": ["", "", "", ""] }));
 });
 
 test("parse: finite repeatable options work", () => {
@@ -689,9 +687,7 @@ test("parse: finite repeatable options work", () => {
     name: "command",
     options: [{ name: ["-r", "--rep"], isRepeatable: 2 }],
   };
-  expect(parse(["--rep", "--rep"], spec).options).toEqual(
-    map({ "--rep": ["", ""], "-r": ["", ""] }),
-  );
+  expect(parse(["--rep", "--rep"], spec).options).toEqual(map({ "--rep": ["", ""], "-r": ["", ""] }));
   expect(parse(["-rr"], spec).options).toEqual(map({ "--rep": ["", ""], "-r": ["", ""] }));
   expect(() => parse(["--rep", "--rep", "--rep"], spec)).toThrow();
   expect(() => parse(["-rrr"], spec)).toThrow();
@@ -731,15 +727,10 @@ test("parse: requiresSeparator with optional argument", () => {
 test("parse: requiresSeparator with optional argument and following option", () => {
   const spec: Spec = {
     name: "command",
-    options: [
-      { name: "--sep", requiresSeparator: true, args: { isOptional: true } },
-      { name: "--example" },
-    ],
+    options: [{ name: "--sep", requiresSeparator: true, args: { isOptional: true } }, { name: "--example" }],
     args: { isOptional: true },
   };
-  expect(parse(["--sep", "--example"], spec).options).toEqual(
-    map({ "--sep": [], "--example": [] }),
-  );
+  expect(parse(["--sep", "--example"], spec).options).toEqual(map({ "--sep": [], "--example": [] }));
 });
 
 test("parse: requiresSeparator with optional argument and following subcommand", () => {

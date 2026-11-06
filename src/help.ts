@@ -2,10 +2,7 @@ import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } fr
 import { closestChoice } from "./suggest.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";
 
-function getNamed<T extends { name: SingleOrArray<string> }>(
-  named: readonly T[],
-  name: string,
-): T | null {
+function getNamed<T extends { name: SingleOrArray<string> }>(named: readonly T[], name: string): T | null {
   return named.find((obj) => makeArray(obj.name).includes(name)) ?? null;
 }
 
@@ -69,9 +66,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
   }
 
   if (command === "") {
-    printActionError(
-      `Expected a command, but the value was empty\n\n${help({ description: false })}`,
-    );
+    printActionError(`Expected a command, but the value was empty\n\n${help({ description: false })}`);
     return 1;
   }
 
@@ -141,9 +136,7 @@ export const helpCommand: Subcommand = {
 
     const command = getNamed(parent.subcommands, commandName);
     if (!command) {
-      const subcommands = parent.subcommands
-        .filter((cmd) => !cmd.hidden)
-        .flatMap((cmd) => cmd.name);
+      const subcommands = parent.subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
 
       if (subcommands.length > 0) {
         printActionError(
@@ -224,10 +217,7 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
 
   if (commands.length === 1 && subcommands.length === 0) {
     optionObjects = command.options ? command.options.filter((option) => !option.hidden) : [];
-    options = optionObjects.map((option) => [
-      optionToString(option),
-      option.description ?? defaultDesc,
-    ]);
+    options = optionObjects.map((option) => [optionToString(option), option.description ?? defaultDesc]);
   } else {
     persistentOptionObjects = commands
       .map((command) => command.options)
@@ -240,14 +230,9 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
       option.description ?? defaultDesc,
     ]);
 
-    optionObjects = (command.options ?? []).filter(
-      (option) => !option.hidden && !option.isPersistent,
-    );
+    optionObjects = (command.options ?? []).filter((option) => !option.hidden && !option.isPersistent);
 
-    options = optionObjects.map((option) => [
-      optionToString(option),
-      option.description ?? defaultDesc,
-    ]);
+    options = optionObjects.map((option) => [optionToString(option), option.description ?? defaultDesc]);
   }
 
   const usage = (() => {

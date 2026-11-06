@@ -42,9 +42,7 @@ test("testing: assertOptionsHaveDifferentNamesFromParents", () => {
 
   // Different options with exactly the same names
   expect(() => check(withChild({ name: "-C", args: {} }, { name: "-C" }))).toThrow();
-  expect(() =>
-    check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["--cd", "-C"] })),
-  ).toThrow();
+  expect(() => check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["--cd", "-C"] }))).toThrow();
   expect(() =>
     check({
       name: "test",
@@ -167,11 +165,7 @@ test("testing: assertRepeatableOptionsArePositiveIntegers", () => {
   Testing.assertRepeatableOptionsArePositiveIntegers({ name: "test" });
   Testing.assertRepeatableOptionsArePositiveIntegers({
     name: "test",
-    options: [
-      { name: "one" },
-      { name: "two", isRepeatable: 2 },
-      { name: "three", isRepeatable: 2 },
-    ],
+    options: [{ name: "one" }, { name: "two", isRepeatable: 2 }, { name: "three", isRepeatable: 2 }],
   });
   Testing.assertRepeatableOptionsArePositiveIntegers({
     name: "test",

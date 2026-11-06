@@ -12,10 +12,7 @@ test("scan: empty", () => {
 });
 
 test("scan: args", () => {
-  expect(parse(["one", "two"], { name: "test", args: { isVariadic: true } }).args).toEqual([
-    "one",
-    "two",
-  ]);
+  expect(parse(["one", "two"], { name: "test", args: { isVariadic: true } }).args).toEqual(["one", "two"]);
 });
 
 test("scan: arg separator", () => {
@@ -93,23 +90,9 @@ test("scan: anonymous options", () => {
 test("scan: chained options", () => {
   const spec: Spec = {
     name: "test",
-    options: [
-      { name: "-x" },
-      { name: "-y" },
-      { name: "-z" },
-      { name: "+x" },
-      { name: "+y" },
-      { name: "+z" },
-    ],
+    options: [{ name: "-x" }, { name: "-y" }, { name: "-z" }, { name: "+x" }, { name: "+y" }, { name: "+z" }],
   };
-  expect([...parse(["-xyz", "+xyz"], spec).options.keys()]).toEqual([
-    "-x",
-    "-y",
-    "-z",
-    "+x",
-    "+y",
-    "+z",
-  ]);
+  expect([...parse(["-xyz", "+xyz"], spec).options.keys()]).toEqual(["-x", "-y", "-z", "+x", "+y", "+z"]);
 });
 
 test("scan: subcommand", () => {
