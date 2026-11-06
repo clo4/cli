@@ -1,3 +1,4 @@
 timestamp_utc,commit,node_version,samples,top-level-help_lode_self_med,nested-help-3-levels_lode_self_med,build-variadic-options_lode_self_med,alias-dispatch_lode_self_med,nested-dispatch_lode_self_med,second-group_lode_self_med,unknown-option_lode_self_med,geomean_clo4-cli,geomean_commander,geomean_yargs,geomean_cac
 2026-11-02T10:54:19.051Z,7be7e35301cf00734974ea3ba3465e8d01255293,v26.13.0,150,1.4824,1.5131,1.3192,1.2412,1.2919,1.1683,1.6993,1.3777,5.4579,28.9782,1.4796
 2026-11-06T12:50:44.977Z,0d63542d43a917858f1a681b0f05448e3c63c94c,v26.13.0,150,1.2065,1.2293,1.4286,1.3885,1.3943,1.2558,1.5206,1.3418,6.1495,38.5573,1.9112
+2026-11-06T12:57:40.437Z,a717102de286b0c4f3e5fb9322e66178c808a0eb,v26.13.0,150,1.6582,1.7034,1.9372,1.8970,1.8915,1.6942,2.0720,1.8307,7.2751,52.1820,2.7171
