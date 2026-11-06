@@ -130,6 +130,9 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
   // previous command's, and its persistent options are added to the inherited ones.
   const enterCommand = (command: Spec | Subcommand) => {
     local = [];
+    // The previous command's options aren't valid here, so neither are its
+    // required ones.
+    localRequired.length = 0;
     if (command.options) {
       for (const option of command.options) {
         if (option.isPersistent) {

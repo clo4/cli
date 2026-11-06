@@ -455,15 +455,14 @@ test("parse: non-persistent options can be used before a subcommand", () => {
   expect(() => parse(["subcommand", "--not-persistent"], spec)).toThrow();
 });
 
-test("parse: a parent's required option is supplied before the subcommand", () => {
+test("parse: a parent's required option can be supplied before the subcommand", () => {
   const spec: Spec = {
     name: "test",
     options: [{ name: "--req", isRequired: true }],
     subcommands: [{ name: "sub" }],
   };
   expect(parse(["--req", "sub"], spec).path).toHaveLength(2);
-  expect(() => parse(["sub"], spec)).toThrow();
-  expect(() => parse(["sub", "--req"], spec)).toThrow();
+  expect(() => parse(["sub", "--req"], spec)).toThrow(UnknownOption);
 });
 
 test("parse: an option's value doesn't stop subcommand matching", () => {
