@@ -120,12 +120,16 @@ function readLine(spec: Spec, before: readonly string[]): CompletionState {
   };
 }
 
-/** Does any command on the path enable a sticky parser directive? */
+/** A directive's value in effect (the deepest command that sets it). */
 function directiveOnPath(
   path: readonly Subcommand[],
   key: "optionsMustPrecedeArguments" | "flagsArePosixNoncompliant",
 ): boolean {
-  return path.some((command) => command.parserDirectives?.[key]);
+  for (let i = path.length - 1; i >= 0; i--) {
+    const value = path[i].parserDirectives?.[key];
+    if (typeof value === "boolean") return value;
+  }
+  return false;
 }
 
 /** The option-arg separators in effect (the deepest command that sets them). */

@@ -211,6 +211,22 @@ test("runtime: optionsMustPrecedeArguments hides options after a positional", as
   expect(values(await resolve(spec, ["arg"], ""))).not.toContain("--f");
 });
 
+test("runtime: a subcommand can turn off optionsMustPrecedeArguments", async () => {
+  const spec: Spec = {
+    name: "x",
+    parserDirectives: { optionsMustPrecedeArguments: true },
+    subcommands: [
+      {
+        name: "sub",
+        parserDirectives: { optionsMustPrecedeArguments: false },
+        args: { name: "a" },
+        options: [{ name: "--f" }],
+      },
+    ],
+  };
+  expect(values(await resolve(spec, ["sub", "arg"], ""))).toContain("--f");
+});
+
 test("runtime: required options are annotated", async () => {
   const spec: Spec = {
     name: "x",

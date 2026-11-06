@@ -164,8 +164,13 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
       if (directives.optionArgSeparators) {
         separators = asArray(directives.optionArgSeparators);
       }
-      if (directives.subcommandsMatchUniquePrefix) subcommandsMatchUniquePrefix = true;
-      if (directives.optionsMustPrecedeArguments) optionsMustPrecedeArguments = true;
+      // A subcommand inherits each directive until it sets its own.
+      if (typeof directives.subcommandsMatchUniquePrefix === "boolean") {
+        subcommandsMatchUniquePrefix = directives.subcommandsMatchUniquePrefix;
+      }
+      if (typeof directives.optionsMustPrecedeArguments === "boolean") {
+        optionsMustPrecedeArguments = directives.optionsMustPrecedeArguments;
+      }
       if (typeof directives.flagsArePosixNoncompliant === "boolean") {
         posixCompliantOptions = !directives.flagsArePosixNoncompliant;
       }
