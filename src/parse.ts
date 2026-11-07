@@ -421,6 +421,21 @@ class Scanner {
   }
 
   /**
+   * Add a value attached to the option's own token. It's the option's only
+   * value, so no later token can be one.
+   */
+  private addAttachedValue(
+    index: number,
+    start: number,
+    end: number,
+    value: string,
+    separator: string,
+  ): void {
+    this.addValue(index, start, end, value, separator);
+    this.valueMin = this.separateValueMax = 0;
+  }
+
+  /**
    * Whether the command already has all the arguments it takes. A command that
    * requires a subcommand takes any number, because they're a mistyped
    * subcommand that its usage action reports.
@@ -485,7 +500,7 @@ class Scanner {
     const dashOption = this.findOption(leadingChar);
     if (dashOption?.args && !this.findOption(token.slice(0, 2))) {
       this.useOption(dashOption, leadingChar);
-      this.addValue(index, 1, token.length, token.slice(1), "");
+      this.addAttachedValue(index, 1, token.length, token.slice(1), "");
       return;
     }
 
@@ -511,7 +526,7 @@ class Scanner {
       // fails like `--verbose=1`, unless the next character is an option.
       if (option.args || (sep && !this.findOption(leadingChar + token[char + 1]))) {
         const argStart = char + sep.length + 1;
-        this.addValue(index, argStart, token.length, token.slice(argStart), sep);
+        this.addAttachedValue(index, argStart, token.length, token.slice(argStart), sep);
         return;
       }
     }
@@ -529,7 +544,7 @@ class Scanner {
       this.useOption(option, optionName);
       if (found) {
         const valueStart = found.index + found.sep.length;
-        this.addValue(index, valueStart, token.length, token.slice(valueStart), found.sep);
+        this.addAttachedValue(index, valueStart, token.length, token.slice(valueStart), found.sep);
       }
       return true;
     }

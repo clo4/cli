@@ -1489,3 +1489,24 @@ test("parse: '--' after an argument is an argument when options must precede arg
   // Before any argument, it still ends the options.
   expect(parse(["--", "-x"], spec).argSeparatorIndex).toBe(0);
 });
+
+test("parse: an attached value is the option's only value", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isOptional: true },
+    options: [
+      { name: "--two", args: [{}, {}] },
+      { name: "--many", args: { isVariadic: true } },
+      { name: "-m", args: { isVariadic: true } },
+    ],
+  };
+  expect(() => parse(["--two=a", "b"], spec)).toThrow("Option needs 2 arguments");
+  for (const input of [
+    ["--many=a", "b"],
+    ["-ma", "b"],
+  ]) {
+    const result = parse(input, spec);
+    expect([...result.options.values()]).toEqual([["a"]]);
+    expect(result.args).toEqual(["b"]);
+  }
+});

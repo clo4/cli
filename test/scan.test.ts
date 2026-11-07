@@ -205,7 +205,9 @@ test("scan: an option with room for values is reported as open", () => {
   const option: Option = { name: "--tags", args: { isVariadic: true } };
   const spec: Spec = { name: "test", options: [option] };
   expect(scan(["--tags"], spec, false).openOption).toEqual({ option, valueCount: 0 });
-  expect(scan(["--tags=a", "b"], spec, false).openOption).toEqual({ option, valueCount: 2 });
+  expect(scan(["--tags", "a", "b"], spec, false).openOption).toEqual({ option, valueCount: 2 });
+  // An attached value is the option's only value.
+  expect(scan(["--tags=a"], spec, false).openOption).toBeNull();
 });
 
 test("scan: '--' closes an open option", () => {

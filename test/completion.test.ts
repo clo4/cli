@@ -168,13 +168,18 @@ test("runtime: '--' closes an open option", async () => {
 });
 
 test("runtime: a variadic option offers values and options after its first value", async () => {
-  for (const before of [["--tags=a"], ["--tags", "a"]]) {
-    const v = values(await resolve(openOptionSpec, before, ""));
-    expect(v).toContain("T1");
-    expect(v).toContain("--watch");
-    expect(v).not.toContain("--tags");
-    expect(v).not.toContain("P1");
-  }
+  const v = values(await resolve(openOptionSpec, ["--tags", "a"], ""));
+  expect(v).toContain("T1");
+  expect(v).toContain("--watch");
+  expect(v).not.toContain("--tags");
+  expect(v).not.toContain("P1");
+});
+
+test("runtime: a variadic option's attached value is its only value", async () => {
+  const v = values(await resolve(openOptionSpec, ["--tags=a"], ""));
+  expect(v).not.toContain("T1");
+  expect(v).toContain("P1");
+  expect(v).toContain("--watch");
 });
 
 test("runtime: a variadic option without suggestions still offers options", async () => {
@@ -182,8 +187,8 @@ test("runtime: a variadic option without suggestions still offers options", asyn
 });
 
 test("runtime: gateOptions applies after a variadic option's first value", async () => {
-  expect(values(await resolve(openOptionSpec, ["--tags=a"], "", true))).toEqual(["T1"]);
-  const dashed = values(await resolve(openOptionSpec, ["--tags=a"], "-", true));
+  expect(values(await resolve(openOptionSpec, ["--tags", "a"], "", true))).toEqual(["T1"]);
+  const dashed = values(await resolve(openOptionSpec, ["--tags", "a"], "-", true));
   expect(dashed).toContain("--watch");
   expect(dashed).not.toContain("T1");
 });
