@@ -507,3 +507,58 @@ test("runtime: an attached value completes for the option the parser would pick"
   expect(values(await resolve(spec, ["sub"], "--config="))).toEqual(["--config=SUB"]);
   expect(values(await resolve(spec, ["sub"], "-c="))).toEqual(["-c=ROOT"]);
 });
+
+test("runtime: a chained short option's attached value completes", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "-v" }, { name: "-o", args: { suggestions: ["out"] } }],
+  };
+  expect(values(await resolve(spec, [], "-vo="))).toEqual(["-vo=out"]);
+  expect(values(await resolve(spec, [], "-o"))).toContain("-o");
+  expect(values(await resolve(spec, [], "-ou"))).toEqual(["-oout"]);
+});
+
+test("runtime: an attached value only completes after the separator the option requires", async () => {
+  const spec: Spec = {
+    name: "x",
+    parserDirectives: { optionArgSeparators: ["=", ":"] },
+    options: [{ name: "--o", requiresSeparator: ":", args: { suggestions: ["v"] } }],
+  };
+  expect(values(await resolve(spec, [], "--o="))).not.toContain("--o=v");
+  expect(values(await resolve(spec, [], "--o:"))).toEqual(["--o:v"]);
+});
+
+test("runtime: an optional option value is offered with what else can come next", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: "--color", args: { isOptional: true, suggestions: ["always"] } },
+      { name: "--verbose" },
+    ],
+    subcommands: [{ name: "build" }],
+  };
+  expect(values(await resolve(spec, ["--color"], ""))).toEqual(["always", "build", "--verbose"]);
+});
+
+test("runtime: exclusiveOn on an option used in a parent command hides the option", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: "--x", exclusiveOn: ["--y"] },
+      { name: "--y", isPersistent: true },
+    ],
+    subcommands: [{ name: "s" }],
+  };
+  expect(values(await resolve(spec, ["s"], ""))).toContain("--y");
+  expect(values(await resolve(spec, ["--x", "s"], ""))).not.toContain("--y");
+});
+
+test("runtime: an option isn't offered under a name that a subcommand matches", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: ["-f", "--foo"], description: "option" }],
+    subcommands: [{ name: "--foo", description: "subcommand" }],
+  };
+  const candidates = (await resolve(spec, [], "")).map((c) => `${c.value}:${c.description}`);
+  expect(candidates).toEqual(["--foo:subcommand", "-f:option"]);
+});

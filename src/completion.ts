@@ -4,7 +4,7 @@
  * The `completion` subcommand prints a short script for a supported shell. On
  * every Tab, that script runs the CLI's hidden `completion complete` command
  * with the command line typed so far. The CLI then works out the candidates
- * with the parser's own `scan`, so completion always matches what the parser
+ * with the parser's own `readNext`, so completion always matches what the parser
  * accepts at that position: subcommands, options with their
  * relationship rules, and argument values from `template`, `suggestions` and
  * `generators`.
@@ -12,11 +12,10 @@
  * @module
  */
 
-import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
-import { asArray, makeArray, print, printActionError } from "./util.js";
-import { repeatCount, scan } from "./parse.js";
-import type { Directives } from "./parse.js";
-import type { OptionScope, VisibleOption } from "./scope.js";
+import type { Arg, Spec, Subcommand, Template } from "./types.js";
+import { makeArray, print, printActionError } from "./util.js";
+import { readNext } from "./parse.js";
+import type { Directives, NextToken } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -49,72 +48,6 @@ function fishQuote(value: string): string {
 interface Candidate {
   value: string;
   description?: string;
-}
-
-/** The completion-relevant state of a partial command line. */
-interface CompletionState {
-  /** Commands from the root to the current one. */
-  path: Subcommand[];
-  current: Subcommand;
-  /** Which option each name refers to at the current command. */
-  scope: OptionScope;
-  /** Options a user can see at the current command, with their live names. */
-  visibleOptions: VisibleOption[];
-  /** A option still expecting a separate-token value, or null. */
-  pending: { option: Option; argIndex: number } | null;
-  /** Positional args already consumed by the current command. */
-  positionalIndex: number;
-  /** Option names already present on the line. */
-  presentNames: Set<string>;
-  /** Times each option object has appeared. */
-  countByOption: Map<Option, number>;
-  /** A `--` separator was seen; only positionals follow. */
-  forceArgs: boolean;
-  /** A positional has been consumed by the current command. */
-  sawPositional: boolean;
-  /** The parser directives in effect for the current command. */
-  directives: Directives;
-  /** How many times the parser counts a repeatable option as used. */
-  repeatCount: (option: Option) => number;
-}
-
-/**
- * Read the line typed so far with the parser in lenient mode, which skips
- * anything invalid instead of throwing.
- */
-function readLine(spec: Spec, before: readonly string[]): CompletionState {
-  const scanned = scan(before, spec, false);
-  const path = scanned.path as unknown as Subcommand[];
-
-  // Positionals can't come before a subcommand, so every arg belongs to the
-  // current command.
-  const presentNames = new Set<string>();
-  const countByOption = new Map<Option, number>();
-  for (const option of scanned.seenOptions) {
-    for (const name of makeArray(option.name)) presentNames.add(name);
-    countByOption.set(option, (countByOption.get(option) ?? 0) + 1);
-  }
-
-  const open = scanned.openOption;
-  const pending = open ? { option: open.option, argIndex: open.valueCount } : null;
-
-  const { scope } = scanned;
-  const { local, persistent } = scope.visible();
-
-  return {
-    path,
-    current: path[path.length - 1],
-    scope,
-    visibleOptions: [...local, ...persistent],
-    pending,
-    positionalIndex: scanned.args.length,
-    presentNames,
-    countByOption,
-    forceArgs: scanned.argSeparatorIndex !== -1,
-    sawPositional: scanned.args.length > 0,
-    directives: scope.directives,
-    repeatCount: (option) => repeatCount(scanned.options, scanned.repeatCounts, asArray(option.name)),
-  };
 }
 
 /** Enumerate filesystem entries matching `partial` for a path template. */
@@ -176,22 +109,9 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
   return candidates;
 }
 
-/** Pick the argument at an index, reusing a final variadic argument. */
-function argAt(args: readonly Arg[], index: number): Arg | undefined {
-  if (args.length === 0) return undefined;
-  if (index < args.length) return args[index];
-  const last = args[args.length - 1];
-  return last?.isVariadic ? last : undefined;
-}
-
-/** Pick the argument being completed at a positional index (honors variadic). */
-function positionalArg(command: Subcommand, index: number): Arg | undefined {
-  return argAt(asArray(command.args) as readonly Arg[], index);
-}
-
 /** Decide which kinds of candidate the word being completed can use. */
-function wantedCandidates(state: CompletionState, req: CompletionRequest) {
-  const posixNoncompliant = state.directives.flagsArePosixNoncompliant;
+function wantedCandidates(directives: Directives, req: CompletionRequest) {
+  const posixNoncompliant = directives.flagsArePosixNoncompliant;
   const partialIsOption = !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
   // When gating, a dashed word completes options only; everything else completes
   // commands/positionals. Posix-noncompliant options have no dash, so they're
@@ -214,141 +134,62 @@ export interface CompletionRequest {
 }
 
 /**
- * Resolve completion candidates for a partial command line, reading it with the
- * parser's `scan` for context. Dispatches between completing a option's value and
- * completing a fresh token (subcommand / positional / option).
+ * Resolve completion candidates for a partial command line. The parser works
+ * out what the word can be with {@link readNext}, and this offers candidates
+ * for each of those.
  */
 export async function completeRuntime(req: CompletionRequest): Promise<Candidate[]> {
-  const state = readLine(req.spec, req.before);
-  const separators = state.directives.optionArgSeparators;
-
-  const optionValue = await resolveOptionValue(state, req, separators);
-  if (optionValue) return optionValue;
-
-  return freshTokenCandidates(state, req);
-}
-
-/**
- * Candidates when the word being completed is a option's value — either attached
- * (`--option=value`) or the separate token after a option that expects one. Returns
- * null when no option value is being completed.
- */
-async function resolveOptionValue(
-  state: CompletionState,
-  req: CompletionRequest,
-  separators: readonly string[],
-): Promise<Candidate[] | null> {
+  const next = readNext(req.spec, req.before, req.partial);
   const tokens = [...req.before];
 
-  // `--option<sep>value`: the partial already carries a separator. Where the
-  // parser would read the word as an argument, it's not an option's value.
-  for (const separator of optionsBlocked(state) ? [] : separators) {
-    const at = req.partial.indexOf(separator);
-    if (at <= 0) continue;
-    const optionName = req.partial.slice(0, at);
-    const option = state.scope.resolve(optionName);
-    const arg = option && (asArray(option.args) as Arg[])[0];
-    if (option && arg) {
-      const valuePrefix = req.partial.slice(at + separator.length);
-      const values = await argValues(arg, tokens, valuePrefix);
-      return values.map((candidate) => ({
-        value: `${optionName}${separator}${candidate.value}`,
-        description: candidate.description,
-      }));
-    }
+  // The word is an option with a value attached, like `--mode=fa`.
+  if (next.attached) {
+    const { prefix, arg, value } = next.attached;
+    const values = await argValues(arg, tokens, value);
+    return values.map((candidate) => ({
+      value: prefix + candidate.value,
+      description: candidate.description,
+    }));
   }
 
-  // The separate-token value of a option that expects one.
-  if (state.pending) {
-    const { option, argIndex } = state.pending;
-    const args = asArray(option.args) as readonly Arg[];
-    const arg = argAt(args, argIndex);
-    if (argIndex < args.length) {
-      return arg ? argValues(arg, tokens, req.partial) : [];
-    }
-    // Past its declared args, a variadic option takes another value or gives
-    // way to the next option.
-    const { wantValues, wantOptions } = wantedCandidates(state, req);
-    return [
-      ...(arg && wantValues ? await argValues(arg, tokens, req.partial) : []),
-      ...(wantOptions ? allowedOptionCandidates(state) : []),
-    ];
+  // The open option needs this word as its value.
+  if (next.value?.required) {
+    return next.value.arg ? argValues(next.value.arg, tokens, req.partial) : [];
   }
 
-  return null;
-}
-
-/** Candidates when completing a fresh token: subcommand / positional / option. */
-async function freshTokenCandidates(state: CompletionState, req: CompletionRequest): Promise<Candidate[]> {
   const candidates: Candidate[] = [];
-  const tokens = [...req.before];
-
-  const { wantValues, wantOptions } = wantedCandidates(state, req);
-
+  const { wantValues, wantOptions } = wantedCandidates(next.scope.directives, req);
   if (wantValues) {
-    const positional = positionalArg(state.current, state.positionalIndex);
-    if (positional) {
-      candidates.push(...(await argValues(positional, tokens, req.partial)));
-    }
-    // After `--`, only positionals are valid.
-    if (state.forceArgs) return candidates;
-
-    // Subcommands — only while the parser would still match one.
-    if (!state.sawPositional) {
-      for (const sub of state.current.subcommands ?? []) {
-        if (sub.hidden) continue;
-        const description = firstLine(sub.description);
-        for (const token of makeArray(sub.name)) {
-          candidates.push({ value: token, description });
-        }
+    // While an option can take another value, a word that isn't an option or
+    // subcommand is its value instead of an argument.
+    const arg = next.value ? next.value.arg : next.arg;
+    if (arg) candidates.push(...(await argValues(arg, tokens, req.partial)));
+    for (const sub of next.subcommands) {
+      if (sub.hidden) continue;
+      const description = firstLine(sub.description);
+      for (const token of makeArray(sub.name)) {
+        candidates.push({ value: token, description });
       }
     }
-  } else if (state.forceArgs) {
-    // A dashed token after `--` is a literal argument, not a option.
-    return candidates;
   }
-
-  if (wantOptions) {
-    candidates.push(...allowedOptionCandidates(state));
+  if (wantOptions && next.optionsAllowed) {
+    candidates.push(...optionCandidates(next));
   }
-
   return candidates;
 }
 
-/** Whether the parser would read the next word as an argument even if it names an option. */
-function optionsBlocked(state: CompletionState): boolean {
-  return state.forceArgs || (state.sawPositional && state.directives.optionsMustPrecedeArguments);
-}
-
-/** Option candidates, unless options can't be used here. */
-function allowedOptionCandidates(state: CompletionState): Candidate[] {
-  return optionsBlocked(state) ? [] : optionCandidates(state);
-}
-
-/** Eligible option candidates after relationship filtering. */
-function optionCandidates(state: CompletionState): Candidate[] {
+/** The options a user can use next, required ones first. */
+function optionCandidates(next: NextToken): Candidate[] {
   const required: Candidate[] = [];
   const optional: Candidate[] = [];
+  const { local, persistent } = next.scope.visible();
 
-  for (const { option, names } of state.visibleOptions) {
-    // Repeatable limits: drop a option that can't appear again.
-    const count = option.isRepeatable ? state.repeatCount(option) : (state.countByOption.get(option) ?? 0);
-    if (count > 0) {
-      if (!option.isRepeatable) continue;
-      if (typeof option.isRepeatable === "number" && count >= option.isRepeatable) {
-        continue;
-      }
-    }
-
-    // Mutual exclusion, both directions.
-    if (option.exclusiveOn?.some((name) => state.presentNames.has(name))) continue;
-    const conflicts = [...state.scope.local, ...state.scope.persistent].some(
-      (other) =>
-        other !== option &&
-        makeArray(other.name).some((name) => state.presentNames.has(name)) &&
-        other.exclusiveOn?.some((name) => names.includes(name)),
-    );
-    if (conflicts) continue;
+  for (const { option, names } of [...local, ...persistent]) {
+    // The parser lets a later use of an option override an earlier one, but
+    // that's rarely what someone wants, so an option that isn't repeatable is
+    // offered once.
+    if (!option.isRepeatable && next.seenOptions.includes(option)) continue;
+    if (next.conflicts(option)) continue;
 
     let description = firstLine(option.description);
     if (option.dependsOn) {
@@ -361,10 +202,12 @@ function optionCandidates(state: CompletionState): Candidate[] {
 
     // requiresSeparator options can only take an attached value, so offer the
     // separator form so the next Tab completes the value.
-    const sep = state.scope.requiredSeparator(option);
+    const sep = next.scope.requiredSeparator(option);
 
     const bucket = option.isRequired ? required : optional;
     for (const token of names) {
+      // The parser reads a name that a subcommand matches as that subcommand.
+      if (next.subcommandFor(token)) continue;
       bucket.push({ value: sep ? `${token}${sep}` : token, description });
     }
   }

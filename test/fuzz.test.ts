@@ -9,9 +9,10 @@ import { expect, test } from "vitest";
 
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
-import { getMaxArgs, scan } from "../src/parse.js";
+import { getMaxArgs, readNext, scan } from "../src/parse.js";
 import type { Directives } from "../src/parse.js";
 import type { Spec, Subcommand } from "../src/types.js";
+import * as Testing from "../src/testing.js";
 import { asArray } from "../src/util.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { generator, shrink } from "./fuzz/generate.js";
@@ -134,5 +135,66 @@ test("completion never throws on random specs", async () => {
     } catch (error) {
       expect.fail(report(n, spec, [...before, partial], `completion threw: ${String(error)}`));
     }
+  }
+});
+
+const specChecks = [
+  Testing.assertLongOptionNamesDoNotStartWithSingleDash,
+  Testing.assertOptionNamesStartWithDashes,
+  Testing.assertOptionsHaveLocallyUniqueNames,
+  Testing.assertSubcommandsHaveLocallyUniqueNames,
+  Testing.assertNothingIsNamedDashDash,
+  Testing.assertPlusMinusOptionsTakeOneArg,
+];
+
+/** An option or subcommand that completion offers, but that the parser reads as something else. */
+async function offeredButMisread(spec: Spec, before: string[]): Promise<string | null> {
+  // The parser can't read every option of a spec that the spec checker rejects.
+  try {
+    for (const check of specChecks) check(spec);
+  } catch {
+    return null;
+  }
+  const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));
+  const next = readNext(spec, before, "");
+  const seen = next.seenOptions.length;
+  const depth = next.path.length;
+  const readAfter = (token: string) => scan([...before, token], spec, false);
+  for (const sub of next.subcommands) {
+    for (const name of asArray(sub.name)) {
+      if (!offered.has(name)) continue;
+      const result = readAfter(name);
+      if (result.path.length !== depth + 1 || result.path[depth] !== sub) {
+        return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
+      }
+    }
+  }
+  const { local, persistent } = next.scope.visible();
+  for (const { option, names } of [...local, ...persistent]) {
+    const sep = next.scope.requiredSeparator(option) ?? "";
+    for (const name of names) {
+      // An option named "-" or "+" only takes a value attached to it, like
+      // `-5`. A name a subcommand matches is offered as that subcommand.
+      if (!offered.has(name + sep) || name === "-" || name === "+" || next.subcommandFor(name)) continue;
+      const result = readAfter(name);
+      if (
+        result.path.length !== depth ||
+        result.seenOptions.length !== seen + 1 ||
+        result.seenOptions[seen] !== option
+      ) {
+        return `option ${JSON.stringify(name)} is offered, but isn't read as that option`;
+      }
+    }
+  }
+  return null;
+}
+
+test("completion only offers options and subcommands the parser reads as such", async () => {
+  for (const n of caseNumbers()) {
+    const gen = generator(caseSeed(n));
+    const spec = gen.spec();
+    const input = gen.input(spec);
+    if ((await offeredButMisread(spec, input)) === null) continue;
+    expect.fail(report(n, spec, input, (await offeredButMisread(spec, input)) ?? ""));
   }
 });
