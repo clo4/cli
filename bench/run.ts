@@ -55,11 +55,11 @@ class BenchmarkInterrupted extends Error {
 
 const benchDir = fileURLToPath(new URL("..", import.meta.url));
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
-const timingFile = join(tmpdir(), `lode-bench-${process.pid}.txt`);
+const timingFile = join(tmpdir(), `clo4-cli-bench-${process.pid}.txt`);
 
 const adapters: readonly Adapter[] = [
   ["baseline", new URL("../baseline.mjs", import.meta.url)],
-  ["@clo4/cli", new URL("../lode.mjs", import.meta.url)],
+  ["@clo4/cli", new URL("../clo4-cli.mjs", import.meta.url)],
   ["Commander", new URL("../commander.mjs", import.meta.url)],
   ["Yargs", new URL("../yargs.mjs", import.meta.url)],
   ["Cac", new URL("../cac.mjs", import.meta.url)],
@@ -79,7 +79,7 @@ const scenarios: readonly Scenario[] = [
 ];
 
 process.exitCode = await CLI.run({
-  name: "lode-cli-bench",
+  name: "clo4-cli-bench",
   description: "Benchmark @clo4/cli against other JavaScript CLI libraries.",
   options: [
     CLI.help,
@@ -118,7 +118,7 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     return 1;
   }
 
-  const bundleDir = mkdtempSync(join(tmpdir(), "lode-bench-compiled-"));
+  const bundleDir = mkdtempSync(join(tmpdir(), "clo4-cli-bench-compiled-"));
 
   try {
     const libraries = await bundleAdapters(bundleDir);
@@ -207,7 +207,8 @@ function buildCsv(
 
   const cell = (value: number): string => (Number.isFinite(value) ? value.toFixed(4) : "");
 
-  // Per-scenario @clo4/cli self medians.
+  // Per-scenario @clo4/cli self medians. The columns keep the library's old
+  // name, lode, so new rows line up with the history file.
   for (const [scenario] of scenarios) {
     header.push(`${slug(scenario)}_lode_self_med`);
     row.push(cell(stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median));
@@ -387,8 +388,8 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
 }
 
 function printComparison(results: Map<string, Bucket>, measuredLibraries: readonly Library[]): void {
-  const lode = measuredLibraries.find(([library]) => library === "@clo4/cli");
-  if (lode === undefined) {
+  const ours = measuredLibraries.find(([library]) => library === "@clo4/cli");
+  if (ours === undefined) {
     return;
   }
 
@@ -402,30 +403,30 @@ function printComparison(results: Map<string, Bucket>, measuredLibraries: readon
       continue;
     }
 
-    const lodeMedians: number[] = [];
+    const ourMedians: number[] = [];
     const otherMedians: number[] = [];
     for (const [scenario] of scenarios) {
-      const lodeMedian = stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median;
+      const ourMedian = stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median;
       const otherMedian = stats(results.get(keyFor(library, scenario))?.selfTimes ?? []).median;
-      if (Number.isFinite(lodeMedian) && Number.isFinite(otherMedian) && lodeMedian > 0 && otherMedian > 0) {
-        lodeMedians.push(lodeMedian);
+      if (Number.isFinite(ourMedian) && Number.isFinite(otherMedian) && ourMedian > 0 && otherMedian > 0) {
+        ourMedians.push(ourMedian);
         otherMedians.push(otherMedian);
       }
     }
 
-    const lodeMean = geometricMean(lodeMedians);
+    const ourMean = geometricMean(ourMedians);
     const otherMean = geometricMean(otherMedians);
     console.log(
-      formatComparisonRow([library, fmt(lodeMean), fmt(otherMean), comparisonText(lodeMean, otherMean)]),
+      formatComparisonRow([library, fmt(ourMean), fmt(otherMean), comparisonText(ourMean, otherMean)]),
     );
   }
 }
 
-function comparisonText(lode: number, other: number): string {
-  if (!Number.isFinite(lode) || !Number.isFinite(other) || lode <= 0 || other <= 0) {
+function comparisonText(ours: number, other: number): string {
+  if (!Number.isFinite(ours) || !Number.isFinite(other) || ours <= 0 || other <= 0) {
     return "n/a";
   }
-  const ratio = other / lode;
+  const ratio = other / ours;
   if (Math.abs(ratio - 1) < 0.005) {
     return "same speed";
   }
