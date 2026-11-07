@@ -1433,3 +1433,9 @@ test("parse: a value attached to a short option without args says it takes none"
   const chained: Spec = { name: "test", options: [{ name: "-v" }, { name: "-=" }] };
   expect(parse(["-v="], chained).options).toEqual(map({ "-v": [], "-=": [] }));
 });
+
+test("parse: requiresSeparator true rejects a short option's unseparated value", () => {
+  const spec: Spec = { name: "test", options: [{ name: "-o", args: {}, requiresSeparator: true }] };
+  expect(parse(["-o=val"], spec).options).toEqual(map({ "-o": ["val"] }));
+  expect(() => parse(["-oval"], spec)).toThrow("Missing separator, use '=' between -o and its value");
+});

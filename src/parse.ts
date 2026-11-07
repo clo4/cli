@@ -406,6 +406,13 @@ class Scanner {
         `Incorrect separator, use '${requiredSeparator}' instead of '${separator}'`,
       );
     }
+    if (this.strict && requiredSeparator === true && separator === "") {
+      const suggested = this.directives.optionArgSeparators[0] ?? "=";
+      throw new ParseError(
+        this.ctx(),
+        `Missing separator, use '${suggested}' between ${this.openOptionName} and its value`,
+      );
+    }
     this.values.push(value);
   }
 
