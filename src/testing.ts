@@ -190,15 +190,9 @@ export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
 /** Asserts that options don't shadow a persistent option */
 export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): void {
   forEachOptionArray(spec, (options, path) => {
-    const persistentOptionNames = new Set(
-      path
-        .slice(0, -1)
-        .flatMap((subcommand) =>
-          subcommand.options
-            ? subcommand.options.filter((option) => option.isPersistent).flatMap((option) => option.name)
-            : [],
-        ),
-    );
+    // The persistent options this command inherits from its parents.
+    const inherited = OptionScope.at(path.slice(0, -1)).persistent;
+    const persistentOptionNames = new Set(inherited.flatMap((option) => makeArray(option.name)));
     for (const [index, option] of makeArray(options).entries()) {
       for (const name of makeArray(option.name)) {
         assert(
