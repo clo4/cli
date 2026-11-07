@@ -33,17 +33,6 @@ export function makeArray1<T>(thing: T | NonEmptyArray<T>): [T, ...T[]] {
   return [thing];
 }
 
-/** Set many keys in a Map to the same value */
-export function setEach<K, V>(map: Map<K, V>, keys: K | readonly K[], value: V): void {
-  if (isArray(keys)) {
-    for (const key of keys) {
-      map.set(key, value);
-    }
-  } else {
-    map.set(keys, value);
-  }
-}
-
 export function assert(expr: unknown, msg = ""): asserts expr {
   if (!expr) {
     throw new Error(msg);

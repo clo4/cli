@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asArray, makeArray, makeArray1, setEach } from "../src/util.js";
+import { asArray, makeArray, makeArray1 } from "../src/util.js";
 
 test("makeArray transforms input to arrays", () => {
   expect(makeArray(undefined)).toEqual([]);
@@ -20,17 +20,4 @@ test("asArray normalizes without copying existing arrays", () => {
 test("makeArray1 transforms input to non-empty arrays", () => {
   expect(makeArray1(1)).toEqual([1]);
   expect(makeArray1([1])).toEqual([1]);
-});
-
-test("setEach maps one or many keys to the same value", () => {
-  const values = new Map<string, number>();
-  setEach(values, "one", 1);
-  setEach(values, ["two", "three"], 2);
-  expect(values).toEqual(
-    new Map([
-      ["one", 1],
-      ["two", 2],
-      ["three", 2],
-    ]),
-  );
 });
