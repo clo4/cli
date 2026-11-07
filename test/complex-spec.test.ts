@@ -167,7 +167,7 @@ test("complex: requiresSeparator accepts an attached arg", async () => {
 test("complex: requiresSeparator rejects a detached arg", async () => {
   const result = await captureConsole(() => run(forge(), ["remote", "add", "origin", "--tag", "stable"]));
   expect(result.code).toBe(1);
-  expect(result.stderr).toMatch(/argument/);
+  expect(result.stderr).toMatch(/^Error: Option --tag needs 1 argument\n/);
 });
 
 // --- Option constraints -------------------------------------------------------

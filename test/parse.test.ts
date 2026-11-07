@@ -918,7 +918,7 @@ test("parse: option with too few arguments and no separator throws", () => {
     options: [{ name: "--pair", args: [{}, {}] }],
   };
   // End of input before the second argument arrives.
-  expect(() => parse(["--pair", "one"], spec)).toThrow(/Option needs 2 arguments/);
+  expect(() => parse(["--pair", "one"], spec)).toThrow(/Option --pair needs 2 arguments/);
 });
 
 test("parse: option interrupted by another option throws too few arguments", () => {
@@ -926,7 +926,7 @@ test("parse: option interrupted by another option throws too few arguments", () 
     name: "command",
     options: [{ name: "--need", args: {} }, { name: "--other" }],
   };
-  expect(() => parse(["--need", "--other"], spec)).toThrow(/Option needs 1 argument/);
+  expect(() => parse(["--need", "--other"], spec)).toThrow(/Option --need needs 1 argument/);
 });
 
 test("parse: argument given to a option that takes none throws", () => {
@@ -1238,9 +1238,11 @@ test("parse: missing option value messages describe the expected count", () => {
     expect(error).toBeInstanceOf(TooFewOptionArguments);
     return (error as Error).message;
   };
-  expect(message([{}, {}])).toBe("Option needs 2 arguments");
-  expect(message([{}, {}, { isOptional: true }])).toBe("Option needs between 2 and 3 arguments");
-  expect(message([{}, {}, { isVariadic: true, isOptional: true }])).toBe("Option needs at least 2 arguments");
+  expect(message([{}, {}])).toBe("Option --o needs 2 arguments");
+  expect(message([{}, {}, { isOptional: true }])).toBe("Option --o needs between 2 and 3 arguments");
+  expect(message([{}, {}, { isVariadic: true, isOptional: true }])).toBe(
+    "Option --o needs at least 2 arguments",
+  );
 });
 
 test("parse: '--' with no room for arguments explains itself", () => {
@@ -1394,7 +1396,7 @@ test("parse: each use of a repeatable option needs its own arguments", () => {
   expect(parse(["--p", "a", "b", "--p", "c", "d"], spec).options).toEqual(
     map({ "--p": ["a", "b", "c", "d"] }),
   );
-  expect(() => parse(["--p", "a", "b", "--p", "c"], spec)).toThrow("Option needs 2 arguments");
+  expect(() => parse(["--p", "a", "b", "--p", "c"], spec)).toThrow("Option --p needs 2 arguments");
 });
 
 test("parse: a variadic option value takes a subcommand's name", () => {
@@ -1512,7 +1514,7 @@ test("parse: an attached value is the option's only value", () => {
       { name: "-m", args: { isVariadic: true } },
     ],
   };
-  expect(() => parse(["--two=a", "b"], spec)).toThrow("Option needs 2 arguments");
+  expect(() => parse(["--two=a", "b"], spec)).toThrow("Option --two needs 2 arguments");
   for (const input of [
     ["--many=a", "b"],
     ["-ma", "b"],

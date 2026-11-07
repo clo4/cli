@@ -67,13 +67,13 @@ export class TooManyArguments extends ParseError {
 }
 
 export class TooFewOptionArguments extends ParseError {
-  constructor(min: number, max: number, context: ErrorContext) {
+  constructor(option: string, min: number, max: number, context: ErrorContext) {
     const msg =
       min === max
-        ? `Option needs ${min} argument${min === 1 ? "" : "s"}`
+        ? `Option ${option} needs ${min} argument${min === 1 ? "" : "s"}`
         : !Number.isFinite(max)
-          ? `Option needs at least ${min} argument${min === 1 ? "" : "s"}`
-          : `Option needs between ${min} and ${max} arguments`;
+          ? `Option ${option} needs at least ${min} argument${min === 1 ? "" : "s"}`
+          : `Option ${option} needs between ${min} and ${max} arguments`;
     super(context, msg);
   }
 }

@@ -255,7 +255,7 @@ class Scanner {
   // previous option.
   private endOption(): void {
     if (this.strict && this.values && this.values.length - this.valuesStart < this.valuesMin) {
-      throw new TooFewOptionArguments(this.valuesMin, this.valuesMax, this.ctx());
+      throw new TooFewOptionArguments(this.openOptionName, this.valuesMin, this.valuesMax, this.ctx());
     }
     this.values = null;
   }
