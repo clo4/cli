@@ -214,152 +214,6 @@ test("testing: assertRequiredArgumentsDoNotFollowOptionalArguments", () => {
   ).toThrow();
 });
 
-test("testing: assertLongOptionNamesDoNotStartWithSingleDash", () => {
-  Testing.assertLongOptionNamesDoNotStartWithSingleDash({ name: "test" });
-  Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-    name: "test",
-    options: [
-      { name: "one" },
-      { name: "--one" },
-      { name: "-o" },
-      { name: "+o" },
-      { name: "-" },
-      { name: "--" },
-    ],
-    subcommands: [
-      {
-        name: "example",
-        options: [{ name: ["-", "--"] }],
-      },
-    ],
-  });
-  Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-    name: "test",
-    parserDirectives: { flagsArePosixNoncompliant: true },
-    options: [{ name: "-one" }],
-  });
-  Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-    name: "test",
-    parserDirectives: { flagsArePosixNoncompliant: true },
-    subcommands: [
-      {
-        name: "example",
-        options: [{ name: "-one" }],
-      },
-    ],
-  });
-  expect(() =>
-    Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-      name: "test",
-      options: [{ name: "-one" }],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-      name: "test",
-      subcommands: [
-        {
-          name: "example",
-          options: [{ name: "-one" }],
-        },
-      ],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertLongOptionNamesDoNotStartWithSingleDash({
-      name: "test",
-      subcommands: [
-        {
-          name: "example",
-          options: [{ name: "+one" }],
-        },
-      ],
-    }),
-  ).toThrow();
-});
-
-test("testing: assertOptionNamesStartWithDashes", () => {
-  Testing.assertOptionNamesStartWithDashes({ name: "test" });
-  Testing.assertOptionNamesStartWithDashes({
-    name: "test",
-    options: [{ name: "--one" }, { name: "-o" }, { name: "-" }, { name: "--" }],
-    subcommands: [
-      {
-        name: "example",
-        options: [{ name: ["-", "--"] }],
-      },
-    ],
-  });
-  Testing.assertOptionNamesStartWithDashes({
-    name: "test",
-    parserDirectives: { flagsArePosixNoncompliant: true },
-    options: [{ name: "example" }],
-    subcommands: [
-      {
-        name: "example",
-        options: [{ name: "one" }],
-      },
-    ],
-  });
-  expect(() =>
-    Testing.assertOptionNamesStartWithDashes({
-      name: "test",
-      options: [{ name: "one" }],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionNamesStartWithDashes({
-      name: "test",
-      subcommands: [
-        {
-          name: "example",
-          options: [{ name: "one" }],
-        },
-      ],
-    }),
-  ).toThrow();
-});
-
-test("testing: assertNothingIsNamedDashDash", () => {
-  Testing.assertNothingIsNamedDashDash({ name: "test" });
-  Testing.assertNothingIsNamedDashDash({
-    name: "test",
-    options: [{ name: "example" }],
-    subcommands: [
-      {
-        name: "example",
-        options: [{ name: "one" }],
-      },
-    ],
-  });
-  expect(() =>
-    Testing.assertNothingIsNamedDashDash({
-      name: "test",
-      options: [{ name: "--" }],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertNothingIsNamedDashDash({
-      name: "test",
-      subcommands: [{ name: "--" }],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertNothingIsNamedDashDash({
-      name: "test",
-      parserDirectives: { flagsArePosixNoncompliant: true },
-      options: [{ name: "--" }],
-    }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertNothingIsNamedDashDash({
-      name: "test",
-      parserDirectives: { flagsArePosixNoncompliant: true },
-      subcommands: [{ name: "--" }],
-    }),
-  ).toThrow();
-});
-
 test("testing: assertOptionArgSeparatorsHaveCharacters", () => {
   Testing.assertOptionArgSeparatorsHaveCharacters({ name: "test" });
   Testing.assertOptionArgSeparatorsHaveCharacters({
@@ -719,55 +573,6 @@ test("testing: assertOptionNameReferencesExist checks a persistent option where 
   });
 });
 
-test("testing: assertRequiredSeparatorsAreUsable", () => {
-  const option = (requiresSeparator: true | string, isPersistent = false): Option => ({
-    name: "--o",
-    args: {},
-    requiresSeparator,
-    ...(isPersistent ? { isPersistent: true } : {}),
-  });
-  Testing.assertRequiredSeparatorsAreUsable({ name: "test", options: [option(true), option("=")] });
-  Testing.assertRequiredSeparatorsAreUsable({
-    name: "test",
-    parserDirectives: { optionArgSeparators: [":", "="] },
-    options: [option(":")],
-  });
-  // The separator isn't one the parser splits at.
-  expect(() => Testing.assertRequiredSeparatorsAreUsable({ name: "test", options: [option(":")] })).toThrow(
-    /`test --o` \(index 0\) requires the separator ':', but/,
-  );
-  // There are no separators at all.
-  expect(() =>
-    Testing.assertRequiredSeparatorsAreUsable({
-      name: "test",
-      parserDirectives: { optionArgSeparators: [] },
-      options: [option(true)],
-    }),
-  ).toThrow(/`test --o` \(index 0\) requires a separator, but/);
-  // A persistent option has to work in every subcommand that inherits it.
-  expect(() =>
-    Testing.assertRequiredSeparatorsAreUsable({
-      name: "test",
-      options: [option("=", true)],
-      subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: ":" } }],
-    }),
-  ).toThrow(/In `test sub`, option `test --o` \(index 0\) requires the separator '=', but/);
-});
-
-test("testing: option name checks use the directives where a persistent option is used", () => {
-  const spec: Subcommand = {
-    name: "t",
-    parserDirectives: { flagsArePosixNoncompliant: true },
-    options: [{ name: "verbose", isPersistent: true }],
-    subcommands: [{ name: "sub", parserDirectives: { flagsArePosixNoncompliant: false } }],
-  };
-  expect(() => Testing.assertOptionNamesStartWithDashes(spec)).toThrow(
-    /^In `t sub`, option `t verbose` \(index 0\) doesn't start with a dash/,
-  );
-  // Without the subcommand turning it off, the option is fine everywhere.
-  Testing.assertOptionNamesStartWithDashes({ ...spec, subcommands: [{ name: "sub" }] });
-});
-
 test("testing: subcommand messages name the subcommand once, with its index", () => {
   const spec: Subcommand = {
     name: "t",
@@ -783,32 +588,6 @@ test("testing: subcommand messages name the subcommand once, with its index", ()
   expect(() => Testing.assertEverythingHasDescription({ ...spec, subcommands: [{ name: "a" }] })).toThrow(
     "Subcommand `t a` (index 0) has no description",
   );
-});
-
-test("testing: assertOptionsDoNotMatchSubcommands", () => {
-  Testing.assertOptionsDoNotMatchSubcommands({
-    name: "t",
-    options: [{ name: "--build", isPersistent: true }],
-    subcommands: [{ name: "build" }],
-  });
-  expect(() =>
-    Testing.assertOptionsDoNotMatchSubcommands({
-      name: "t",
-      options: [{ name: "--foo" }],
-      subcommands: [{ name: "--foo" }],
-    }),
-  ).toThrow(
-    "Option `t --foo` (index 0) has the name '--foo', which the parser reads as the subcommand `t --foo`",
-  );
-  // With prefix matching, a name that's a unique prefix of a subcommand's name matches it.
-  expect(() =>
-    Testing.assertOptionsDoNotMatchSubcommands({
-      name: "t",
-      parserDirectives: { flagsArePosixNoncompliant: true, subcommandsMatchUniquePrefix: true },
-      options: [{ name: "bu", isPersistent: true }],
-      subcommands: [{ name: "build", subcommands: [{ name: "bundle" }] }],
-    }),
-  ).toThrow("Option `t bu` (index 0) has the name 'bu', which the parser reads as the subcommand `t build`");
 });
 
 test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
@@ -1072,4 +851,78 @@ test("testing: option messages start by naming the option the same way", () => {
   expect(() =>
     Testing.assertOptionNameReferencesExist({ name: "t", options: [{ name: "-a", dependsOn: ["-b"] }] }),
   ).toThrow(/^Option `t -a` \(index 0\) depends on an option named "-b"/);
+});
+
+test("testing: assertNamesReadBack rejects names the parser reads as something else", () => {
+  const check = Testing.assertNamesReadBack;
+  const sep = (requiresSeparator: true | string, isPersistent = false): Option => ({
+    name: "--o",
+    args: {},
+    requiresSeparator,
+    ...(isPersistent ? { isPersistent: true } : {}),
+  });
+  const passes: Subcommand[] = [
+    { name: "test", options: [{ name: "--one" }, { name: "-o" }, { name: "+o" }] },
+    // POSIX-noncompliant options are matched by their whole name.
+    { name: "test", parserDirectives: { flagsArePosixNoncompliant: true }, options: [{ name: "-one" }] },
+    {
+      name: "test",
+      parserDirectives: { flagsArePosixNoncompliant: true },
+      subcommands: [{ name: "example", options: [{ name: "one" }] }],
+    },
+    // An option is only read as a subcommand where that subcommand can be.
+    { name: "t", options: [{ name: "--build", isPersistent: true }], subcommands: [{ name: "build" }] },
+    { name: "test", options: [sep(true), sep("=")] },
+    { name: "test", parserDirectives: { optionArgSeparators: [":", "="] }, options: [sep(":")] },
+  ];
+  for (const spec of passes) check(spec);
+
+  const fails: [Subcommand, string | RegExp][] = [
+    [{ name: "test", options: [{ name: "-one" }] }, /'-one', but the parser reads it as an argument/],
+    [{ name: "test", subcommands: [{ name: "e", options: [{ name: "+one" }] }] }, /^Option `test e \+one`/],
+    [{ name: "test", options: [{ name: "one" }] }, /'one', but the parser reads it as an argument/],
+    [{ name: "test", subcommands: [{ name: "--" }] }, /^Subcommand `test --` \(index 0\) has the name '--'/],
+    [
+      { name: "test", parserDirectives: { flagsArePosixNoncompliant: true }, options: [{ name: "--" }] },
+      /reads it as the end of options, '--'$/,
+    ],
+    [
+      { name: "t", options: [{ name: "--foo" }], subcommands: [{ name: "--foo" }] },
+      "Option `t --foo` (index 0) has the name '--foo', but the parser reads it as the subcommand `t --foo`",
+    ],
+    // With prefix matching, a unique prefix of a subcommand's name enters it.
+    [
+      {
+        name: "t",
+        parserDirectives: { flagsArePosixNoncompliant: true, subcommandsMatchUniquePrefix: true },
+        options: [{ name: "bu", isPersistent: true }],
+        subcommands: [{ name: "build", subcommands: [{ name: "bundle" }] }],
+      },
+      "Option `t bu` (index 0) has the name 'bu', but the parser reads it as the subcommand `t build`",
+    ],
+    // A persistent option has to work with the directives of every command it reaches.
+    [
+      {
+        name: "t",
+        parserDirectives: { flagsArePosixNoncompliant: true },
+        options: [{ name: "verbose", isPersistent: true }],
+        subcommands: [{ name: "sub", parserDirectives: { flagsArePosixNoncompliant: false } }],
+      },
+      /^In `t sub`, option `t verbose` \(index 0\) has the name 'verbose'/,
+    ],
+    [{ name: "test", options: [sep(":")] }, /^Option `test --o` \(index 0\) requires the separator ':'/],
+    [
+      { name: "test", parserDirectives: { optionArgSeparators: [] }, options: [sep(true)] },
+      /^Option `test --o` \(index 0\) requires the separator '='/,
+    ],
+    [
+      {
+        name: "test",
+        options: [sep("=", true)],
+        subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: ":" } }],
+      },
+      /^In `test sub`, option `test --o` \(index 0\) requires the separator '='/,
+    ],
+  ];
+  for (const [spec, message] of fails) expect(() => check(spec)).toThrow(message);
 });

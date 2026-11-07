@@ -6,7 +6,6 @@
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
-import { matchSubcommand } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import { readNext } from "./parse.js";
 
@@ -258,95 +257,6 @@ export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void 
 }
 
 /**
- * Asserts that option names starting with a single dash aren't longer
- * than two characters, unless parserDirectives.flagsArePosixNoncompliant is
- * set on an ancestor command.
- *
- * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
- * asks the parser how it reads each name.
- */
-export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope }) => {
-    if (scope.directives.flagsArePosixNoncompliant) return;
-    for (const name of makeArray(option.name)) {
-      assert(
-        !((name.startsWith("-") || name.startsWith("+")) && !name.startsWith("--") && name.length > 2),
-        `${where} has a name that the parser is unable to parse, as it starts with a single '${name[0]}'. Tokens starting with that character are interpreted as short options, so passing '${name}' will be interpreted as '${Array.from(name.slice(1), (letter) => name[0] + letter).join(" ")}'. \`parserDirectives.flagsArePosixNoncompliant\` must be \`true\` on an ancestor command.`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that all option names start with dashes
- *
- * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
- * asks the parser how it reads each name.
- */
-export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope }) => {
-    if (scope.directives.flagsArePosixNoncompliant) return;
-    for (const name of makeArray(option.name)) {
-      assert(
-        name.startsWith("-") || name.startsWith("+"),
-        `${where} doesn't start with a dash or plus, the parser will be unable to find matching options without \`parserDirectives.flagsAreNonPosixCompliant\` being set to 'true' on an ancestor command`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that no option name is one that a subcommand matches, exactly or
- * by a unique prefix. Until an argument is found, the parser reads such a
- * name as the subcommand.
- *
- * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
- * asks the parser how it reads each name.
- */
-export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope, path }) => {
-    const subcommands = path[path.length - 1].subcommands;
-    if (!subcommands) return;
-    for (const name of makeArray(option.name)) {
-      // A name that another option shadows is that option's to check.
-      if (scope.resolve(name) !== option) continue;
-      const subcommand = matchSubcommand(subcommands, name, scope.directives.subcommandsMatchUniquePrefix);
-      if (!subcommand) continue;
-      assert(
-        false,
-        `${where} has the name '${name}', which the parser reads as the subcommand ${namedArrayToString(...path, subcommand)} until an argument is found. Rename one of them.`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that nothing is named exactly '--'
- *
- * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
- * asks the parser how it reads each name.
- */
-export function assertNothingIsNamedDashDash(spec: Subcommand): void {
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere) return;
-    for (const name of makeArray(option.name)) {
-      assert(
-        name !== "--",
-        `${where} is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
-      );
-    }
-  });
-  forEachSubcommand(spec, (command, path) => {
-    for (const name of makeArray(command.name)) {
-      assert(
-        name !== "--",
-        `${describeCommand(path)} is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
-      );
-    }
-  });
-}
-
-/**
  * Asserts that no option arg separator is an empty string
  */
 export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void {
@@ -453,30 +363,6 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
       getMaxArgs(args) === 1,
       `${where} takes a maximum of ${getMaxArgs(args)} arg(s), but because of requiresSeparator, it's only able to take 1`,
     );
-  });
-}
-
-/**
- * Asserts that an option with `requiresSeparator` can be given a value
- * everywhere it can be used: the parser has to split options at the separator
- * it requires, or at any separator when it doesn't name one.
- *
- * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
- * asks the parser how it reads each name.
- */
-export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope }) => {
-    if (!option.requiresSeparator) return;
-    const separators = scope.directives.optionArgSeparators;
-    if (option.requiresSeparator === true) {
-      assert(separators.length > 0, `${where} requires a separator, but there are no option arg separators`);
-    } else {
-      const accepted = separators.map((separator) => `'${separator}'`).join(", ");
-      assert(
-        separators.includes(option.requiresSeparator),
-        `${where} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
-      );
-    }
   });
 }
 
