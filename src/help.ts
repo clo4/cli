@@ -209,11 +209,24 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
     optionObjects = command.options ? command.options.filter((option) => !option.hidden) : [];
     options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
   } else {
-    persistentOptionObjects = commands
+    // Like the parser, a local option wins over a persistent one with the same
+    // name, and a later persistent option wins over an earlier one. An option
+    // is listed if any of its names still refers to it.
+    const local = (command.options ?? []).filter((option) => !option.isPersistent);
+    const persistent = commands
       .map((command) => command.options)
       .filter(nonNullable)
       .flat()
-      .filter((option) => option.isPersistent && !option.hidden);
+      .filter((option) => option.isPersistent);
+    persistentOptionObjects = persistent.filter(
+      (option, i) =>
+        !option.hidden &&
+        makeArray(option.name).some(
+          (name) =>
+            !local.some((other) => makeArray(other.name).includes(name)) &&
+            !persistent.slice(i + 1).some((other) => makeArray(other.name).includes(name)),
+        ),
+    );
 
     persistentOptions = persistentOptionObjects.map((option) => [
       show(option),

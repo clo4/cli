@@ -222,3 +222,28 @@ test("help: an option that requires a separator shows the separator in effect", 
   expectIncludes(getHelp([spec]), "  --o:<v>  ");
   expectIncludes(getHelp([spec, sub]), "  --o=<v>  ");
 });
+
+test("help: an option that another option shadows isn't listed", () => {
+  const sub: Spec = {
+    name: "sub",
+    options: [
+      { name: "--g", isPersistent: true, description: "child global" },
+      { name: "--l", description: "child local" },
+    ],
+  };
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [
+      { name: "--g", isPersistent: true, description: "parent global" },
+      { name: "--l", isPersistent: true, description: "parent local" },
+      { name: ["-k", "--keep"], isPersistent: true, description: "still reachable" },
+    ],
+    subcommands: [{ ...sub, options: [...sub.options!, { name: "--keep", isPersistent: true }] }],
+  };
+  const msg = getHelp([spec, spec.subcommands![0]]);
+  expectIncludes(msg, "child global");
+  expectIncludes(msg, "child local");
+  expectIncludes(msg, "still reachable");
+  expectNotIncludes(msg, "parent global");
+  expectNotIncludes(msg, "parent local");
+});
