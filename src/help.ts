@@ -1,7 +1,7 @@
 import type { Action, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
-import { matchSubcommand, prefixMatches } from "./parse.js";
+import { matchSubcommand, prefixMatches } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";

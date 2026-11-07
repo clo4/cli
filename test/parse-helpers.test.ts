@@ -1,13 +1,8 @@
 import { describe, expect, test } from "vitest";
 
 import { MissingRequiredOption, ParseError } from "../src/errors.js";
-import {
-  checkOptionRules,
-  firstSeparator,
-  leadingSeparator,
-  matchSubcommand,
-  prefixMatches,
-} from "../src/parse.js";
+import { checkOptionRules, firstSeparator, leadingSeparator } from "../src/parse.js";
+import { matchSubcommand, prefixMatches } from "../src/subcommands.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 
 describe("matchSubcommand", () => {
