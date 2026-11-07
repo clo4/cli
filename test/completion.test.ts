@@ -445,3 +445,14 @@ test("runtime: attached option values aren't offered where options can't be used
   expect(values(await resolve(afterArgument, [], "--mode="))).toContain("--mode=debug");
   expect(values(await resolve(afterArgument, ["arg"], "--mode="))).not.toContain("--mode=debug");
 });
+
+test("runtime: a subcommand's identical repeatable option continues the parent's count", async () => {
+  const verbose = { name: "-v", isRepeatable: 2 } as const;
+  const spec: Spec = {
+    name: "x",
+    options: [verbose],
+    subcommands: [{ name: "sub", options: [{ ...verbose }] }],
+  };
+  expect(values(await resolve(spec, ["sub", "-v"], ""))).toContain("-v");
+  expect(values(await resolve(spec, ["-v", "sub", "-v"], ""))).not.toContain("-v");
+});

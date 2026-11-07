@@ -38,6 +38,8 @@ export interface ScanResult extends ParseResult {
   openOption: { option: Option; valueCount: number } | null;
   /** The directives in effect for the final command. */
   directives: Directives;
+  /** How many times each repeatable option was used. See {@link repeatCount}. */
+  repeatCounts: ReadonlyMap<string[], number>;
 }
 
 export { getMaxArgs, getMinArgs };
@@ -148,6 +150,35 @@ export function firstSeparator(
 }
 
 /**
+ * The values array that every one of `names` shares in `options`, if they all
+ * share one. A repeatable option with these names continues that array's uses.
+ */
+function sharedValues(
+  options: ReadonlyMap<string, string[]>,
+  names: readonly string[],
+): string[] | undefined {
+  const existing = options.get(names[0]);
+  for (const name of names) {
+    if (options.get(name) !== existing) return undefined;
+  }
+  return existing;
+}
+
+/**
+ * How many times a repeatable option with these names has been used. The count
+ * carries over from a parent's identical option. A subcommand option with a
+ * name of its own keeps a separate count.
+ */
+export function repeatCount(
+  options: ReadonlyMap<string, string[]>,
+  repeatCounts: ReadonlyMap<string[], number>,
+  names: readonly string[],
+): number {
+  const uses = sharedValues(options, names);
+  return uses ? (repeatCounts.get(uses) ?? uses.length) : 0;
+}
+
+/**
  * Throw if the options used break a `dependsOn` or `exclusiveOn` rule, or if
  * any of `required` is missing.
  */
@@ -231,7 +262,7 @@ class Scanner {
 
   // How many times each repeatable option has been used, keyed by the array
   // its names share in `options`.
-  private readonly repeatCounts: Map<string[], number> = new Map();
+  readonly repeatCounts: Map<string[], number> = new Map();
 
   constructor(
     spec: Spec,
@@ -324,19 +355,12 @@ class Scanner {
       // A repeatable option collects the values from every use. Without
       // arguments, each use adds an empty string, so the values count the uses.
       const maxRepeat = option.isRepeatable === true ? Infinity : option.isRepeatable;
-      // The count carries over from a parent's identical option. A subcommand
-      // option with a name of its own keeps a separate count.
-      const existing = options.get(names[0]);
-      let isSharedCount = true;
-      for (const other of names) {
-        if (options.get(other) !== existing) isSharedCount = false;
-      }
-      let uses = isSharedCount ? existing : undefined;
+      const count = repeatCount(options, this.repeatCounts, names);
+      let uses = sharedValues(options, names);
       if (!uses) {
         uses = [];
         for (const other of names) options.set(other, uses);
       }
-      const count = this.repeatCounts.get(uses) ?? uses.length;
       if (this.strict && count >= maxRepeat) {
         throw new ParseError(this.ctx(), "Too many repetitions");
       }
@@ -584,6 +608,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     persistentOptions: s.persistent,
     openOption: open && s.hasRoomForValue ? { option: open, valueCount: s.valueCount } : null,
     directives: s.directives,
+    repeatCounts: s.repeatCounts,
   };
 }
 

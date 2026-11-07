@@ -14,7 +14,7 @@
 
 import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
 import { asArray, makeArray, print, printActionError } from "./util.js";
-import { scan } from "./parse.js";
+import { repeatCount, scan } from "./parse.js";
 import type { Directives } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
@@ -71,6 +71,8 @@ interface CompletionState {
   sawPositional: boolean;
   /** The parser directives in effect for the current command. */
   directives: Directives;
+  /** How many times the parser counts a repeatable option as used. */
+  repeatCount: (option: Option) => number;
 }
 
 /**
@@ -121,6 +123,7 @@ function readLine(spec: Spec, before: readonly string[]): CompletionState {
     forceArgs: scanned.argSeparatorIndex !== -1,
     sawPositional: scanned.args.length > 0,
     directives: scanned.directives,
+    repeatCount: (option) => repeatCount(scanned.options, scanned.repeatCounts, asArray(option.name)),
   };
 }
 
@@ -345,7 +348,7 @@ function optionCandidates(state: CompletionState, separators: readonly string[])
     if (option.hidden) continue;
 
     // Repeatable limits: drop a option that can't appear again.
-    const count = state.countByOption.get(option) ?? 0;
+    const count = option.isRepeatable ? state.repeatCount(option) : (state.countByOption.get(option) ?? 0);
     if (count > 0) {
       if (!option.isRepeatable) continue;
       if (typeof option.isRepeatable === "number" && count >= option.isRepeatable) {
