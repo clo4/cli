@@ -765,6 +765,32 @@ test("testing: subcommand messages name the subcommand once, with its index", ()
   );
 });
 
+test("testing: assertOptionsDoNotMatchSubcommands", () => {
+  Testing.assertOptionsDoNotMatchSubcommands({
+    name: "t",
+    options: [{ name: "--build", isPersistent: true }],
+    subcommands: [{ name: "build" }],
+  });
+  expect(() =>
+    Testing.assertOptionsDoNotMatchSubcommands({
+      name: "t",
+      options: [{ name: "--foo" }],
+      subcommands: [{ name: "--foo" }],
+    }),
+  ).toThrow(
+    "Option `t --foo` (index 0) has the name '--foo', which the parser reads as the subcommand `t --foo`",
+  );
+  // With prefix matching, a name that's a unique prefix of a subcommand's name matches it.
+  expect(() =>
+    Testing.assertOptionsDoNotMatchSubcommands({
+      name: "t",
+      parserDirectives: { flagsArePosixNoncompliant: true, subcommandsMatchUniquePrefix: true },
+      options: [{ name: "bu", isPersistent: true }],
+      subcommands: [{ name: "build", subcommands: [{ name: "bundle" }] }],
+    }),
+  ).toThrow("Option `t bu` (index 0) has the name 'bu', which the parser reads as the subcommand `t build`");
+});
+
 test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
   Testing.assertPrefixMatchCommandsHaveNoArguments({ name: "test" });
   Testing.assertPrefixMatchCommandsHaveNoArguments({
@@ -831,6 +857,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Options don't shadow persistent options",
     "Different options on a subcommand and its parents have different names",
     "Subcommands have locally unique names",
+    "Options don't share a name with a subcommand",
     "Nothing is named '--'",
     "Option arg separators are not an empty string",
     "Options named '-' or '+' take exactly one argument",

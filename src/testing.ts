@@ -7,6 +7,7 @@
 import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
 import { directivesFor } from "./directives.js";
+import { matchSubcommand } from "./parse.js";
 import { OptionScope } from "./scope.js";
 
 const repr = JSON.stringify;
@@ -114,7 +115,7 @@ function describeCommand(path: readonly Subcommand[]): string {
  */
 function forEachOptionInScope(
   spec: Subcommand,
-  fn: (option: Option, where: string, scope: OptionScope) => void,
+  fn: (option: Option, where: string, scope: OptionScope, path: Subcommand[]) => void,
 ): void {
   forEachSubcommand(spec, (_command, path) => {
     const scope = OptionScope.at(path);
@@ -124,7 +125,7 @@ function forEachOptionInScope(
       const index = path[depth].options!.indexOf(option);
       const name = `${namedArrayToString(...path.slice(0, depth + 1), option)} (index ${index})`;
       const isOwn = depth === path.length - 1;
-      fn(option, isOwn ? `Option ${name}` : `In ${namedArrayToString(...path)}, option ${name}`, scope);
+      fn(option, isOwn ? `Option ${name}` : `In ${namedArrayToString(...path)}, option ${name}`, scope, path);
     }
   });
 }
@@ -284,6 +285,28 @@ export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
       assert(
         name.startsWith("-") || name.startsWith("+"),
         `${where} doesn't start with a dash or plus, the parser will be unable to find matching options without \`parserDirectives.flagsAreNonPosixCompliant\` being set to 'true' on an ancestor command`,
+      );
+    }
+  });
+}
+
+/**
+ * Asserts that no option name is one that a subcommand matches, exactly or
+ * by a unique prefix. Until an argument is found, the parser reads such a
+ * name as the subcommand.
+ */
+export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
+  forEachOptionInScope(spec, (option, where, scope, path) => {
+    const subcommands = path[path.length - 1].subcommands;
+    if (!subcommands) return;
+    for (const name of makeArray(option.name)) {
+      // A name that another option shadows is that option's to check.
+      if (scope.resolve(name) !== option) continue;
+      const subcommand = matchSubcommand(subcommands, name, scope.directives.subcommandsMatchUniquePrefix);
+      if (!subcommand) continue;
+      assert(
+        false,
+        `${where} has the name '${name}', which the parser reads as the subcommand ${namedArrayToString(...path, subcommand)} until an argument is found. Rename one of them.`,
       );
     }
   });
@@ -653,6 +676,12 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       "Subcommands have locally unique names",
       "assertSubcommandsHaveLocallyUniqueNames",
       assertSubcommandsHaveLocallyUniqueNames,
+      true,
+    ],
+    [
+      "Options don't share a name with a subcommand",
+      "assertOptionsDoNotMatchSubcommands",
+      assertOptionsDoNotMatchSubcommands,
       true,
     ],
     ["Nothing is named '--'", "assertNothingIsNamedDashDash", assertNothingIsNamedDashDash, true],
