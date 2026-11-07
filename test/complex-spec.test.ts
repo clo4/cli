@@ -284,5 +284,5 @@ test("complex: a thrown non-Error value still exits 1 with a diagnostic", async 
     ),
   );
   expect(objectThrow.code).toBe(1);
-  expect(objectThrow.stderr).toMatch(/Error:/);
+  expect(objectThrow.stderr).toBe('Error: {"code":"E_NOPE"}\n');
 });

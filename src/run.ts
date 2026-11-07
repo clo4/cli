@@ -50,11 +50,28 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
     const actionResult = action(actionInit);
     exitCode = typeof actionResult === "object" ? await actionResult : actionResult;
   } catch (error) {
-    printError(error instanceof Error ? error.message : String(error));
+    printError(describeThrown(error));
     return 1;
   }
 
   return Math.min(Math.max(exitCode ?? 0, 0), 255);
+}
+
+/**
+ * The message for a value an action threw. A value that isn't an Error is shown
+ * as JSON where it can be, since `String` turns an object into
+ * "[object Object]".
+ */
+function describeThrown(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      // A cycle or a BigInt, which JSON can't show.
+    }
+  }
+  return String(value);
 }
 
 function defaultArgs(): readonly string[] {
