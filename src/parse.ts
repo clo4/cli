@@ -57,7 +57,7 @@ export interface NextToken {
 }
 
 /** The first of `separators` that `text` starts with, or "" if none. */
-export function leadingSeparator(text: string, separators: readonly string[]): string {
+function leadingSeparator(text: string, separators: readonly string[]): string {
   for (const sep of separators) {
     if (text.startsWith(sep)) return sep;
   }
@@ -70,10 +70,7 @@ export function leadingSeparator(text: string, separators: readonly string[]): s
  * the longer one wins. Returns null if there's no separator, or if the one
  * found is empty.
  */
-export function firstSeparator(
-  token: string,
-  separators: readonly string[],
-): { index: number; sep: string } | null {
+function firstSeparator(token: string, separators: readonly string[]): { index: number; sep: string } | null {
   let sep = "";
   let index = -1;
   for (const candidate of separators) {
@@ -112,7 +109,7 @@ function namesKey(option: Option): string {
  * Throw if the options used break a `dependsOn` or `exclusiveOn` rule, or if
  * any of `required` is missing.
  */
-export function checkOptionRules(
+function checkOptionRules(
   options: ReadonlyMap<string, string[]>,
   seenOptions: readonly Option[],
   required: readonly Option[],

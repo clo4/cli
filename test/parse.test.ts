@@ -1403,6 +1403,32 @@ test("parse: a POSIX-noncompliant option takes an attached value", () => {
   expect(error).toMatchObject({ option: "flag" });
 });
 
+test("parse: a short option's value starts after the first listed separator it begins with", () => {
+  const option = { name: "-o", args: {} };
+  const value = (separators: readonly [string, string]) =>
+    parse(["-o:=v"], {
+      name: "test",
+      parserDirectives: { optionArgSeparators: separators },
+      options: [option],
+    }).options.get("-o");
+  expect(value([":", ":="])).toEqual(["=v"]);
+  expect(value([":=", ":"])).toEqual(["v"]);
+});
+
+test("parse: option rules are checked dependsOn, then exclusiveOn, then required", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "--out", args: {}, isRequired: true },
+      { name: ["-v", "--verbose"], dependsOn: ["--out"] },
+      { name: "-q", exclusiveOn: ["-v"] },
+    ],
+  };
+  expect(() => parse(["-v", "-q"], spec)).toThrow("-v/--verbose requires --out, add it to fix this error");
+  expect(() => parse(["--out", "x", "-v", "-q"], spec)).toThrow("-q can't be used together with -v");
+  expect(() => parse([], spec)).toThrow("Option --out is required, but wasn't found");
+});
+
 test("parse: a short option's attached value can follow any configured separator", () => {
   const spec: Spec = {
     name: "test",
