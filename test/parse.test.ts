@@ -1476,3 +1476,16 @@ test("parse: a command that requires a subcommand accepts '--' like other stray 
   expect(result.args).toEqual(["x"]);
   expect(result.argSeparatorIndex).toBe(0);
 });
+
+test("parse: '--' after an argument is an argument when options must precede arguments", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isVariadic: true },
+    parserDirectives: { optionsMustPrecedeArguments: true },
+  };
+  const result = parse(["a", "--", "b"], spec);
+  expect(result.args).toEqual(["a", "--", "b"]);
+  expect(result.argSeparatorIndex).toBe(-1);
+  // Before any argument, it still ends the options.
+  expect(parse(["--", "-x"], spec).argSeparatorIndex).toBe(0);
+});

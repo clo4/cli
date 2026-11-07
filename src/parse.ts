@@ -598,16 +598,19 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
   for (let index = 0; index < input.length; index++) {
     const token = input[index];
 
+    // Once options must stop, every token is an argument, including "--".
+    const { flagsArePosixNoncompliant, optionsMustPrecedeArguments } = s.directives;
+    const optionsAllowed = !(optionsMustPrecedeArguments && s.hasFoundArg);
+
     // "--" disables option & subcommand parsing, so it's checked first.
-    if (token === "--") {
+    if (token === "--" && optionsAllowed) {
       s.argSeparator(input, index);
       break;
     }
 
     if (s.tryEnterSubcommand(token)) continue;
 
-    const { flagsArePosixNoncompliant, optionsMustPrecedeArguments } = s.directives;
-    if (!(optionsMustPrecedeArguments && s.hasFoundArg)) {
+    if (optionsAllowed) {
       const first = token.charCodeAt(0);
       const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
       if (
