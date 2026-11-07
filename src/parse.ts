@@ -21,6 +21,14 @@ export interface ParseResult {
   optionActions: Action[];
 }
 
+/** The parser directives in effect for a command, with defaults filled in. */
+export interface Directives {
+  optionArgSeparators: readonly string[];
+  flagsArePosixNoncompliant: boolean;
+  optionsMustPrecedeArguments: boolean;
+  subcommandsMatchUniquePrefix: boolean;
+}
+
 /** Everything {@link scan} learns about a command line. */
 export interface ScanResult extends ParseResult {
   /** Every use of an option, in order. */
@@ -34,6 +42,8 @@ export interface ScanResult extends ParseResult {
   persistentOptions: Option[];
   /** The option that can still take a separate value, and how many it has. */
   openOption: { option: Option; valueCount: number } | null;
+  /** The directives in effect for the final command. */
+  directives: Directives;
 }
 
 export { getMaxArgs, getMinArgs };
@@ -199,10 +209,13 @@ class Scanner {
   private subcommands: readonly Subcommand[] | undefined = undefined;
   private commandArgsMin = 0;
   private commandArgsMax = 0;
-  private separators: readonly string[] = ["="];
-  posixCompliantOptions = true;
-  private subcommandsMatchUniquePrefix = false;
-  optionsMustPrecedeArguments = false;
+  // A subcommand inherits each directive until it sets its own.
+  readonly directives: Directives = {
+    optionArgSeparators: ["="],
+    flagsArePosixNoncompliant: false,
+    optionsMustPrecedeArguments: false,
+    subcommandsMatchUniquePrefix: false,
+  };
   hasFoundArg = false;
 
   // The last option used, and how many more separate tokens it can take as
@@ -272,20 +285,20 @@ class Scanner {
     } else if (command.requiresSubcommand) {
       this.actions.push(builtinUsageAction);
     }
-    const directives = command.parserDirectives;
-    if (directives) {
-      if (directives.optionArgSeparators) {
-        this.separators = asArray(directives.optionArgSeparators);
+    const configured = command.parserDirectives;
+    if (configured) {
+      const directives = this.directives;
+      if (configured.optionArgSeparators) {
+        directives.optionArgSeparators = asArray(configured.optionArgSeparators);
       }
-      // A subcommand inherits each directive until it sets its own.
-      if (typeof directives.subcommandsMatchUniquePrefix === "boolean") {
-        this.subcommandsMatchUniquePrefix = directives.subcommandsMatchUniquePrefix;
+      if (typeof configured.subcommandsMatchUniquePrefix === "boolean") {
+        directives.subcommandsMatchUniquePrefix = configured.subcommandsMatchUniquePrefix;
       }
-      if (typeof directives.optionsMustPrecedeArguments === "boolean") {
-        this.optionsMustPrecedeArguments = directives.optionsMustPrecedeArguments;
+      if (typeof configured.optionsMustPrecedeArguments === "boolean") {
+        directives.optionsMustPrecedeArguments = configured.optionsMustPrecedeArguments;
       }
-      if (typeof directives.flagsArePosixNoncompliant === "boolean") {
-        this.posixCompliantOptions = !directives.flagsArePosixNoncompliant;
+      if (typeof configured.flagsArePosixNoncompliant === "boolean") {
+        directives.flagsArePosixNoncompliant = configured.flagsArePosixNoncompliant;
       }
     }
   }
@@ -429,7 +442,7 @@ class Scanner {
     // A literal match always wins. A short optional value could be a prefix
     // of a subcommand's name, so only an exact match can end an option that
     // still has room.
-    const allowPrefix = this.subcommandsMatchUniquePrefix && !hasRoomForValue;
+    const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !hasRoomForValue;
     const command = matchSubcommand(this.subcommands, token, allowPrefix);
     if (!command) return false;
     this.closeOption();
@@ -471,7 +484,7 @@ class Scanner {
       this.useOption(option, optionName);
 
       if (option.args && char < token.length - 1) {
-        const sep = leadingSeparator(token.slice(char + 1), this.separators);
+        const sep = leadingSeparator(token.slice(char + 1), this.directives.optionArgSeparators);
         const argStart = char + sep.length + 1;
         this.addValue(index, argStart, token.length, token.slice(argStart), sep);
         return;
@@ -484,7 +497,7 @@ class Scanner {
    * aren't POSIX compliant. Returns false if the token should be an argument.
    */
   longOption(token: string, index: number): boolean {
-    const found = firstSeparator(token, this.separators);
+    const found = firstSeparator(token, this.directives.optionArgSeparators);
     const optionName = found ? token.slice(0, found.index) : token;
     const option = this.findOption(optionName);
     if (option) {
@@ -498,7 +511,7 @@ class Scanner {
     // POSIX-noncompliant option means that there's nothing "option-like". Any
     // token can be an option if it matches an option name, and if it's not an
     // option then it's just a regular argument.
-    if (!this.posixCompliantOptions) return false;
+    if (this.directives.flagsArePosixNoncompliant) return false;
     if (this.hasRoomForValue) {
       this.addValue(index, 0, token.length, token, "");
       return true;
@@ -559,11 +572,12 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
 
     if (s.tryEnterSubcommand(token)) continue;
 
-    if (!(s.optionsMustPrecedeArguments && s.hasFoundArg)) {
+    const { flagsArePosixNoncompliant, optionsMustPrecedeArguments } = s.directives;
+    if (!(optionsMustPrecedeArguments && s.hasFoundArg)) {
       const first = token.charCodeAt(0);
       const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
       if (
-        s.posixCompliantOptions &&
+        !flagsArePosixNoncompliant &&
         token.length > 1 &&
         (first === 45 || first === 43) /* + */ &&
         !isDoubleDash
@@ -571,7 +585,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
         s.shortOptions(token, index);
         continue;
       }
-      if (!s.posixCompliantOptions || (token.length > 2 && isDoubleDash)) {
+      if (flagsArePosixNoncompliant || (token.length > 2 && isDoubleDash)) {
         if (s.longOption(token, index)) continue;
       }
     }
@@ -593,6 +607,7 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     localOptions: s.local,
     persistentOptions: s.persistent,
     openOption: open && s.hasRoomForValue ? { option: open, valueCount: s.valueCount } : null,
+    directives: s.directives,
   };
 }
 

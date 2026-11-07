@@ -200,6 +200,26 @@ test("runtime: requiresSeparator options are offered in their attached form", as
   expect(v).toContain("--sep=");
 });
 
+test("runtime: a subcommand inherits option arg separators", async () => {
+  const spec: Spec = {
+    name: "x",
+    parserDirectives: { optionArgSeparators: ":" },
+    subcommands: [
+      {
+        name: "sub",
+        options: [
+          { name: "--mode", args: { name: "m", suggestions: ["fast", "slow"] } },
+          { name: "--sep", requiresSeparator: true, args: { name: "v" } },
+        ],
+      },
+    ],
+  };
+  // The shell filters candidates by prefix, so both values come back.
+  expect(values(await resolve(spec, ["sub"], "--mode:f"))).toEqual(["--mode:fast", "--mode:slow"]);
+  expect(values(await resolve(spec, ["sub"], "--mode=f"))).not.toContain("--mode=fast");
+  expect(values(await resolve(spec, ["sub"], ""))).toContain("--sep:");
+});
+
 test("runtime: optionsMustPrecedeArguments hides options after a positional", async () => {
   const spec: Spec = {
     name: "x",

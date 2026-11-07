@@ -15,6 +15,7 @@
 import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
 import { asArray, makeArray, print, printActionError } from "./util.js";
 import { scan } from "./parse.js";
+import type { Directives } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -68,6 +69,8 @@ interface CompletionState {
   forceArgs: boolean;
   /** A positional has been consumed by the current command. */
   sawPositional: boolean;
+  /** The parser directives in effect for the current command. */
+  directives: Directives;
 }
 
 /**
@@ -117,29 +120,8 @@ function readLine(spec: Spec, before: readonly string[]): CompletionState {
     countByOption,
     forceArgs: scanned.argSeparatorIndex !== -1,
     sawPositional: scanned.args.length > 0,
+    directives: scanned.directives,
   };
-}
-
-/** A directive's value in effect (the deepest command that sets it). */
-function directiveOnPath(
-  path: readonly Subcommand[],
-  key: "optionsMustPrecedeArguments" | "flagsArePosixNoncompliant",
-): boolean {
-  for (let i = path.length - 1; i >= 0; i--) {
-    const value = path[i].parserDirectives?.[key];
-    if (typeof value === "boolean") return value;
-  }
-  return false;
-}
-
-/** The option-arg separators in effect (the deepest command that sets them). */
-function separatorsOnPath(path: readonly Subcommand[]): string[] {
-  let separators = ["="];
-  for (const command of path) {
-    const configured = command.parserDirectives?.optionArgSeparators;
-    if (configured) separators = makeArray(configured);
-  }
-  return separators;
 }
 
 /** Enumerate filesystem entries matching `partial` for a path template. */
@@ -216,7 +198,7 @@ function positionalArg(command: Subcommand, index: number): Arg | undefined {
 
 /** Decide which kinds of candidate the word being completed can use. */
 function wantedCandidates(state: CompletionState, req: CompletionRequest) {
-  const posixNoncompliant = directiveOnPath(state.path, "flagsArePosixNoncompliant");
+  const posixNoncompliant = state.directives.flagsArePosixNoncompliant;
   const partialIsOption = !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
   // When gating, a dashed word completes options only; everything else completes
   // commands/positionals. Posix-noncompliant options have no dash, so they're
@@ -245,7 +227,7 @@ export interface CompletionRequest {
  */
 export async function completeRuntime(req: CompletionRequest): Promise<Candidate[]> {
   const state = readLine(req.spec, req.before);
-  const separators = separatorsOnPath(state.path);
+  const separators = state.directives.optionArgSeparators;
 
   const optionValue = await resolveOptionValue(state, req, separators);
   if (optionValue) return optionValue;
@@ -261,7 +243,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
 async function resolveOptionValue(
   state: CompletionState,
   req: CompletionRequest,
-  separators: string[],
+  separators: readonly string[],
 ): Promise<Candidate[] | null> {
   const tokens = [...req.before];
 
@@ -306,7 +288,7 @@ async function resolveOptionValue(
 async function freshTokenCandidates(
   state: CompletionState,
   req: CompletionRequest,
-  separators: string[],
+  separators: readonly string[],
 ): Promise<Candidate[]> {
   const candidates: Candidate[] = [];
   const tokens = [...req.before];
@@ -344,13 +326,13 @@ async function freshTokenCandidates(
 }
 
 /** Option candidates, unless options must precede arguments and one was seen. */
-function allowedOptionCandidates(state: CompletionState, separators: string[]): Candidate[] {
-  const optionsBlocked = state.sawPositional && directiveOnPath(state.path, "optionsMustPrecedeArguments");
+function allowedOptionCandidates(state: CompletionState, separators: readonly string[]): Candidate[] {
+  const optionsBlocked = state.sawPositional && state.directives.optionsMustPrecedeArguments;
   return optionsBlocked ? [] : optionCandidates(state, separators);
 }
 
 /** Eligible option candidates after relationship filtering. */
-function optionCandidates(state: CompletionState, separators: string[]): Candidate[] {
+function optionCandidates(state: CompletionState, separators: readonly string[]): Candidate[] {
   const required: Candidate[] = [];
   const optional: Candidate[] = [];
 
