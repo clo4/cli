@@ -101,6 +101,51 @@ test("runtime: an attached =value completes the option value", async () => {
   expect(v).toEqual(["--mode=fast", "--mode=slow"]);
 });
 
+test("runtime: a short option's attached value completes after a separator", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "-m", args: { name: "m", suggestions: ["fast", "slow"] } }],
+  };
+  expect(values(await resolve(spec, [], "-m="))).toEqual(["-m=fast", "-m=slow"]);
+});
+
+test("runtime: a POSIX-noncompliant option's attached value completes", async () => {
+  const spec: Spec = {
+    name: "x",
+    parserDirectives: { flagsArePosixNoncompliant: true },
+    options: [{ name: "mode", args: { name: "m", suggestions: ["fast", "slow"] } }],
+  };
+  expect(values(await resolve(spec, [], "mode="))).toEqual(["mode=fast", "mode=slow"]);
+});
+
+test("runtime: an option's later arguments use their own suggestions", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      {
+        name: "--pair",
+        args: [
+          { name: "a", suggestions: ["A"] },
+          { name: "b", suggestions: ["B"] },
+        ],
+      },
+    ],
+  };
+  expect(values(await resolve(spec, ["--pair"], ""))).toEqual(["A"]);
+  expect(values(await resolve(spec, ["--pair", "x"], ""))).toEqual(["B"]);
+});
+
+test("runtime: a subcommand without separators doesn't complete attached values", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "--mode", isPersistent: true, args: { name: "m", suggestions: ["fast"] } }],
+    subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: [] } }],
+  };
+  expect(values(await resolve(spec, [], "--mode="))).toEqual(["--mode=fast"]);
+  expect(values(await resolve(spec, ["sub"], "--mode="))).not.toContain("--mode=fast");
+  expect(values(await resolve(spec, ["sub", "--mode"], ""))).toEqual(["fast"]);
+});
+
 const openOptionSpec: Spec = {
   name: "open",
   args: { name: "path", isOptional: true, isVariadic: true, suggestions: ["P1", "P2"] },
@@ -198,6 +243,50 @@ test("runtime: requiresSeparator options are offered in their attached form", as
   };
   const v = values(await resolve(spec, [], ""));
   expect(v).toContain("--sep=");
+});
+
+test("runtime: a requiresSeparator string is offered as that separator", async () => {
+  const spec: Spec = {
+    name: "x",
+    parserDirectives: { optionArgSeparators: ["=", ":"] },
+    options: [{ name: "--sep", requiresSeparator: ":", args: { name: "v" } }],
+  };
+  expect(values(await resolve(spec, [], ""))).toContain("--sep:");
+});
+
+test("runtime: exclusiveOn hides the option an earlier option excludes", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "--a", exclusiveOn: ["--b"] }, { name: "--b" }, { name: "--c" }],
+  };
+  const v = values(await resolve(spec, ["--b"], ""));
+  expect(v).not.toContain("--a");
+  expect(v).toContain("--c");
+});
+
+test("runtime: dependsOn is noted in the description", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: "--a", description: "Use a", dependsOn: ["--b", "--c"] },
+      { name: "--d", dependsOn: ["--b"] },
+      { name: "--b" },
+      { name: "--c" },
+    ],
+  };
+  const candidates = await resolve(spec, [], "");
+  expect(candidates.find((c) => c.value === "--a")?.description).toBe("Use a (requires --b, --c)");
+  expect(candidates.find((c) => c.value === "--d")?.description).toBe("requires --b");
+});
+
+test("runtime: a persistent repeatable option's limit counts uses in parent commands", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "-v", isRepeatable: 2, isPersistent: true }],
+    subcommands: [{ name: "sub" }],
+  };
+  expect(values(await resolve(spec, ["-v", "sub"], ""))).toContain("-v");
+  expect(values(await resolve(spec, ["-v", "sub", "-v"], ""))).not.toContain("-v");
 });
 
 test("runtime: a subcommand inherits option arg separators", async () => {

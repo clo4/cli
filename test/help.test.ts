@@ -144,3 +144,69 @@ test("help: path with persistent options and no option on command", () => {
   expectIncludes(msg, "112233");
   expect(msg.indexOf("\nGlobal flags:\n")).toBeLessThan(msg.indexOf("-o, --option"));
 });
+
+test("help: option arguments are summarized", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [
+      { name: "--opt", args: { name: "v", isOptional: true }, requiresSeparator: true },
+      { name: "--colon", args: { name: "v" }, requiresSeparator: ":" },
+      {
+        name: "--many",
+        args: [
+          { name: "x" },
+          { name: "y", isOptional: true },
+          { name: "z", isVariadic: true, isOptional: true },
+        ],
+      },
+      { name: "--unnamed", args: {} },
+    ],
+  };
+  const msg = getHelp([spec]);
+  expectIncludes(msg, "  --opt[=v]  ");
+  expectIncludes(msg, "  --colon:<v>  ");
+  expectIncludes(msg, "  --many <x> [y] [z]...  ");
+  expectIncludes(msg, "  --unnamed <argument>  ");
+});
+
+test("help: a multi-line option description stays aligned", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [{ name: "--long-name", description: "line one\nline two" }, { name: "-s" }],
+  };
+  expectIncludes(
+    getHelp([spec]),
+    "  --long-name  line one\n               line two\n  -s           No description\n",
+  );
+});
+
+test("help: a subcommand row shows its aliases and its description's first paragraph", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    subcommands: [{ name: ["longer", "s"], description: "first\nstill first\n\nsecond paragraph" }],
+  };
+  const msg = getHelp([spec]);
+  expectIncludes(msg, "Commands:\n  s, longer  first\n             still first\n");
+  expectNotIncludes(msg, "second paragraph");
+});
+
+test("help: usage names the longest alias and lists required options", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [{ name: "--token", isPersistent: true, isRequired: true, args: { name: "t" } }],
+    subcommands: [{ name: ["s", "longer"], options: [{ name: "--need", isRequired: true }] }],
+  };
+  const msg = getHelp([spec, spec.subcommands![0]]);
+  expectIncludes(msg, "Usage:\n  TEST_NAME longer --need --token <t> [flags]\n");
+});
+
+test("help: a description's common indentation is removed", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    description: `
+      First line.
+        Indented line.
+    `,
+  };
+  expect(getHelp([spec]).startsWith("First line.\n  Indented line.\n\nUsage:")).toBe(true);
+});

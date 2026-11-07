@@ -1,7 +1,14 @@
 import { expect, test } from "vitest";
 
 import { usage } from "../src/help.js";
-import { MissingRequiredOption, TooFewOptionArguments, UnknownOption } from "../src/errors.js";
+import {
+  InvalidOptionArg,
+  MissingRequiredOption,
+  TooFewArguments,
+  TooFewOptionArguments,
+  TooManyArguments,
+  UnknownOption,
+} from "../src/errors.js";
 import { getMaxArgs, getMinArgs, parse } from "../src/parse.js";
 import type { Action, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
@@ -1141,4 +1148,278 @@ test("parse: an exclusiveOn error joins the option's aliases with a slash", () =
     options: [{ name: ["-a", "--all"], exclusiveOn: ["-b"] }, { name: "-b" }],
   };
   expect(() => parse(["--all", "-b"], spec)).toThrow("-a/--all can't be used together with -b");
+});
+
+/** Run `fn`, which must throw, and return what it threw. */
+function thrown(fn: () => unknown): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected a throw");
+}
+
+test("parse: an unknown option in a chain points at its character", () => {
+  const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "-v" }] };
+  const error = thrown(() => parse(["x", "-vx"], spec));
+  expect(error).toBeInstanceOf(UnknownOption);
+  expect(error).toMatchObject({ option: "-x", index: 1, start: 2, end: 3 });
+});
+
+test("parse: an unknown long option's span leaves out its attached value", () => {
+  const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "--known" }] };
+  const error = thrown(() => parse(["a", "--nope=1"], spec));
+  expect(error).toBeInstanceOf(UnknownOption);
+  expect(error).toMatchObject({ option: "--nope", index: 1, start: 0, end: 6 });
+  expect((error as Error).message).toBe('"--nope" looks like a flag, but is unknown in this context');
+});
+
+test("parse: a value attached to an option without args points at the value", () => {
+  const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
+  const error = thrown(() => parse(["--verbose=1"], spec));
+  expect(error).toBeInstanceOf(InvalidOptionArg);
+  expect(error).toMatchObject({ option: "--verbose", arg: "1", index: 0, start: 10, end: 11 });
+});
+
+test("parse: too many arguments reports the token's index, including after '--'", () => {
+  const spec: Spec = { name: "test", args: {} };
+  const error = thrown(() => parse(["--", "a", "b"], spec));
+  expect(error).toBeInstanceOf(TooManyArguments);
+  expect(error).toMatchObject({ value: "b", index: 2 });
+  expect((error as Error).message).toBe('Too many arguments, "b" was unexpected');
+});
+
+test("parse: an unknown option lists the valid names and the command it was found in", () => {
+  const sub: Subcommand = {
+    name: "sub",
+    options: [{ name: "--x" }, { name: "--g", isPersistent: true }],
+  };
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--g", isPersistent: true }, { name: "--local" }, { name: "--g2", isPersistent: true }],
+    subcommands: [sub],
+  };
+  const error = thrown(() => parse(["sub", "--nope"], spec));
+  expect(error).toBeInstanceOf(UnknownOption);
+  // Local names first, then persistent ones, each listed once. The parent's
+  // non-persistent option isn't valid in the subcommand.
+  expect((error as UnknownOption).validOptions).toEqual(["--x", "--g", "--g2"]);
+  expect((error as UnknownOption).context.path).toEqual([spec, sub]);
+});
+
+test("parse: missing argument messages describe the expected count", () => {
+  const message = (args: Spec["args"], input: string[]) => {
+    const error = thrown(() => parse(input, { name: "test", args }));
+    expect(error).toBeInstanceOf(TooFewArguments);
+    return (error as Error).message;
+  };
+  expect(message({}, [])).toBe("Expected 1 argument");
+  expect(message([{}, {}], ["a"])).toBe("Expected 2 arguments");
+  expect(message([{}, { isOptional: true }], [])).toBe("Expected between 1 and 2 arguments");
+  expect(message([{}, {}, { isVariadic: true, isOptional: true }], [])).toBe("Expected at least 2 arguments");
+});
+
+test("parse: missing option value messages describe the expected count", () => {
+  const message = (args: Option["args"]) => {
+    const error = thrown(() => parse(["--o", "a"], { name: "test", options: [{ name: "--o", args }] }));
+    expect(error).toBeInstanceOf(TooFewOptionArguments);
+    return (error as Error).message;
+  };
+  expect(message([{}, {}])).toBe("Option needs 2 arguments");
+  expect(message([{}, {}, { isOptional: true }])).toBe("Option needs between 2 and 3 arguments");
+  expect(message([{}, {}, { isVariadic: true, isOptional: true }])).toBe("Option needs at least 2 arguments");
+});
+
+test("parse: '--' with no room for arguments explains itself", () => {
+  expect(() => parse(["--"], { name: "test" })).toThrow(
+    "Unexpected argument '--', did you mean to use an option instead?",
+  );
+});
+
+test("parse: a subcommand inherits option arg separators", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionArgSeparators: ":" },
+    options: [{ name: "--g", args: {}, isPersistent: true }],
+    subcommands: [{ name: "sub" }],
+  };
+  expect(parse(["sub", "--g:1"], spec).options).toEqual(map({ "--g": ["1"] }));
+  expect(() => parse(["sub", "--g=1"], spec)).toThrow(UnknownOption);
+});
+
+test("parse: a subcommand's separators apply to inherited options", () => {
+  const sub: Subcommand = { name: "sub", parserDirectives: { optionArgSeparators: "=" } };
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionArgSeparators: ":" },
+    options: [{ name: "--g", args: {}, isPersistent: true }],
+    subcommands: [sub],
+  };
+  expect(parse(["sub", "--g=1"], spec).options).toEqual(map({ "--g": ["1"] }));
+  expect(() => parse(["sub", "--g:1"], spec)).toThrow(UnknownOption);
+  // Before the subcommand, the parent's separators are still in effect.
+  const before = parse(["--g:1", "sub"], spec);
+  expect(before.path).toEqual([spec, sub]);
+  expect(before.options).toEqual(map({ "--g": ["1"] }));
+});
+
+test("parse: an empty list of separators turns off attached values", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--g", args: {}, isPersistent: true }],
+    subcommands: [
+      {
+        name: "sub",
+        parserDirectives: { optionArgSeparators: [] },
+        options: [{ name: "-o", args: {} }],
+      },
+    ],
+  };
+  expect(() => parse(["sub", "--g=1"], spec)).toThrow(UnknownOption);
+  expect(parse(["sub", "--g", "1"], spec).options).toEqual(map({ "--g": ["1"] }));
+  // A short option's value starts right after its name.
+  expect(parse(["sub", "-o=1"], spec).options).toEqual(map({ "-o": ["=1"] }));
+});
+
+test("parse: a subcommand can turn off flagsArePosixNoncompliant", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isOptional: true },
+    parserDirectives: { flagsArePosixNoncompliant: true },
+    subcommands: [
+      {
+        name: "sub",
+        args: { isOptional: true },
+        parserDirectives: { flagsArePosixNoncompliant: false },
+        options: [{ name: "-a" }, { name: "-b" }],
+      },
+    ],
+  };
+  expect(parse(["--x"], spec).args).toEqual(["--x"]);
+  expect(() => parse(["sub", "--x"], spec)).toThrow(UnknownOption);
+  expect(parse(["sub", "-ab"], spec).options).toEqual(map({ "-a": [], "-b": [] }));
+});
+
+test("parse: a POSIX-noncompliant option takes an attached value", () => {
+  const spec: Spec = {
+    name: "test",
+    args: { isOptional: true },
+    parserDirectives: { flagsArePosixNoncompliant: true },
+    options: [{ name: "out", args: {} }, { name: "flag" }],
+  };
+  const result = parse(["out=x", "y"], spec);
+  expect(result.options).toEqual(map({ out: ["x"] }));
+  expect(result.args).toEqual(["y"]);
+  const error = thrown(() => parse(["flag=x"], spec));
+  expect(error).toBeInstanceOf(InvalidOptionArg);
+  expect(error).toMatchObject({ option: "flag", arg: "x", start: 5, end: 6 });
+});
+
+test("parse: a short option's attached value can follow any configured separator", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { optionArgSeparators: [":", "="] },
+    options: [{ name: "-o", args: {} }],
+  };
+  expect(parse(["-o:1"], spec).options).toEqual(map({ "-o": ["1"] }));
+  expect(parse(["-o=1"], spec).options).toEqual(map({ "-o": ["1"] }));
+  expect(parse(["-o1"], spec).options).toEqual(map({ "-o": ["1"] }));
+});
+
+test("parse: a '+' option takes an attached value after a separator", () => {
+  const spec: Spec = { name: "test", options: [{ name: "+o", args: {} }] };
+  expect(parse(["+o=1"], spec).options).toEqual(map({ "+o": ["1"] }));
+});
+
+test("parse: an optional value in the middle of a chain takes the rest of the token", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "-a" }, { name: "-b", args: { isOptional: true } }, { name: "-c" }],
+  };
+  expect(parse(["-abc"], spec).options).toEqual(map({ "-a": [], "-b": ["c"] }));
+});
+
+test("parse: an option waiting for a value takes unknown option-like tokens", () => {
+  const spec: Spec = { name: "test", options: [{ name: "-o", args: {} }, { name: "-v" }] };
+  expect(parse(["-o", "-5"], spec).options).toEqual(map({ "-o": ["-5"] }));
+  expect(parse(["-o", "--x"], spec).options).toEqual(map({ "-o": ["--x"] }));
+  expect(() => parse(["-o", "-v"], spec)).toThrow(TooFewOptionArguments);
+  expect(() => parse(["-o", "--"], spec)).toThrow(TooFewOptionArguments);
+});
+
+test("parse: requiresSeparator string rejects a short option's unseparated value", () => {
+  const spec: Spec = { name: "test", options: [{ name: "-q", args: {}, requiresSeparator: "=" }] };
+  expect(parse(["-q=val"], spec).options).toEqual(map({ "-q": ["val"] }));
+  expect(() => parse(["-qval"], spec)).toThrow(/Incorrect separator, use '='/);
+});
+
+test("parse: a repeatable persistent option with an argument shares its uses with subcommands", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--tag", args: {}, isRepeatable: 2, isPersistent: true }],
+    subcommands: [{ name: "sub" }],
+  };
+  expect(parse(["--tag", "a", "sub", "--tag", "b"], spec).options).toEqual(map({ "--tag": ["a", "b"] }));
+  expect(() => parse(["--tag", "a", "sub", "--tag", "b", "--tag", "c"], spec)).toThrow(
+    "Too many repetitions",
+  );
+});
+
+test("parse: a repeatable option with a variadic argument collects every use's values", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--p", args: { isVariadic: true }, isRepeatable: true }],
+  };
+  expect(parse(["--p", "a", "b", "--p", "c"], spec).options).toEqual(map({ "--p": ["a", "b", "c"] }));
+});
+
+test("parse: each use of a repeatable option needs its own arguments", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--p", args: [{}, {}], isRepeatable: true }],
+  };
+  expect(parse(["--p", "a", "b", "--p", "c", "d"], spec).options).toEqual(
+    map({ "--p": ["a", "b", "c", "d"] }),
+  );
+  expect(() => parse(["--p", "a", "b", "--p", "c"], spec)).toThrow("Option needs 2 arguments");
+});
+
+test("parse: a variadic option value takes a subcommand's name", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "--files", args: { isVariadic: true } },
+      { name: "--maybe", args: { isVariadic: true, isOptional: true } },
+    ],
+    subcommands: [{ name: "build" }],
+  };
+  const required = parse(["--files", "a", "build"], spec);
+  expect(required.path).toEqual([spec]);
+  expect(required.options).toEqual(map({ "--files": ["a", "build"] }));
+  const optional = parse(["--maybe", "build"], spec);
+  expect(optional.path).toEqual([spec]);
+  expect(optional.options).toEqual(map({ "--maybe": ["build"] }));
+});
+
+test("parse: a command that requires a subcommand accepts stray arguments", () => {
+  const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
+  const result = parse(["typo", "extra"], spec);
+  expect(result.path).toEqual([spec]);
+  expect(result.args).toEqual(["typo", "extra"]);
+  expect(result.actions).toEqual([usage]);
+});
+
+test("parse: an option action skips required arguments and options", () => {
+  const spec: Spec = {
+    name: "test",
+    args: {},
+    options: [
+      { name: "--help", action: () => {} },
+      { name: "--r", isRequired: true },
+    ],
+  };
+  const result = parse(["--help"], spec);
+  expect(result.args).toEqual([]);
+  expect(result.optionActions).toHaveLength(1);
 });

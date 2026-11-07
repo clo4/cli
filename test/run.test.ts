@@ -209,3 +209,63 @@ test("run: ambiguous unique-prefix command reports the candidates", async () => 
   expect(result.stderr).toMatch(/Ambiguous command 'st'/);
   expect(result.stderr).toMatch(/start, stop/);
 });
+
+test("run: a command that matches no prefix is unknown in prefix mode", async () => {
+  const spec: Spec = {
+    name: "demo",
+    requiresSubcommand: true,
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      { name: "start", action: () => {} },
+      { name: "stop", action: () => {} },
+    ],
+  };
+  const result = await captureConsole(() => run(spec, ["stp"]));
+  expect(result.code).toBe(1);
+  expect(result.stderr).toMatch(/Unknown command 'stp'/);
+  expect(result.stderr).toMatch(/Did you mean 'stop'/);
+});
+
+test("run: an empty command is reported as empty", async () => {
+  const spec: Spec = {
+    name: "demo",
+    requiresSubcommand: true,
+    subcommands: [{ name: "start", action: () => {} }],
+  };
+  const result = await captureConsole(() => run(spec, [""]));
+  expect(result.code).toBe(1);
+  expect(result.stderr).toMatch(
+    /^Error: Expected a command, but the value was empty\n\nUsage:\n {2}demo <command>/,
+  );
+});
+
+test("run: an unknown option in a subcommand shows that subcommand's help", async () => {
+  const spec: Spec = {
+    name: "demo",
+    options: [{ name: "--verbose", isPersistent: true, description: "Talk more" }],
+    subcommands: [{ name: "build", description: "BUILD_DESCRIPTION", action: () => {} }],
+  };
+  const result = await captureConsole(() => run(spec, ["build", "--verbos"]));
+  expect(result.code).toBe(1);
+  expect(result.stderr).toMatch(/^Error: "--verbos" looks like a flag, but is unknown in this context\n\n/);
+  expect(result.stderr).toMatch(/Did you mean '--verbose'/);
+  expect(result.stderr).toMatch(/Usage:\n {2}demo build \[flags\]/);
+  // Help for an error leaves out the description.
+  expect(result.stderr).not.toMatch(/BUILD_DESCRIPTION/);
+});
+
+test("run: an action receives the index of '--' among the arguments", async () => {
+  let init: ActionInit | undefined;
+  const spec: Spec = {
+    name: "demo",
+    args: { isVariadic: true },
+    action(received) {
+      init = received;
+    },
+  };
+  await run(spec, ["a", "--", "b", "c"]);
+  expect(init?.args).toEqual(["a", "b", "c"]);
+  expect(init?.argSeparatorIndex).toBe(1);
+  await run(spec, ["a"]);
+  expect(init?.argSeparatorIndex).toBe(-1);
+});

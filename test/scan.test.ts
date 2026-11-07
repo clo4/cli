@@ -220,3 +220,37 @@ test("scan: an option that requires a separator is never left open", () => {
   const spec: Spec = { name: "test", options: [option] };
   expect(scan(["--option"], spec, false).openOption).toBeNull();
 });
+
+test("scan: reports the directives in effect for the final command", () => {
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: {
+      optionArgSeparators: [":", "="],
+      optionsMustPrecedeArguments: true,
+      subcommandsMatchUniquePrefix: true,
+    },
+    subcommands: [
+      {
+        name: "sub",
+        parserDirectives: { optionsMustPrecedeArguments: false, flagsArePosixNoncompliant: true },
+      },
+    ],
+  };
+  expect(scan([], spec, false).directives).toEqual({
+    optionArgSeparators: [":", "="],
+    flagsArePosixNoncompliant: false,
+    optionsMustPrecedeArguments: true,
+    subcommandsMatchUniquePrefix: true,
+  });
+  expect(scan(["sub"], spec, false).directives).toEqual({
+    optionArgSeparators: [":", "="],
+    flagsArePosixNoncompliant: true,
+    optionsMustPrecedeArguments: false,
+    subcommandsMatchUniquePrefix: true,
+  });
+});
+
+test("scan: lenient mode skips unknown characters in a chain and keeps the rest", () => {
+  const spec: Spec = { name: "test", options: [{ name: "-a" }, { name: "-b" }] };
+  expect(scan(["-axb"], spec, false).options).toEqual(map({ "-a": [], "-b": [] }));
+});
