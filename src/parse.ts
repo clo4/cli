@@ -484,9 +484,12 @@ class Scanner {
       }
 
       this.useOption(option, optionName);
+      if (char === token.length - 1) return;
 
-      if (option.args && char < token.length - 1) {
-        const sep = leadingSeparator(token.slice(char + 1), this.directives.optionArgSeparators);
+      const sep = leadingSeparator(token.slice(char + 1), this.directives.optionArgSeparators);
+      // An option without args still takes a separated value, so that `-v=1`
+      // fails like `--verbose=1`, unless the next character is an option.
+      if (option.args || (sep && !this.findOption(leadingChar + token[char + 1]))) {
         const argStart = char + sep.length + 1;
         this.addValue(index, argStart, token.length, token.slice(argStart), sep);
         return;

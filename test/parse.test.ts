@@ -1423,3 +1423,13 @@ test("parse: an option action skips required arguments and options", () => {
   expect(result.args).toEqual([]);
   expect(result.optionActions).toHaveLength(1);
 });
+
+test("parse: a value attached to a short option without args says it takes none", () => {
+  const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
+  const error = thrown(() => parse(["-v=1"], spec));
+  expect(error).toBeInstanceOf(InvalidOptionArg);
+  expect(error).toMatchObject({ option: "-v", arg: "1", index: 0, start: 3, end: 4 });
+  // An option named like the separator still chains.
+  const chained: Spec = { name: "test", options: [{ name: "-v" }, { name: "-=" }] };
+  expect(parse(["-v="], chained).options).toEqual(map({ "-v": [], "-=": [] }));
+});
