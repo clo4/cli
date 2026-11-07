@@ -1,3 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, test } from "vitest";
 
 import { completeRuntime, completion, getCompletion } from "../src/completion.js";
@@ -62,6 +67,24 @@ test("runtime: positional template enumerates the filesystem", async () => {
   // build's variadic positional has template:filepaths.
   const v = values(await resolve(fixture, ["build"], "package."));
   expect(v).toContain("package.json");
+});
+
+test("runtime: a Windows path can use backslashes", async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  try {
+    expect(values(await resolve(fixture, ["build"], "test\\completion."))).toContain(
+      "test\\completion.test.ts",
+    );
+    expect(values(await resolve(fixture, ["build"], "tes"))).toContain("test/");
+    expect(values(await resolve(fixture, ["build"], "src\\..\\tes"))).toContain("src\\..\\test\\");
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+  // Elsewhere a backslash is part of a name.
+  expect(values(await resolve(fixture, ["build"], "test\\completion."))).not.toContain(
+    "test\\completion.test.ts",
+  );
 });
 
 test("runtime: pending option value runs a custom generator with no file leak", async () => {
@@ -429,9 +452,120 @@ test("getCompletion emits the shim", () => {
   expectIncludes(fish, 'command -q -- $bin; or test -x "$bin"');
 });
 
-test("runtime shims gate options for bash and fish but not zsh", () => {
-  expectIncludes(getCompletion(fixture, "bash"), "completion complete --gate-options --");
-  expectIncludes(getCompletion(fixture, "fish"), "completion complete --gate-options --");
+test("getCompletion emits the PowerShell shim", () => {
+  const powershell = getCompletion(fixture, "powershell");
+  expectIncludes(powershell, "Register-ArgumentCompleter -Native -CommandName 'forge'");
+  expectIncludes(powershell, "Get-Command $bin"); // guarded
+  // `--` goes through an array, so PowerShell passes it on.
+  expectIncludes(powershell, "$arguments = @('completion', 'complete', '--gate-options')");
+  expectIncludes(powershell, "$arguments += '--'");
+  expectIncludes(powershell, "& $bin @arguments");
+});
+
+test("the PowerShell shim passes an empty word as --empty-word", () => {
+  // Windows PowerShell drops an empty argument to a native command.
+  const powershell = getCompletion(fixture, "powershell");
+  expectIncludes(powershell, "if ($partial -eq '') { $arguments += '--empty-word' }");
+  expectIncludes(powershell, "if ($partial -ne '') { $arguments += $partial }");
+});
+
+test("the PowerShell shim runs a quoted command path without its quotes", () => {
+  const powershell = getCompletion(fixture, "powershell");
+  expectIncludes(powershell, "StringConstantExpressionAst]) { $first.Value } else { $first.Extent.Text }");
+});
+
+test("the PowerShell shim matches a quoted word without its opening quote", () => {
+  const powershell = getCompletion(fixture, "powershell");
+  expectIncludes(powershell, `if ($partial.StartsWith("'")) { $partial = $partial.Substring(1)`);
+  expectIncludes(powershell, `elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1)`);
+  expectIncludes(powershell, "$value.StartsWith($partial,");
+  expectNotIncludes(powershell, "$arguments += $wordToComplete");
+});
+
+test("getCompletion emits the Nushell shim", () => {
+  const nushell = getCompletion(fixture, "nushell");
+  expectIncludes(nushell, "let __forge_previous_completer = $env.config.completions.external.completer?");
+  // A command on Windows can be typed with its extension.
+  expectIncludes(
+    nushell,
+    "if ($command | path basename) not-in ['forge' 'forge.exe' 'forge.cmd' 'forge.bat'] {",
+  );
+  expectIncludes(nushell, "do $__forge_previous_completer $spans"); // other commands
+  expectIncludes(nushell, "if (which $command | is-empty) { return }"); // guarded
+});
+
+test("the Nushell shim passes and matches words without their quotes", () => {
+  const nushell = getCompletion(fixture, "nushell");
+  expectIncludes(nushell, `if $quote in ["'", '"', '\`'] {`);
+  expectIncludes(nushell, "^$command completion complete --gate-options -- ...$args");
+  expectIncludes(nushell, "str starts-with --ignore-case $partial");
+});
+
+const nu = (() => {
+  try {
+    execFileSync("nu", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// Runs the generated script in real Nushell, with spans shaped the way Nushell
+// passes them: each word as typed, quotes included.
+test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushell", () => {
+  const dir = mkdtempSync(join(tmpdir(), "clo4-cli-nu-"));
+  try {
+    const bin = join(dir, "with space");
+    mkdirSync(bin);
+    const log = join(dir, "args");
+    // A fake forge that records its arguments and prints fixed candidates.
+    const forge = join(bin, "forge");
+    writeFileSync(
+      forge,
+      `#!/bin/sh\necho "$*" >> '${log}'\nprintf 'my file.txt\\tA file\\nother\\nbuild\\n'\n`,
+      { mode: 0o755 },
+    );
+    copyFileSync(forge, join(bin, "forge.exe"));
+    writeFileSync(join(dir, "shim.nu"), getCompletion(fixture, "nushell"));
+    const cases = [
+      ["forge", "build", "'my f"],
+      ["forge", "build", '"my f'],
+      [`'${forge}'`, "bu"],
+      ["forge.exe", "ot"],
+      ["other", "x"],
+    ];
+    const script = [
+      `source '${join(dir, "shim.nu")}'`,
+      `let complete = $env.config.completions.external.completer`,
+      `${JSON.stringify(cases)} | each {|spans| do $complete $spans | default [] | get value? | default [] } | to json`,
+    ].join("\n");
+    const output = execFileSync("nu", ["--no-config-file", "-c", script], {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      encoding: "utf8",
+    });
+    expect(JSON.parse(output)).toEqual([["'my file.txt'"], ["'my file.txt'"], ["build"], ["other"], []]);
+    expect(readFileSync(log, "utf8").split("\n")).toEqual([
+      "completion complete --gate-options -- build my f",
+      "completion complete --gate-options -- build my f",
+      "completion complete --gate-options -- bu",
+      "completion complete --gate-options -- ot",
+      "",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("shims quote a name with a quote in it", () => {
+  const spec: Spec = { name: "it's", subcommands: [completion] };
+  expectIncludes(getCompletion(spec, "powershell"), "-CommandName 'it''s'");
+  expectIncludes(getCompletion(spec, "nushell"), `not-in ["it's" "it's.exe"`);
+});
+
+test("runtime shims gate options for every shell but zsh", () => {
+  for (const shell of ["bash", "fish", "powershell", "nushell"] as const) {
+    expectIncludes(getCompletion(fixture, shell), "--gate-options");
+  }
   // zsh keeps its convention of surfacing options, so no gating option.
   const zsh = getCompletion(fixture, "zsh");
   expectIncludes(zsh, "completion complete --");
@@ -449,6 +583,17 @@ test("complete subcommand honors --gate-options", async () => {
   expectIncludes(ungated.stdout, "--out");
 });
 
+test("complete subcommand reads every token as before an empty word with --empty-word", async () => {
+  const result = await captureConsole(() =>
+    run(fixture, ["completion", "complete", "--empty-word", "--", "remote"]),
+  );
+  expect(result.code).toBe(0);
+  // Without the flag, "remote" would be the word being completed.
+  const offered = result.stdout.split("\n").map((line) => line.split("\t")[0]);
+  expect(offered).toContain("remove");
+  expect(offered).not.toContain("build");
+});
+
 test("completion subcommand prints the shim", async () => {
   const result = await captureConsole(() => run(fixture, ["completion", "bash"]));
   expect(result.code).toBe(0);
@@ -458,13 +603,13 @@ test("completion subcommand prints the shim", async () => {
 test("completion subcommand lists shells when none is given", async () => {
   const result = await captureConsole(() => run(fixture, ["completion"]));
   expect(result.code).toBe(0);
-  expect(result.stdout).toBe("Supported shells: bash, zsh, fish\n");
+  expect(result.stdout).toBe("Supported shells: bash, zsh, fish, powershell, nushell\n");
 });
 
 test("completion subcommand rejects an unknown shell", async () => {
-  const result = await captureConsole(() => run(fixture, ["completion", "powershell"]));
+  const result = await captureConsole(() => run(fixture, ["completion", "tcsh"]));
   expect(result.code).toBe(1);
-  expect(result.stderr).toMatch(/Unsupported shell 'powershell'/);
+  expect(result.stderr).toMatch(/Unsupported shell 'tcsh'/);
 });
 
 test("complete subcommand prints resolver candidates", async () => {

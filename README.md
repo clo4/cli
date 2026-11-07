@@ -59,13 +59,24 @@ demo completion zsh  > "${fpath[1]}/_demo"
 demo completion fish > ~/.config/fish/completions/demo.fish
 ```
 
+```powershell
+demo completion powershell >> $PROFILE
+```
+
+```nu
+mkdir ($nu.user-autoload-dirs | first)
+demo completion nushell | save -f ($nu.user-autoload-dirs | first | path join demo.nu)
+```
+
 Completion describes the whole CLI from the root spec regardless of where the subcommand is placed. Hidden options and subcommands are excluded; persistent options are offered on the descendants that inherit them.
 
 ### How completion works
 
 `completion <shell>` prints a short script. On every Tab, the script runs `<cli> completion complete -- <commandline>`, and the CLI answers using its own parser. Completions therefore follow every parser option and relationship rule (`exclusiveOn`, `isRepeatable`, `dependsOn`, and so on). Each Tab starts the CLI once, so keep its startup fast.
 
-The bash and fish scripts pass `--gate-options`, so options are only offered once the word starts with `-`, which is the bash and fish convention. The zsh script leaves it out and offers options as usual.
+The bash, fish, PowerShell and Nushell scripts pass `--gate-options`, so options are only offered once the word starts with `-`, which is the convention in those shells. The zsh script leaves it out and offers options as usual.
+
+PowerShell and Nushell show every candidate a command returns, so their scripts keep the ones that start with the word being completed, ignoring case, and quote any that contain spaces or other special characters. Nushell has one completer for all external commands, so its script passes other commands to the completer that was set before it.
 
 ### Argument suggestions
 

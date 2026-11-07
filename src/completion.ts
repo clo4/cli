@@ -20,9 +20,9 @@ import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
-export type Shell = "bash" | "zsh" | "fish";
+export type Shell = "bash" | "zsh" | "fish" | "powershell" | "nushell";
 
-export const SHELLS: readonly Shell[] = ["bash", "zsh", "fish"];
+export const SHELLS: readonly Shell[] = ["bash", "zsh", "fish", "powershell", "nushell"];
 
 function isShell(value: string): value is Shell {
   return (SHELLS as readonly string[]).includes(value);
@@ -44,6 +44,20 @@ function fishQuote(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
+/** Single-quote a string for PowerShell (a quote is written twice). */
+function psQuote(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Quote a string for Nushell. A single-quoted string has no escapes, so a name
+ * with a quote in it is written as a double-quoted string instead.
+ */
+function nuQuote(value: string): string {
+  if (!value.includes("'")) return `'${value}'`;
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 // Runtime resolver {{{
 
 /** A single completion candidate. */
@@ -60,13 +74,17 @@ async function enumeratePaths(partial: string, template: Template): Promise<Cand
   const { readdirSync } = (await import(specifier)) as {
     readdirSync(path: string, options: { withFileTypes: true }): { name: string; isDirectory(): boolean }[];
   };
-  const slash = partial.lastIndexOf("/");
+  // Windows paths can use either separator. Elsewhere `\` is part of a name.
+  const isWindows = (globalThis as { process?: { platform?: string } }).process?.platform === "win32";
+  const slash = Math.max(partial.lastIndexOf("/"), isWindows ? partial.lastIndexOf("\\") : -1);
   const dir = slash >= 0 ? partial.slice(0, slash + 1) : "";
   const base = slash >= 0 ? partial.slice(slash + 1) : partial;
+  // A folder ends with the separator the user typed last.
+  const separator = slash >= 0 ? partial[slash] : "/";
   const foldersOnly = template === "folders";
   let entries: { name: string; isDirectory(): boolean }[];
   try {
-    entries = readdirSync(dir || ".", { withFileTypes: true });
+    entries = readdirSync((isWindows ? dir.replaceAll("\\", "/") : dir) || ".", { withFileTypes: true });
   } catch {
     return [];
   }
@@ -75,7 +93,7 @@ async function enumeratePaths(partial: string, template: Template): Promise<Cand
     if (!entry.name.startsWith(base)) continue;
     const isDir = entry.isDirectory();
     if (foldersOnly && !isDir) continue;
-    candidates.push({ value: `${dir}${entry.name}${isDir ? "/" : ""}` });
+    candidates.push({ value: `${dir}${entry.name}${isDir ? separator : ""}` });
   }
   return candidates;
 }
@@ -254,6 +272,91 @@ function renderRuntimeShim(spec: Spec, shell: Shell): string {
       `_${id}_complete "$@"`,
     ].join("\n");
   }
+  if (shell === "powershell") {
+    // PowerShell doesn't filter or quote a native command's candidates, so the
+    // script does both. The arguments go through an array so that PowerShell
+    // passes `--` on to the CLI. Windows PowerShell drops an empty argument,
+    // so an empty word is passed as --empty-word. The word is passed and
+    // matched without the quote it was opened with.
+    const stringAst = "[System.Management.Automation.Language.StringConstantExpressionAst]";
+    return [
+      `Register-ArgumentCompleter -Native -CommandName ${psQuote(name)} -ScriptBlock {`,
+      `  param($wordToComplete, $commandAst, $cursorPosition)`,
+      `  $elements = $commandAst.CommandElements`,
+      `  $first = $elements[0]`,
+      `  $bin = if ($first -is ${stringAst}) { $first.Value } else { $first.Extent.Text }`,
+      `  if (-not (Get-Command $bin -ErrorAction SilentlyContinue)) { return }`,
+      `  $partial = $wordToComplete`,
+      `  if ($partial.StartsWith("'")) { $partial = $partial.Substring(1).TrimEnd("'").Replace("''", "'") }`,
+      `  elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1).TrimEnd('"') }`,
+      `  $arguments = @('completion', 'complete', '--gate-options')`,
+      `  if ($partial -eq '') { $arguments += '--empty-word' }`,
+      `  $arguments += '--'`,
+      `  for ($i = 1; $i -lt $elements.Count; $i++) {`,
+      `    $element = $elements[$i]`,
+      `    if ($element.Extent.EndOffset -ge $cursorPosition) { break }`,
+      `    if ($element -is ${stringAst}) {`,
+      `      $arguments += $element.Value`,
+      `    } else {`,
+      `      $arguments += $element.Extent.Text`,
+      `    }`,
+      `  }`,
+      `  if ($partial -ne '') { $arguments += $partial }`,
+      `  & $bin @arguments 2>$null | ForEach-Object {`,
+      '    $value, $description = $_ -split "`t", 2',
+      `    if (-not $value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) { return }`,
+      "    $text = if ($value -match '[\\s''\"`$&|;,(){}<>@#]') { \"'$($value.Replace(\"'\", \"''\"))'\" } else { $value }",
+      `    if (-not $description) { $description = $value }`,
+      `    [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $description)`,
+      `  }`,
+      `}`,
+    ].join("\n");
+  }
+  if (shell === "nushell") {
+    // Nushell has one completer for every external command, so the script
+    // keeps the completer that was set before and hands it other commands.
+    // The spans keep the quotes they were typed with, the command's included,
+    // so the script removes them. A command on Windows can be typed with its
+    // extension. Nushell doesn't filter or quote what an external completer
+    // returns, so the script does both.
+    const previous = `$__${id}_previous_completer`;
+    const names = ["", ".exe", ".cmd", ".bat"].map((extension) => nuQuote(name + extension)).join(" ");
+    return [
+      `let __${id}_previous_completer = $env.config.completions.external.completer?`,
+      `$env.config.completions.external.completer = {|spans|`,
+      `  let words = $spans | each {|span|`,
+      `    let quote = $span | str substring 0..0`,
+      `    if $quote in ["'", '"', '\`'] { $span | str substring 1.. | str trim --right --char $quote } else { $span }`,
+      `  }`,
+      `  let command = $words.0`,
+      `  if ($command | path basename) not-in [${names}] {`,
+      `    return (if ${previous} != null { do ${previous} $spans })`,
+      `  }`,
+      `  if (which $command | is-empty) { return }`,
+      `  let args = $words | skip 1`,
+      `  let partial = $args | last | default ""`,
+      `  ^$command completion complete --gate-options -- ...$args`,
+      `    | complete`,
+      `    | get stdout`,
+      `    | lines`,
+      `    | each {|line|`,
+      `      let parts = $line | split row "\\t"`,
+      `      { value: $parts.0, description: ($parts | get 1? | default "") }`,
+      `    }`,
+      `    | where { $in.value | str starts-with --ignore-case $partial }`,
+      "    | update value {|candidate|",
+      "      let value = $candidate.value",
+      '      if ($value !~ "[\\\\s\'\\"`$|;#()\\\\[\\\\]{}]") {',
+      "        $value",
+      '      } else if ($value | str contains "\'") {',
+      "        $value | to json",
+      "      } else {",
+      "        $\"'($value)'\"",
+      "      }",
+      "    }",
+      `}`,
+    ].join("\n");
+  }
   // fish
   return [
     `function __${id}_complete`,
@@ -290,12 +393,19 @@ const completeCommand: Subcommand = {
       name: "--gate-options",
       description: "Only suggest options after a leading dash",
     },
+    {
+      name: "--empty-word",
+      description: "The word being completed is empty, so every token is before it",
+    },
   ],
   args: { name: "tokens", isVariadic: true, isOptional: true },
   async action({ path, args, options }) {
     const spec = path[0] as Spec;
-    const partial = args.length > 0 ? args[args.length - 1] : "";
-    const before = args.slice(0, -1);
+    // Windows PowerShell drops an empty argument, so its script says the word
+    // is empty with --empty-word instead of passing "".
+    const emptyWord = options.has("--empty-word");
+    const partial = emptyWord || args.length === 0 ? "" : args[args.length - 1];
+    const before = emptyWord ? args : args.slice(0, -1);
     const candidates = await completeRuntime({
       spec,
       before,
