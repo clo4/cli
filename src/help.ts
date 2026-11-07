@@ -1,6 +1,6 @@
 import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
-import { matchSubcommand, noSubcommandMatch, visibleSubcommands } from "./subcommands.js";
+import { matchSubcommand, visibleSubcommands } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
@@ -76,15 +76,15 @@ export const helpCommand: Subcommand = {
     }
 
     // Match the name the way the parser would have matched it in place of `help`.
-    const allowPrefix = OptionScope.at(helpRoot).directives.subcommandsMatchUniquePrefix;
-    const command = matchSubcommand(parent.subcommands, commandName, allowPrefix);
-    if (!command) {
-      const { message, didYouMean } = noSubcommandMatch(parent.subcommands, commandName, allowPrefix);
+    const { directives } = OptionScope.at(helpRoot);
+    const match = matchSubcommand(parent.subcommands, commandName, directives);
+    if (!match.command) {
+      const { message, didYouMean } = match.reason();
       printUsageError(helpRoot, message, didYouMean);
       return 1;
     }
 
-    print(help({ path: [...helpRoot, command] }));
+    print(help({ path: [...helpRoot, match.command] }));
   },
 };
 

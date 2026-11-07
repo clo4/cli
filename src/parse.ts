@@ -12,7 +12,8 @@ import {
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { OptionScope, optionKey } from "./scope.js";
-import { matchSubcommand, noSubcommandMatch, usage as builtinUsageAction } from "./subcommands.js";
+import { matchSubcommand, usage as builtinUsageAction } from "./subcommands.js";
+import type { NoSubcommand, SubcommandMatch } from "./subcommands.js";
 
 export interface ParseResult {
   args: string[];
@@ -421,25 +422,22 @@ class Scanner {
     return valueIsRequired ? undefined : this.subcommands;
   }
 
-  /** The subcommand the next token enters if it's `token`. */
-  private subcommandFor(token: string): Subcommand | null {
+  /**
+   * The subcommand the next token enters if it's `token`, or why it enters
+   * none. Null if the next token can't be a subcommand at all.
+   */
+  private subcommandFor(token: string): SubcommandMatch | null {
     const subcommands = this.matchableSubcommands;
     if (!subcommands) return null;
-    // A literal match always wins. A short optional value could be a prefix
-    // of a subcommand's name, so only an exact match can end an option that
-    // still has room.
-    const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !this.hasRoomForValue;
-    return matchSubcommand(subcommands, token, allowPrefix);
+    // A short optional value could be a prefix of a subcommand's name, so only
+    // an exact match can end an option that still has room.
+    return matchSubcommand(subcommands, token, this.directives, this.hasRoomForValue);
   }
 
-  /** Enter the subcommand `token` names, if any. Returns whether it did. */
-  tryEnterSubcommand(token: string): boolean {
-    const command = this.subcommandFor(token);
-    if (!command) return false;
+  private enterSubcommand(command: Subcommand): void {
     this.closeOption();
     this.path.push(command);
     this.enterCommand(command);
-    return true;
   }
 
   /** Read a token like `-abc`, `+x` or `-ovalue`. */
@@ -519,21 +517,20 @@ class Scanner {
   /**
    * Read a token that isn't `--`, a subcommand or an option. It's a value of
    * the open option if that has room, and otherwise an argument, which stops
-   * later tokens from being subcommands.
+   * later tokens from being subcommands. `unmatched` is why the token isn't a
+   * subcommand, if it could have been one.
    */
-  valueOrArg(token: string): void {
+  valueOrArg(token: string, unmatched: NoSubcommand | null): void {
     if (this.hasRoomForValue) {
       this.addValue(token, "");
       return;
     }
     // Where a subcommand could be, a token the command has no room for is a
     // subcommand that didn't match.
-    const subcommands = this.matchableSubcommands;
-    if (this.strict && subcommands && this.argsAreFull) {
+    if (this.strict && unmatched && this.argsAreFull) {
       const command = this.path[this.path.length - 1];
-      if (subcommands.length > 0 || command.requiresSubcommand) {
-        const allowPrefix = this.directives.subcommandsMatchUniquePrefix;
-        const { message, didYouMean } = noSubcommandMatch(subcommands, token, allowPrefix);
+      if (command.subcommands?.length || command.requiresSubcommand) {
+        const { message, didYouMean } = unmatched.reason();
         this.tooManyArgs ??= new ParseError(this.ctx(), message, didYouMean);
       }
     }
@@ -582,7 +579,7 @@ class Scanner {
     for (const { option, names } of [...local, ...persistent]) {
       if (this.conflicts(option)) continue;
       // The parser reads a name that a subcommand matches as that subcommand.
-      const typeable = names.filter((name) => !this.subcommandFor(name));
+      const typeable = names.filter((name) => !this.subcommandFor(name)?.command);
       if (typeable.length === 0) continue;
       usable.push({
         option,
@@ -667,7 +664,11 @@ class Scanner {
       return true;
     }
 
-    if (this.tryEnterSubcommand(token)) return false;
+    const subcommand = this.subcommandFor(token);
+    if (subcommand?.command) {
+      this.enterSubcommand(subcommand.command);
+      return false;
+    }
 
     if (optionsAllowed) {
       const flagsArePosixNoncompliant = this.directives.flagsArePosixNoncompliant;
@@ -687,7 +688,7 @@ class Scanner {
       }
     }
 
-    this.valueOrArg(token);
+    this.valueOrArg(token, subcommand);
     return false;
   }
 }
