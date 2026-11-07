@@ -52,6 +52,17 @@ test("testing: assertOptionsHaveDifferentNamesFromParents", () => {
     }),
   ).toThrow();
 
+  // Every name of the parent's option is the child's too
+  expect(() => check(withChild({ name: "-C", args: { name: "dir" } }, { name: ["-C", "-D"] }))).toThrow(
+    "Option `test sub -C|-D` (index 0) has every name of a different option, `test -C`, so the parent's value can't be read. Add a name that only the parent's option uses.",
+  );
+  // Every name of the child's option is the parent's too
+  expect(() => check(withChild({ name: ["-C", "--cd"], args: {} }, { name: "-C" }))).toThrow(
+    "Option `test sub -C` (index 0) only has names of a different option, `test -C|--cd`, so it can't tell whether it was used. Add a name that only the subcommand's option uses.",
+  );
+  // Same structure doesn't make options with different names one option
+  expect(() => check(withChild({ name: "--verbose" }, { name: ["-v", "--verbose"] }))).toThrow();
+
   // Each option has a name of its own
   check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["-C", "--moved"] }));
   check(withChild({ name: "-a" }, { name: "-b" }));
