@@ -247,8 +247,9 @@ async function resolveOptionValue(
 ): Promise<Candidate[] | null> {
   const tokens = [...req.before];
 
-  // `--option<sep>value`: the partial already carries a separator.
-  for (const separator of separators) {
+  // `--option<sep>value`: the partial already carries a separator. Where the
+  // parser would read the word as an argument, it's not an option's value.
+  for (const separator of optionsBlocked(state) ? [] : separators) {
     const at = req.partial.indexOf(separator);
     if (at <= 0) continue;
     const optionName = req.partial.slice(0, at);
@@ -325,10 +326,14 @@ async function freshTokenCandidates(
   return candidates;
 }
 
-/** Option candidates, unless options must precede arguments and one was seen. */
+/** Whether the parser would read the next word as an argument even if it names an option. */
+function optionsBlocked(state: CompletionState): boolean {
+  return state.forceArgs || (state.sawPositional && state.directives.optionsMustPrecedeArguments);
+}
+
+/** Option candidates, unless options can't be used here. */
 function allowedOptionCandidates(state: CompletionState, separators: readonly string[]): Candidate[] {
-  const optionsBlocked = state.sawPositional && state.directives.optionsMustPrecedeArguments;
-  return optionsBlocked ? [] : optionCandidates(state, separators);
+  return optionsBlocked(state) ? [] : optionCandidates(state, separators);
 }
 
 /** Eligible option candidates after relationship filtering. */

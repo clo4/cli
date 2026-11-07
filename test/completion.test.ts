@@ -431,3 +431,17 @@ test("complete subcommand prints resolver candidates", async () => {
   expect(result.code).toBe(0);
   expectIncludes(result.stdout, "remove");
 });
+
+test("runtime: attached option values aren't offered where options can't be used", async () => {
+  const option = { name: "--mode", args: { name: "m", suggestions: ["debug"] } };
+  const afterSeparator: Spec = { name: "x", args: { name: "a", isVariadic: true }, options: [option] };
+  expect(values(await resolve(afterSeparator, ["--"], "--mode="))).not.toContain("--mode=debug");
+  const afterArgument: Spec = {
+    name: "x",
+    parserDirectives: { optionsMustPrecedeArguments: true },
+    args: { name: "a", isVariadic: true },
+    options: [option],
+  };
+  expect(values(await resolve(afterArgument, [], "--mode="))).toContain("--mode=debug");
+  expect(values(await resolve(afterArgument, ["arg"], "--mode="))).not.toContain("--mode=debug");
+});
