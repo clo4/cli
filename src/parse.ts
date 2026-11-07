@@ -12,6 +12,7 @@ import {
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { OptionScope, optionKey } from "./scope.js";
+import type { OptionForm } from "./scope.js";
 import { matchSubcommand, usage as builtinUsageAction } from "./subcommands.js";
 import type { NoSubcommand, SubcommandMatch } from "./subcommands.js";
 
@@ -63,15 +64,11 @@ export interface NextToken {
 export interface UsableOption {
   option: Option;
   /**
-   * The names the parser reads as this option here. A name that another
-   * option shadows, or that a subcommand matches, isn't one of them.
+   * How each name the parser reads as this option here is written. A name
+   * that another option shadows, or that a subcommand matches, isn't one of
+   * them.
    */
-  names: readonly string[];
-  /**
-   * The separator that must come between a name and its value, or null if the
-   * value can be a separate token.
-   */
-  separator: string | null;
+  forms: readonly OptionForm[];
   /**
    * Whether the option was used earlier on the line. Options with the same
    * names count as the same option, like a subcommand's copy of a parent's.
@@ -581,12 +578,7 @@ class Scanner {
       // The parser reads a name that a subcommand matches as that subcommand.
       const typeable = names.filter((name) => !this.subcommandFor(name)?.command);
       if (typeable.length === 0) continue;
-      usable.push({
-        option,
-        names: typeable,
-        separator: this.scope.requiredSeparator(option),
-        used: used.has(optionKey(option)),
-      });
+      usable.push({ option, forms: this.scope.forms(option, typeable), used: used.has(optionKey(option)) });
     }
     return usable;
   }

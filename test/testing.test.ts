@@ -285,6 +285,7 @@ test("testing: assertPlusMinusOptionsTakeOneArg", () => {
     { name: "-" },
     { name: "+", args: [{}, { isOptional: true }] },
     { name: "-", args: [{}, { isOptional: true }] },
+    { name: "-", args: { isVariadic: true } },
   ] satisfies Option[]) {
     expect(() =>
       Testing.assertPlusMinusOptionsTakeOneArg({
@@ -395,25 +396,26 @@ test("testing: assertDescriptionLineLengthUnder69", () => {
 
 test("testing: assertRequiresSeparatorTakesOneArg", () => {
   Testing.assertRequiresSeparatorTakesOneArg({ name: "test" });
+  // It only checks options that require a separator.
   Testing.assertRequiresSeparatorTakesOneArg({
     name: "test",
-    options: [{ name: "option" }, { name: "option", args: {} }, { name: "option", args: [{}, {}] }],
+    options: [{ name: "option" }, { name: "--o", args: {} }, { name: "--o2", args: [{}, {}] }],
   });
   Testing.assertRequiresSeparatorTakesOneArg({
     name: "test",
     options: [
-      { name: "1", requiresSeparator: true, args: {} },
-      { name: "2", requiresSeparator: "=", args: {} },
+      { name: "--one", requiresSeparator: true, args: {} },
+      { name: "--two", requiresSeparator: "=", args: { isOptional: true } },
+      // Without arguments, the separator never comes up.
+      { name: "--three", requiresSeparator: true },
     ],
   });
   const options: Option[] = [
-    { name: "option", requiresSeparator: true },
-    { name: "option", requiresSeparator: "=" },
-    { name: "option", requiresSeparator: true, args: [{}, {}] },
-    { name: "option", requiresSeparator: "=", args: [{}, {}] },
-    { name: "option", requiresSeparator: "=", args: { isVariadic: true } },
+    { name: "--o", requiresSeparator: true, args: [{}, {}] },
+    { name: "--o", requiresSeparator: "=", args: [{}, {}] },
+    { name: "--o", requiresSeparator: "=", args: { isVariadic: true } },
     {
-      name: "option",
+      name: "--o",
       requiresSeparator: "=",
       args: [{}, { isOptional: true }],
     },
@@ -665,13 +667,11 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Options don't shadow persistent options",
     "Different options on a subcommand and its parents have different names",
     "Subcommands have locally unique names",
-    "The parser reads every name as the option or subcommand it names",
+    "The parser reads every option and subcommand the way it's written",
     "Option arg separators are not an empty string",
-    "Options named '-' or '+' take exactly one argument",
     "Names have no extra leading or trailing whitespace",
     "Everything has a description",
     "Each line in descriptions is less than or equal to 68 characters",
-    "Options with `requiresSeparator` take exactly one argument",
     "Common options are not defined on every subcommand",
     "References to other options by name are valid",
     "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
@@ -823,7 +823,41 @@ test("testing: assertNamesReadBack checks that a required separator splits the o
       options: [{ name: "--o", args: {}, requiresSeparator: "=" }],
     }),
   ).toThrow(
-    "Option `test --o` (index 0) requires the separator '=', but the parser doesn't read '--o=value' as the option with a value",
+    "Option `test --o` (index 0) is written '--o=<argument>', but the parser reads '--o=0' as an option that doesn't exist",
+  );
+});
+
+test("testing: assertNamesReadBack writes each option with every value it takes", () => {
+  const check = Testing.assertNamesReadBack;
+  check({
+    name: "test",
+    options: [
+      { name: "-", args: { name: "n" } },
+      { name: "+", args: { name: "n" } },
+    ],
+  });
+  check({ name: "test", options: [{ name: "--o", args: [{}, { isOptional: true }, { isVariadic: true }] }] });
+  // The value is one no short option starts with, so it can follow '-'.
+  check({ name: "test", options: [{ name: "-", args: {} }, { name: "-0" }, { name: "-1" }] });
+  // A value joined to the name is the option's only value.
+  expect(() =>
+    check({ name: "test", options: [{ name: "-", args: [{ name: "a" }, { name: "b" }] }] }),
+  ).toThrow(
+    "Option `test -` (index 0) is written '-<a> <b>', but in '-0 0' the parser reads '0' as an argument",
+  );
+  expect(() =>
+    check({ name: "test", options: [{ name: "+", args: { name: "n", isVariadic: true } }] }),
+  ).toThrow(
+    "Option `test +` (index 0) is written '+<n>...', but in '+0 0' the parser reads '0' as an argument",
+  );
+  expect(() =>
+    check({ name: "test", options: [{ name: "--o", args: [{}, {}], requiresSeparator: true }] }),
+  ).toThrow(
+    "Option `test --o` (index 0) is written '--o=<argument> <argument>', but in '--o=0 0' the parser reads '0' as an argument",
+  );
+  // An option named '-' without arguments can't be used, since '-' alone is an argument.
+  expect(() => check({ name: "test", options: [{ name: "-" }] })).toThrow(
+    "Option `test -` (index 0) has the name '-', but the parser reads it as an argument",
   );
 });
 
@@ -924,10 +958,10 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
       },
       /^In `t sub`, option `t verbose` \(index 0\) has the name 'verbose'/,
     ],
-    [{ name: "test", options: [sep(":")] }, /^Option `test --o` \(index 0\) requires the separator ':'/],
+    [{ name: "test", options: [sep(":")] }, /^Option `test --o` \(index 0\) is written '--o:<argument>'/],
     [
       { name: "test", parserDirectives: { optionArgSeparators: [] }, options: [sep(true)] },
-      /^Option `test --o` \(index 0\) requires the separator '='/,
+      /^Option `test --o` \(index 0\) is written '--o=<argument>'/,
     ],
     [
       {
@@ -935,7 +969,7 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
         options: [sep("=", true)],
         subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: ":" } }],
       },
-      /^In `test sub`, option `test --o` \(index 0\) requires the separator '='/,
+      /^In `test sub`, option `test --o` \(index 0\) is written '--o=<argument>'/,
     ],
   ];
   for (const [spec, message] of fails) expect(() => check(spec)).toThrow(message);

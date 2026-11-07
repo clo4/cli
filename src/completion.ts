@@ -186,7 +186,7 @@ function optionCandidates(next: NextToken): Candidate[] {
   const required: Candidate[] = [];
   const optional: Candidate[] = [];
 
-  for (const { option, names, separator, used } of next.options) {
+  for (const { option, forms, used } of next.options) {
     if (option.hidden) continue;
     // The parser lets a later use of an option override an earlier one, but
     // that's rarely what someone wants, so an option that isn't repeatable is
@@ -202,11 +202,14 @@ function optionCandidates(next: NextToken): Candidate[] {
       description = description ? `${description} [required]` : "[required]";
     }
 
-    // requiresSeparator options can only take an attached value, so offer the
-    // separator form so the next Tab completes the value.
+    // A name joined to its value by a separator is offered with the separator,
+    // so the next Tab completes the value. A name joined with nothing between,
+    // like `-` in `-5`, is only the option once the value is typed, so it isn't
+    // offered.
     const bucket = option.isRequired ? required : optional;
-    for (const token of names) {
-      bucket.push({ value: separator ? `${token}${separator}` : token, description });
+    for (const { name, join } of forms) {
+      if (join === "") continue;
+      bucket.push({ value: name + (join ?? ""), description });
     }
   }
 

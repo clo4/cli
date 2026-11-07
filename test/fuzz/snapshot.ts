@@ -74,13 +74,38 @@ export function difference(
  */
 export type AnyNextToken = Omit<NextToken, "directives" | "options"> & {
   directives?: NextToken["directives"];
-  options?: NextToken["options"];
+  options?: readonly AnyUsableOption[];
   scope?: { directives: NextToken["directives"] };
 };
 
 /**
+ * A usable option from this version or an older one. Before options listed
+ * how each name is written, they listed the names and one separator.
+ */
+type AnyUsableOption = Omit<NextToken["options"][number], "forms"> & {
+  forms?: NextToken["options"][number]["forms"];
+  names?: readonly string[];
+  separator?: string | null;
+};
+
+/** The names that read as a usable option, from either version. */
+function namesOf(usable: AnyUsableOption): string[] {
+  if (!usable.forms) return [...(usable.names ?? [])];
+  return usable.forms.map((form) => form.name);
+}
+
+/** How each name is written, if both versions say so the same way. */
+function sameForms(a: AnyUsableOption, b: AnyUsableOption): boolean {
+  if (a.forms && b.forms)
+    return sameItems(a.forms, b.forms, (x, y) => x.name === y.name && x.join === y.join);
+  if (a.forms || b.forms) return true;
+  return a.separator === b.separator;
+}
+
+/**
  * Describe how two results of `readNext` differ, or return null if they match.
- * The usable options are only compared when both versions list them.
+ * The usable options are only compared when both versions list them, and how
+ * their names are written only when both versions say it the same way.
  */
 export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null {
   if (!sameItems(x.path, y.path)) return "path differs";
@@ -107,9 +132,9 @@ export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null 
       const [a, b] = [x.options[i], y.options[i]];
       if (
         a.option !== b.option ||
-        a.separator !== b.separator ||
         a.used !== b.used ||
-        !sameItems(a.names, b.names)
+        !sameItems(namesOf(a), namesOf(b)) ||
+        !sameForms(a, b)
       ) {
         return `options differ at ${i}`;
       }

@@ -2,7 +2,7 @@ import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { matchSubcommand, visibleSubcommands } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
-import type { VisibleOption } from "./scope.js";
+import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { makeArray, makeArray1, print, printError } from "./util.js";
 
@@ -115,8 +115,7 @@ function getSubcommandPathString(commands: NonEmptyArray<Subcommand>): string {
 function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const command = commands[commands.length - 1];
   const scope = OptionScope.at(commands);
-  const show = ({ option, names }: VisibleOption) =>
-    optionToString(option, scope.requiredSeparator(option), names);
+  const show = ({ option, names }: VisibleOption) => optionToString(option, scope.forms(option, names));
 
   const description = command.description;
   const defaultDesc = "No description";
@@ -247,30 +246,30 @@ export function getLongestString(strings: NonEmptyArray<string>): string {
 }
 
 /**
- * Show an option's names and arguments. `separator` is shown between the
- * option and its value when the option requires one. `names` defaults to all
- * of the option's names.
+ * Show an option's names, each written with its arguments the way `forms`
+ * says. Names written the same way share one copy of the arguments.
  */
-export function optionToString(
-  option: Option,
-  separator: string | null = null,
-  names: readonly string[] = makeArray1(option.name),
-): string {
-  const name = [...names].sort((a, b) => a.length - b.length).join(", ");
-
+export function optionToString(option: Option, forms: readonly OptionForm[]): string {
   const optionArgs = makeArray(option.args);
+  const sorted = [...forms].sort((a, b) => a.name.length - b.name.length);
+  const joins = [...new Set(sorted.map((form) => form.join))];
+  return joins
+    .map((join) => {
+      const names = sorted.filter((form) => form.join === join).map((form) => form.name);
+      return names.join(", ") + argumentsAfterName(optionArgs, join);
+    })
+    .join(", ");
+}
 
-  if (optionArgs.length === 0) {
-    return name;
-  }
-
-  if (separator !== null) {
-    if (optionArgs[0].isOptional) {
-      return `${name}[${separator}${optionArgs[0].name || "argument"}]`;
-    }
-    return `${name}${separator}<${optionArgs[0].name || "argument"}>`;
-  }
-  return `${name} ${summarizeArguments(optionArgs)}`;
+/** The text after an option's name that shows its arguments, joined to the name by `join`. */
+function argumentsAfterName(args: Arg[], join: string | null): string {
+  if (args.length === 0) return "";
+  if (join === null) return ` ${summarizeArguments(args)}`;
+  const [first, ...rest] = args;
+  const name = first.name || "argument";
+  const joined =
+    (first.isOptional ? `[${join}${name}]` : `${join}<${name}>`) + (first.isVariadic ? "..." : "");
+  return rest.length > 0 ? `${joined} ${summarizeArguments(rest)}` : joined;
 }
 
 export function summarizeArguments(args: Arg[]) {
