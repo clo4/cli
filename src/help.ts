@@ -1,7 +1,9 @@
 import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } from "./types.js";
 import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
-import { makeArray, makeArray1, print, printActionError, reachableOptions } from "./util.js";
+import { OptionScope } from "./scope.js";
+import type { VisibleOption } from "./scope.js";
+import { makeArray, makeArray1, print, printActionError } from "./util.js";
 
 function getNamed<T extends { name: SingleOrArray<string> }>(named: readonly T[], name: string): T | null {
   return named.find((obj) => makeArray(obj.name).includes(name)) ?? null;
@@ -176,14 +178,11 @@ function getSubcommandPathString(commands: NonEmptyArray<Subcommand>): string {
   return commands.map((command) => getLongestString(makeArray1(command.name))).join(" ");
 }
 
-function nonNullable<T>(value: T): value is NonNullable<T> {
-  return value !== null && value !== undefined;
-}
-
 function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const command = commands[commands.length - 1];
-  const separator = directivesFor(commands).optionArgSeparators[0] ?? "=";
-  const show = (option: Option) => optionToString(option, separator);
+  const scope = OptionScope.at(commands);
+  const show = ({ option, names }: VisibleOption) =>
+    optionToString(option, scope.requiredSeparator(option), names);
 
   const description = command.description;
   const defaultDesc = "No description";
@@ -199,44 +198,26 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
         ])
     : [];
 
-  let persistentOptionObjects: Option[] = [];
-  let optionObjects: Option[] = [];
-
-  let persistentOptions: HelpSections["persistentOptions"] = [];
-  let options: HelpSections["options"] = [];
-
+  const visible = scope.visible();
+  let optionObjects = visible.local;
+  let persistentOptionObjects = visible.persistent;
+  // A command without parents or subcommands has no global flags to set apart.
   if (commands.length === 1 && subcommands.length === 0) {
-    optionObjects = command.options ? command.options.filter((option) => !option.hidden) : [];
-    options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
-  } else {
-    // Only options that a name still refers to are listed.
-    const local = (command.options ?? []).filter((option) => !option.isPersistent);
-    const persistent = commands
-      .map((command) => command.options)
-      .filter(nonNullable)
-      .flat()
-      .filter((option) => option.isPersistent);
-    const reachable = new Set(reachableOptions(local, persistent));
-    persistentOptionObjects = persistent.filter((option) => reachable.has(option) && !option.hidden);
-
-    persistentOptions = persistentOptionObjects.map((option) => [
-      show(option),
-      option.description ?? defaultDesc,
-    ]);
-
-    optionObjects = (command.options ?? []).filter((option) => !option.hidden && !option.isPersistent);
-
-    options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
+    const byOption = new Map([...optionObjects, ...persistentOptionObjects].map((v) => [v.option, v]));
+    optionObjects = (command.options ?? []).flatMap((option) => byOption.get(option) ?? []);
+    persistentOptionObjects = [];
   }
+  const row = (visible: VisibleOption): [string, string] => [
+    show(visible),
+    visible.option.description ?? defaultDesc,
+  ];
+  const options = optionObjects.map(row);
+  const persistentOptions = persistentOptionObjects.map(row);
 
   const usage = (() => {
     const parts = [getSubcommandPathString(commands)];
-    const required = [
-      ...optionObjects.filter((option) => option.isRequired),
-      ...persistentOptionObjects.filter((option) => option.isRequired),
-    ];
-    for (const option of required) {
-      parts.push(show(option));
+    for (const visible of [...optionObjects, ...persistentOptionObjects]) {
+      if (visible.option.isRequired) parts.push(show(visible));
     }
     if (options.length || persistentOptions.length) {
       parts.push("[flags]");
@@ -334,13 +315,16 @@ export function getLongestString(strings: NonEmptyArray<string>): string {
 }
 
 /**
- * Show an option's names and arguments. `separator` is shown between an option
- * and its value when the option requires one but doesn't say which.
+ * Show an option's names and arguments. `separator` is shown between the
+ * option and its value when the option requires one. `names` defaults to all
+ * of the option's names.
  */
-export function optionToString(option: Option, separator = "="): string {
-  const name = makeArray1(option.name)
-    .sort((a, b) => a.length - b.length)
-    .join(", ");
+export function optionToString(
+  option: Option,
+  separator: string | null = null,
+  names: readonly string[] = makeArray1(option.name),
+): string {
+  const name = [...names].sort((a, b) => a.length - b.length).join(", ");
 
   const optionArgs = makeArray(option.args);
 
@@ -348,12 +332,11 @@ export function optionToString(option: Option, separator = "="): string {
     return name;
   }
 
-  if (option.requiresSeparator) {
-    const sep = option.requiresSeparator === true ? separator : option.requiresSeparator;
+  if (separator !== null) {
     if (optionArgs[0].isOptional) {
-      return `${name}[${sep}${optionArgs[0].name || "argument"}]`;
+      return `${name}[${separator}${optionArgs[0].name || "argument"}]`;
     }
-    return `${name}${sep}<${optionArgs[0].name || "argument"}>`;
+    return `${name}${separator}<${optionArgs[0].name || "argument"}>`;
   }
   return `${name} ${summarizeArguments(optionArgs)}`;
 }

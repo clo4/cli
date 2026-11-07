@@ -1202,10 +1202,21 @@ test("parse: an unknown option lists the valid names and the command it was foun
   };
   const error = thrown(() => parse(["sub", "--nope"], spec));
   expect(error).toBeInstanceOf(UnknownOption);
-  // Local names first, then persistent ones, each listed once. The parent's
-  // non-persistent option isn't valid in the subcommand.
-  expect((error as UnknownOption).validOptions).toEqual(["--x", "--g", "--g2"]);
+  // Local names first, then persistent ones, each listed once, in the order
+  // the options they refer to are defined. The parent's non-persistent option
+  // isn't valid in the subcommand, and its `--g` is shadowed by the
+  // subcommand's.
+  expect((error as UnknownOption).validOptions).toEqual(["--x", "--g2", "--g"]);
   expect((error as UnknownOption).context.path).toEqual([spec, sub]);
+});
+
+test("parse: an unknown option doesn't suggest hidden options", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--secret-mode", hidden: true }, { name: "--verbose" }],
+  };
+  const error = thrown(() => parse(["--secret-mod"], spec));
+  expect((error as UnknownOption).validOptions).toEqual(["--verbose"]);
 });
 
 test("parse: missing argument messages describe the expected count", () => {

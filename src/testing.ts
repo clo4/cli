@@ -8,6 +8,7 @@ import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
 import { assert, isArray, makeArray } from "./util.js";
 import { directivesFor } from "./directives.js";
 import { getMaxArgs, getMinArgs } from "./parse.js";
+import { OptionScope } from "./scope.js";
 
 const repr = JSON.stringify;
 
@@ -465,27 +466,26 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
  * it requires, or at any separator when it doesn't name one.
  */
 export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
-  forEachSubcommand(spec, (command, path) => {
-    const separators = directivesFor(path).optionArgSeparators;
+  forEachSubcommand(spec, (_command, path) => {
+    const scope = OptionScope.at(path);
+    const separators = scope.directives.optionArgSeparators;
     const accepted = separators.map((separator) => `'${separator}'`).join(", ");
-    // The command's own options, and the persistent ones it inherits.
-    for (const [depth, definedIn] of path.entries()) {
-      const isOwn = depth === path.length - 1;
-      const where = isOwn ? "Option" : `In ${namedArrayToString(...path)}, option`;
-      for (const option of makeArray(definedIn.options)) {
-        if (!option.requiresSeparator || !(isOwn || option.isPersistent)) continue;
-        const name = namedArrayToString(...path.slice(0, depth + 1), option);
-        if (option.requiresSeparator === true) {
-          assert(
-            separators.length > 0,
-            `${where} ${name} requires a separator, but there are no option arg separators`,
-          );
-        } else {
-          assert(
-            separators.includes(option.requiresSeparator),
-            `${where} ${name} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
-          );
-        }
+    for (const option of [...scope.local, ...scope.persistent]) {
+      if (!option.requiresSeparator) continue;
+      let depth = path.length - 1;
+      while (!path[depth].options?.includes(option)) depth--;
+      const where = depth === path.length - 1 ? "Option" : `In ${namedArrayToString(...path)}, option`;
+      const name = namedArrayToString(...path.slice(0, depth + 1), option);
+      if (option.requiresSeparator === true) {
+        assert(
+          separators.length > 0,
+          `${where} ${name} requires a separator, but there are no option arg separators`,
+        );
+      } else {
+        assert(
+          separators.includes(option.requiresSeparator),
+          `${where} ${name} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
+        );
       }
     }
   });
@@ -524,26 +524,17 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
  */
 export function assertOptionNameReferencesExist(spec: Subcommand): void {
   forEachOptionArray(spec, (options, path) => {
-    const optionNames = new Set([
-      ...path
-        .slice(0, -1)
-        .flatMap((subcommand) =>
-          subcommand.options
-            ? subcommand.options.filter((option) => option.isPersistent).flatMap((option) => option.name)
-            : [],
-        ),
-      ...options.flatMap((option) => option.name),
-    ]);
+    const scope = OptionScope.at(path);
     for (const [index, option] of makeArray(options).entries()) {
       for (const name of makeArray(option.dependsOn)) {
         assert(
-          optionNames.has(name),
+          scope.resolve(name) !== null,
           `The option ${namedArrayToString(...path, option)} (index ${index}) depends on an option named ${repr(name)}, which doesn't exist in its scope`,
         );
       }
       for (const name of makeArray(option.exclusiveOn)) {
         assert(
-          optionNames.has(name),
+          scope.resolve(name) !== null,
           `The option ${namedArrayToString(...path, option)} (index ${index}) is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
         );
       }

@@ -13,9 +13,10 @@
  */
 
 import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
-import { asArray, makeArray, print, printActionError, reachableOptions } from "./util.js";
+import { asArray, makeArray, print, printActionError } from "./util.js";
 import { repeatCount, scan } from "./parse.js";
 import type { Directives } from "./parse.js";
+import type { OptionScope, VisibleOption } from "./scope.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -55,8 +56,10 @@ interface CompletionState {
   /** Commands from the root to the current one. */
   path: Subcommand[];
   current: Subcommand;
-  /** Options usable at the current command (own + inherited persistent). */
-  availableOptions: Option[];
+  /** Which option each name refers to at the current command. */
+  scope: OptionScope;
+  /** Options a user can see at the current command, with their live names. */
+  visibleOptions: VisibleOption[];
   /** A option still expecting a separate-token value, or null. */
   pending: { option: Option; argIndex: number } | null;
   /** Positional args already consumed by the current command. */
@@ -95,20 +98,21 @@ function readLine(spec: Spec, before: readonly string[]): CompletionState {
   const open = scanned.openOption;
   const pending = open ? { option: open.option, argIndex: open.valueCount } : null;
 
-  // An option is available if one of its names still refers to it.
-  const availableOptions = [...new Set(reachableOptions(scanned.localOptions, scanned.persistentOptions))];
+  const { scope } = scanned;
+  const { local, persistent } = scope.visible();
 
   return {
     path,
     current: path[path.length - 1],
-    availableOptions,
+    scope,
+    visibleOptions: [...local, ...persistent],
     pending,
     positionalIndex: scanned.args.length,
     presentNames,
     countByOption,
     forceArgs: scanned.argSeparatorIndex !== -1,
     sawPositional: scanned.args.length > 0,
-    directives: scanned.directives,
+    directives: scope.directives,
     repeatCount: (option) => repeatCount(scanned.options, scanned.repeatCounts, asArray(option.name)),
   };
 }
@@ -221,7 +225,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   const optionValue = await resolveOptionValue(state, req, separators);
   if (optionValue) return optionValue;
 
-  return freshTokenCandidates(state, req, separators);
+  return freshTokenCandidates(state, req);
 }
 
 /**
@@ -242,7 +246,7 @@ async function resolveOptionValue(
     const at = req.partial.indexOf(separator);
     if (at <= 0) continue;
     const optionName = req.partial.slice(0, at);
-    const option = state.availableOptions.find((candidate) => makeArray(candidate.name).includes(optionName));
+    const option = state.scope.resolve(optionName);
     const arg = option && (asArray(option.args) as Arg[])[0];
     if (option && arg) {
       const valuePrefix = req.partial.slice(at + separator.length);
@@ -267,7 +271,7 @@ async function resolveOptionValue(
     const { wantValues, wantOptions } = wantedCandidates(state, req);
     return [
       ...(arg && wantValues ? await argValues(arg, tokens, req.partial) : []),
-      ...(wantOptions ? allowedOptionCandidates(state, separators) : []),
+      ...(wantOptions ? allowedOptionCandidates(state) : []),
     ];
   }
 
@@ -275,11 +279,7 @@ async function resolveOptionValue(
 }
 
 /** Candidates when completing a fresh token: subcommand / positional / option. */
-async function freshTokenCandidates(
-  state: CompletionState,
-  req: CompletionRequest,
-  separators: readonly string[],
-): Promise<Candidate[]> {
+async function freshTokenCandidates(state: CompletionState, req: CompletionRequest): Promise<Candidate[]> {
   const candidates: Candidate[] = [];
   const tokens = [...req.before];
 
@@ -309,7 +309,7 @@ async function freshTokenCandidates(
   }
 
   if (wantOptions) {
-    candidates.push(...allowedOptionCandidates(state, separators));
+    candidates.push(...allowedOptionCandidates(state));
   }
 
   return candidates;
@@ -321,18 +321,16 @@ function optionsBlocked(state: CompletionState): boolean {
 }
 
 /** Option candidates, unless options can't be used here. */
-function allowedOptionCandidates(state: CompletionState, separators: readonly string[]): Candidate[] {
-  return optionsBlocked(state) ? [] : optionCandidates(state, separators);
+function allowedOptionCandidates(state: CompletionState): Candidate[] {
+  return optionsBlocked(state) ? [] : optionCandidates(state);
 }
 
 /** Eligible option candidates after relationship filtering. */
-function optionCandidates(state: CompletionState, separators: readonly string[]): Candidate[] {
+function optionCandidates(state: CompletionState): Candidate[] {
   const required: Candidate[] = [];
   const optional: Candidate[] = [];
 
-  for (const option of state.availableOptions) {
-    if (option.hidden) continue;
-
+  for (const { option, names } of state.visibleOptions) {
     // Repeatable limits: drop a option that can't appear again.
     const count = option.isRepeatable ? state.repeatCount(option) : (state.countByOption.get(option) ?? 0);
     if (count > 0) {
@@ -344,11 +342,11 @@ function optionCandidates(state: CompletionState, separators: readonly string[])
 
     // Mutual exclusion, both directions.
     if (option.exclusiveOn?.some((name) => state.presentNames.has(name))) continue;
-    const conflicts = state.availableOptions.some(
+    const conflicts = [...state.scope.local, ...state.scope.persistent].some(
       (other) =>
         other !== option &&
         makeArray(other.name).some((name) => state.presentNames.has(name)) &&
-        other.exclusiveOn?.some((name) => makeArray(option.name).includes(name)),
+        other.exclusiveOn?.some((name) => names.includes(name)),
     );
     if (conflicts) continue;
 
@@ -363,15 +361,10 @@ function optionCandidates(state: CompletionState, separators: readonly string[])
 
     // requiresSeparator options can only take an attached value, so offer the
     // separator form so the next Tab completes the value.
-    const sep =
-      option.requiresSeparator === true
-        ? separators[0]
-        : typeof option.requiresSeparator === "string"
-          ? option.requiresSeparator
-          : undefined;
+    const sep = state.scope.requiredSeparator(option);
 
     const bucket = option.isRequired ? required : optional;
-    for (const token of makeArray(option.name)) {
+    for (const token of names) {
       bucket.push({ value: sep ? `${token}${sep}` : token, description });
     }
   }

@@ -247,3 +247,17 @@ test("help: an option that another option shadows isn't listed", () => {
   expectNotIncludes(msg, "parent global");
   expectNotIncludes(msg, "parent local");
 });
+
+test("help: an option lists only the names that still refer to it", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [
+      { name: ["-a", "--all"], description: "first" },
+      { name: "--all", description: "second" },
+    ],
+  };
+  const msg = getHelp([spec]);
+  expectIncludes(msg, "  -a     first");
+  expectIncludes(msg, "  --all  second");
+  expectNotIncludes(msg, "-a, --all");
+});

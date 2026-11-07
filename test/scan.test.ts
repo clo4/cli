@@ -238,13 +238,13 @@ test("scan: reports the directives in effect for the final command", () => {
       },
     ],
   };
-  expect(scan([], spec, false).directives).toEqual({
+  expect(scan([], spec, false).scope.directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: false,
     optionsMustPrecedeArguments: true,
     subcommandsMatchUniquePrefix: true,
   });
-  expect(scan(["sub"], spec, false).directives).toEqual({
+  expect(scan(["sub"], spec, false).scope.directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: true,
     optionsMustPrecedeArguments: false,

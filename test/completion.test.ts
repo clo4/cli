@@ -483,3 +483,27 @@ test("runtime: an option that another option shadows isn't offered", async () =>
   expect(candidates.filter((c) => c.value === "--g").map((c) => c.description)).toEqual(["child"]);
   expect(candidates.map((c) => c.description)).toContain("still reachable");
 });
+
+test("runtime: a shadowed name is offered only for the option it refers to", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: ["-a", "--all"], description: "first" },
+      { name: "--all", description: "second" },
+    ],
+  };
+  const candidates = (await resolve(spec, [], "")).map((c) => `${c.value}:${c.description}`);
+  expect(candidates).toEqual(["-a:first", "--all:second"]);
+});
+
+test("runtime: an attached value completes for the option the parser would pick", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: ["-c", "--config"], isPersistent: true, args: { suggestions: ["ROOT"] } }],
+    subcommands: [
+      { name: "sub", options: [{ name: "--config", isPersistent: true, args: { suggestions: ["SUB"] } }] },
+    ],
+  };
+  expect(values(await resolve(spec, ["sub"], "--config="))).toEqual(["--config=SUB"]);
+  expect(values(await resolve(spec, ["sub"], "-c="))).toEqual(["-c=ROOT"]);
+});

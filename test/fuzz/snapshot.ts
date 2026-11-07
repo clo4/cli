@@ -19,11 +19,29 @@ interface Result {
   directives?: unknown;
 }
 
+// Older versions of `scan` return these fields at the top level.
+interface Scope {
+  local: readonly unknown[];
+  persistent: readonly unknown[];
+  directives: unknown;
+}
+
+function normalize(result: Result & { scope?: Scope }): Result {
+  const { scope } = result;
+  if (!scope) return result;
+  return {
+    ...result,
+    localOptions: scope.local,
+    persistentOptions: scope.persistent,
+    directives: scope.directives,
+  };
+}
+
 export type Outcome = { ok: true; result: Result } | { ok: false; error: Error & Record<string, unknown> };
 
 export function attempt(scan: Scan, input: readonly string[], spec: Spec, strict: boolean): Outcome {
   try {
-    return { ok: true, result: scan(input, spec, strict) as Result };
+    return { ok: true, result: normalize(scan(input, spec, strict) as Result & { scope?: Scope }) };
   } catch (error) {
     return { ok: false, error: error as Error & Record<string, unknown> };
   }

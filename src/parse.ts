@@ -10,8 +10,8 @@ import {
   UnknownOption,
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
-import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
+import { OptionScope } from "./scope.js";
 import { usage as builtinUsageAction } from "./help.js";
 
 export interface ParseResult {
@@ -27,58 +27,16 @@ export interface ParseResult {
 export interface ScanResult extends ParseResult {
   /** Every use of an option, in order. */
   seenOptions: Option[];
-  /** Non-persistent options of the final command, in definition order. */
-  localOptions: Option[];
-  /**
-   * Persistent options from every command on the path, in definition order.
-   * A later option shadows an earlier one with the same name.
-   */
-  persistentOptions: Option[];
+  /** The options and directives in effect for the final command. */
+  scope: OptionScope;
   /** The option that can still take a separate value, and how many it has. */
   openOption: { option: Option; valueCount: number } | null;
-  /** The directives in effect for the final command. */
-  directives: Directives;
   /** How many times each repeatable option was used. See {@link repeatCount}. */
   repeatCounts: ReadonlyMap<string[], number>;
 }
 
 export { getMaxArgs, getMinArgs };
 export type { Directives };
-
-function hasName(names: string | readonly string[], name: string): boolean {
-  return typeof names === "string" ? names === name : names.includes(name);
-}
-
-/**
- * Find the option `name` refers to. Local options win over persistent ones, and
- * within each list a later definition wins over an earlier one.
- */
-function findOption(local: readonly Option[], persistent: readonly Option[], name: string) {
-  for (let i = local.length - 1; i >= 0; i--) {
-    if (hasName(local[i].name, name)) return local[i];
-  }
-  for (let i = persistent.length - 1; i >= 0; i--) {
-    if (hasName(persistent[i].name, name)) return persistent[i];
-  }
-  return null;
-}
-
-/** Every name that's valid as an option here, for "did you mean" suggestions. */
-function optionNames(local: readonly Option[], persistent: readonly Option[]): string[] {
-  const names: string[] = [];
-  for (const options of [local, persistent]) {
-    const seen = new Set<string>();
-    for (const option of options) {
-      for (const name of asArray(option.name)) {
-        if (!seen.has(name)) {
-          seen.add(name);
-          names.push(name);
-        }
-      }
-    }
-  }
-  return names;
-}
 
 /**
  * Find the subcommand `token` names. An exact name always wins. With
@@ -230,15 +188,11 @@ class Scanner {
   argSeparatorIndex = -1;
 
   // What the current command allows.
-  local: Option[] = [];
-  readonly persistent: Option[] = [];
-  private readonly localRequired: Option[] = [];
-  private readonly persistentRequired: Option[] = [];
+  readonly scope: OptionScope = new OptionScope();
   private subcommands: readonly Subcommand[] | undefined = undefined;
   private commandArgsMin = 0;
   private commandArgsMax = 0;
-  // A subcommand inherits each directive until it sets its own.
-  readonly directives: Directives = defaultDirectives();
+  readonly directives: Directives = this.scope.directives;
 
   hasFoundArg = false;
 
@@ -287,24 +241,9 @@ class Scanner {
     return this.valueCount < this.separateValueMax;
   }
 
-  // Make `command` the current command. Its non-persistent options replace the
-  // previous command's, and its persistent options are added to the inherited ones.
+  // Make `command` the current command.
   private enterCommand(command: Spec | Subcommand): void {
-    this.local = [];
-    // The previous command's options aren't valid here, so neither are its
-    // required ones.
-    this.localRequired.length = 0;
-    if (command.options) {
-      for (const option of command.options) {
-        if (option.isPersistent) {
-          this.persistent.push(option);
-          if (option.isRequired) this.persistentRequired.push(option);
-        } else {
-          this.local.push(option);
-          if (option.isRequired) this.localRequired.push(option);
-        }
-      }
-    }
+    this.scope.enter(command);
     this.subcommands = command.subcommands;
     this.commandArgsMin = getMinArgs(command.args);
     this.commandArgsMax = getMaxArgs(command.args);
@@ -313,16 +252,15 @@ class Scanner {
     } else if (command.requiresSubcommand) {
       this.actions.push(builtinUsageAction);
     }
-    applyDirectives(this.directives, command);
   }
 
   private findOption(name: string): Option | null {
-    return findOption(this.local, this.persistent, name);
+    return this.scope.resolve(name);
   }
 
   private unknownOption(option: string, index: number, start: number, end: number): UnknownOption {
     return new UnknownOption(
-      { option, validOptions: optionNames(this.local, this.persistent), index, start, end },
+      { option, validOptions: this.scope.suggestionNames(), index, start, end },
       this.ctx(),
     );
   }
@@ -411,7 +349,7 @@ class Scanner {
       );
     }
     if (this.strict && requiredSeparator === true && separator === "") {
-      const suggested = this.directives.optionArgSeparators[0] ?? "=";
+      const suggested = this.scope.requiredSeparator(this.openOption!);
       throw new ParseError(
         this.ctx(),
         `Missing separator, use '${suggested}' between ${this.openOptionName} and its value`,
@@ -590,12 +528,7 @@ class Scanner {
     }
     this.endOption();
     if (skipsChecks) return;
-    checkOptionRules(
-      this.options,
-      this.seenOptions,
-      [...this.localRequired, ...this.persistentRequired],
-      this.ctx(),
-    );
+    checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
   }
 }
 
@@ -656,10 +589,8 @@ export function scan(input: readonly string[], spec: Spec, strict: boolean): Sca
     argSeparatorIndex: s.argSeparatorIndex,
     options: s.options,
     seenOptions: s.seenOptions,
-    localOptions: s.local,
-    persistentOptions: s.persistent,
+    scope: s.scope,
     openOption: open && s.hasRoomForValue ? { option: open, valueCount: s.valueCount } : null,
-    directives: s.directives,
     repeatCounts: s.repeatCounts,
   };
 }
