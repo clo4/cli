@@ -420,13 +420,19 @@ class Scanner {
     this.values.push(value);
   }
 
+  /**
+   * Whether the command already has all the arguments it takes. A command that
+   * requires a subcommand takes any number, because they're a mistyped
+   * subcommand that its usage action reports.
+   */
+  private get argsAreFull(): boolean {
+    const path = this.path;
+    return !path[path.length - 1].requiresSubcommand && this.args.length >= this.commandArgsMax;
+  }
+
   private addArg(index: number, value: string): void {
     this.endOption();
-    // If the final command requires a subcommand, providing too many arguments
-    // is allowed because the user has made a typo (they were intending to use
-    // a subcommand)
-    const path = this.path;
-    if (this.strict && !path[path.length - 1].requiresSubcommand && this.args.length >= this.commandArgsMax) {
+    if (this.strict && this.argsAreFull) {
       this.tooManyArgs ??= new TooManyArguments({ value, index }, this.ctx());
     }
     this.args.push(value);
@@ -435,7 +441,7 @@ class Scanner {
   /** Read `--` and every token after it as arguments. */
   argSeparator(input: readonly string[], index: number): void {
     this.closeOption();
-    if (this.strict && this.args.length >= this.commandArgsMax) {
+    if (this.strict && this.argsAreFull) {
       this.tooManyArgs ??= new ParseError(
         this.ctx(),
         "Unexpected argument '--', did you mean to use an option instead?",
@@ -558,14 +564,17 @@ class Scanner {
   /** Throw if the finished command line is missing anything. */
   finish(): void {
     // An option with an action, like --help, works however the rest of the
-    // command line is wrong, as long as every token could be read.
-    const hasOptionAction = this.optionActions.length > 0;
-    if (!hasOptionAction && this.tooManyArgs) throw this.tooManyArgs;
-    if (!hasOptionAction && this.args.length < this.commandArgsMin) {
+    // command line is wrong, as long as every token could be read. So does the
+    // usage a command shows when its subcommand is missing.
+    const command = this.path[this.path.length - 1];
+    const showsUsage = command.requiresSubcommand && !command.action;
+    const skipsChecks = this.optionActions.length > 0 || showsUsage;
+    if (!skipsChecks && this.tooManyArgs) throw this.tooManyArgs;
+    if (!skipsChecks && this.args.length < this.commandArgsMin) {
       throw new TooFewArguments(this.commandArgsMin, this.commandArgsMax, this.ctx());
     }
     this.endOption();
-    if (hasOptionAction) return;
+    if (skipsChecks) return;
     checkOptionRules(
       this.options,
       this.seenOptions,

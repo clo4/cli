@@ -1458,3 +1458,21 @@ test("parse: an option action skips argument count and option relationship check
   expect(() => parse(["--a"], spec)).toThrow("--a requires --b");
   expect(() => parse(["--b", "--c"], spec)).toThrow("--c can't be used together with --b");
 });
+
+test("parse: a command that shows usage for a missing subcommand skips required options", () => {
+  const spec: Spec = {
+    name: "test",
+    requiresSubcommand: true,
+    options: [{ name: "--token", isPersistent: true, isRequired: true }],
+    subcommands: [{ name: "a" }],
+  };
+  expect(parse([], spec).actions).toEqual([usage]);
+  expect(() => parse(["a"], spec)).toThrow(MissingRequiredOption);
+});
+
+test("parse: a command that requires a subcommand accepts '--' like other stray arguments", () => {
+  const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
+  const result = parse(["--", "x"], spec);
+  expect(result.args).toEqual(["x"]);
+  expect(result.argSeparatorIndex).toBe(0);
+});
