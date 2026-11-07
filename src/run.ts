@@ -28,7 +28,7 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
     return 1;
   }
 
-  const action = result.optionActions.at(-1) ?? result.actions.at(-1);
+  const { action } = result;
   if (!action) {
     return 1;
   }

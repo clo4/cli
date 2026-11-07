@@ -14,59 +14,6 @@ test("run: return action result", async () => {
   }
 });
 
-test("run: use deepest subcommand", async () => {
-  const out = await run(
-    {
-      name: "test",
-      action: () => 0,
-      subcommands: [
-        {
-          name: "1",
-          action: () => 1,
-          subcommands: [
-            {
-              name: "2",
-              action: () => 2,
-            },
-          ],
-        },
-      ],
-    },
-    ["1", "2"],
-  );
-  expect(out).toBe(2);
-});
-
-test("run: prefer final option action", async () => {
-  // run-fig preferred the first option action. @clo4/cli intentionally uses
-  // the final parsed option action so later helpers can override earlier ones.
-  const out = await run(
-    {
-      name: "test",
-      action: () => 0,
-      options: [
-        { name: "--alpha", isPersistent: true, action: () => 123 },
-        { name: "--beta", isPersistent: true, action: () => 234 },
-      ],
-      subcommands: [
-        {
-          name: "1",
-          action: () => 1,
-          subcommands: [
-            {
-              name: "2",
-              action: () => 2,
-              options: [{ name: "--test", action: () => 210 }],
-            },
-          ],
-        },
-      ],
-    },
-    ["1", "--beta", "2", "--test", "--alpha"],
-  );
-  expect(out).toBe(123);
-});
-
 test("run: executes command actions and exposes parsed string values", async () => {
   const spec: Spec = {
     name: "demo",

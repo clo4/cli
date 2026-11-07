@@ -4,10 +4,20 @@
 import type { NextToken, ParseResult } from "../../src/parse.js";
 import type { Action, Spec } from "../../src/types.js";
 
-type Parse = (input: readonly string[], spec: Spec) => ParseResult;
+/**
+ * A result of `parse` from this version or an older one. Before `parse` picked
+ * the action, it returned every command action and option action instead.
+ */
+type AnyParseResult = Omit<ParseResult, "action"> & {
+  action?: Action;
+  actions?: Action[];
+  optionActions?: Action[];
+};
+
+type Parse = (input: readonly string[], spec: Spec) => AnyParseResult;
 
 export type Outcome =
-  | { ok: true; result: ParseResult }
+  | { ok: true; result: AnyParseResult }
   | { ok: false; error: Error & Record<string, unknown> };
 
 export function attempt(parse: Parse, input: readonly string[], spec: Spec): Outcome {
@@ -43,8 +53,9 @@ export function difference(
   const x = a.result;
   const y = b.result;
   if (!sameItems(x.path, y.path)) return "path differs";
-  for (const key of ["actions", "optionActions"] as const) {
-    if (!sameItems(x[key], y[key], sameAction)) return `${key} differ`;
+  const [actionA, actionB] = [pickedAction(x), pickedAction(y)];
+  if (actionA !== actionB && !(actionA && actionB && sameAction(actionA, actionB))) {
+    return "action differs";
   }
   if (JSON.stringify(x.args) !== JSON.stringify(y.args)) {
     return `args differ: ${JSON.stringify(x.args)} vs ${JSON.stringify(y.args)}`;
@@ -80,6 +91,12 @@ export function nextDifference(x: NextToken, y: NextToken): string | null {
     if (x.conflicts(option) !== y.conflicts(option)) return "conflicts differ";
   }
   return null;
+}
+
+/** The action `run` would run for `result`, picked the way that version of `run` picks it. */
+function pickedAction(result: AnyParseResult): Action | undefined {
+  if (!result.actions) return result.action;
+  return result.optionActions?.at(-1) ?? result.actions.at(-1);
 }
 
 function describe(outcome: Outcome): string {

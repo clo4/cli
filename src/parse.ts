@@ -19,8 +19,11 @@ export interface ParseResult {
   argSeparatorIndex: number;
   options: Map<string, string[]>;
   path: CommandPath;
-  actions: Action[];
-  optionActions: Action[];
+  /**
+   * The action to run: the last option action used, or else the action of the
+   * deepest command that has one.
+   */
+  action: Action | undefined;
 }
 
 /** What the token after a command line can be, as the parser would read it. */
@@ -162,8 +165,10 @@ export function checkOptionRules(
  */
 class Scanner {
   readonly path: [Spec, ...Subcommand[]];
-  readonly actions: Action[] = [];
-  readonly optionActions: Action[] = [];
+  // The action of the deepest command that has one, and the last option
+  // action used.
+  private commandAction: Action | undefined = undefined;
+  private optionAction: Action | undefined = undefined;
   readonly args: string[] = [];
   readonly options: Map<string, string[]> = new Map();
   readonly seenOptions: Option[] = [];
@@ -234,9 +239,9 @@ class Scanner {
     this.commandArgsMin = getMinArgs(command.args);
     this.commandArgsMax = getMaxArgs(command.args);
     if (command.action) {
-      this.actions.push(command.action);
+      this.commandAction = command.action;
     } else if (command.requiresSubcommand) {
-      this.actions.push(builtinUsageAction);
+      this.commandAction = builtinUsageAction;
     }
   }
 
@@ -273,7 +278,7 @@ class Scanner {
     // Options that require a separator only take attached values.
     this.separateValueMax = option.requiresSeparator ? 0 : getMaxArgs(option.args);
     this.seenOptions.push(option);
-    if (option.action) this.optionActions.push(option.action);
+    if (option.action) this.optionAction = option.action;
     const names = asArray(option.name);
     const options = this.options;
 
@@ -527,21 +532,26 @@ class Scanner {
     this.addArg(token);
   }
 
-  /** Throw if the finished command line is missing anything. */
-  finish(): void {
+  /**
+   * Throw if the finished command line is missing anything. Returns the action
+   * to run.
+   */
+  finish(): Action | undefined {
     // An option with an action, like --help, works however the rest of the
     // command line is wrong, as long as every token could be read. So does the
     // usage a command shows when no subcommand is named.
     const command = this.path[this.path.length - 1];
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
-    const skipsChecks = this.optionActions.length > 0 || showsUsage;
+    const skipsChecks = this.optionAction !== undefined || showsUsage;
     if (!skipsChecks && this.tooManyArgs) throw this.tooManyArgs;
     if (!skipsChecks && this.args.length < this.commandArgsMin) {
       throw new TooFewArguments(this.commandArgsMin, this.commandArgsMax, this.ctx());
     }
     this.endOption();
-    if (skipsChecks) return;
-    checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
+    if (!skipsChecks) {
+      checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
+    }
+    return this.optionAction ?? this.commandAction;
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
@@ -665,18 +675,18 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
  * Parse the input tokens using the given CLI spec.
  *
  * This returns a `ParseResult`, which contains the array of
- * subcommands used, the provided options, and the arguments.
+ * subcommands used, the provided options, the arguments, and the action to
+ * run.
  *
  * If parsing fails, this function throws.
  */
 export function parse(input: readonly string[], spec: Spec): ParseResult {
   const s = new Scanner(spec, true);
   s.read(input);
-  s.finish();
+  const action = s.finish();
   return {
     path: s.path,
-    actions: s.actions,
-    optionActions: s.optionActions,
+    action,
     args: s.args,
     argSeparatorIndex: s.argSeparatorIndex,
     options: s.options,

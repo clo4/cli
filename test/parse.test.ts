@@ -155,19 +155,26 @@ test("parse: options can take multiple arguments", () => {
 test("parse: action on spec gets returned", () => {
   const action: Action = () => {};
   const result = parse([], { name: "test", action });
-  expect(result.actions).toEqual([action]);
+  expect(result.action).toBe(action);
 });
 
-test("parse: action on subcommand gets returned", () => {
-  const specAction: Action = () => {};
-  const subcommandAction: Action = () => {};
+test("parse: the deepest command's action is picked", () => {
+  const actions: Action[] = [() => {}, () => {}, () => {}];
   const spec: Spec = {
     name: "test",
-    action: specAction,
-    subcommands: [{ name: "example", action: subcommandAction }],
+    action: actions[0],
+    subcommands: [{ name: "1", action: actions[1], subcommands: [{ name: "2", action: actions[2] }] }],
   };
-  const result = parse(["example"], spec);
-  expect(result.actions).toEqual([specAction, subcommandAction]);
+  expect(parse([], spec).action).toBe(actions[0]);
+  expect(parse(["1"], spec).action).toBe(actions[1]);
+  expect(parse(["1", "2"], spec).action).toBe(actions[2]);
+});
+
+test("parse: a command without an action picks its nearest ancestor's", () => {
+  const action: Action = () => {};
+  const spec: Spec = { name: "test", action, subcommands: [{ name: "1", subcommands: [{ name: "2" }] }] };
+  expect(parse(["1", "2"], spec).action).toBe(action);
+  expect(parse(["1", "2"], { ...spec, action: undefined }).action).toBeUndefined();
 });
 
 test("parse: action on option is preferred to spec action", () => {
@@ -179,8 +186,7 @@ test("parse: action on option is preferred to spec action", () => {
     options: [{ name: "--option", action: optionAction }],
   };
   const result = parse(["--option"], spec);
-  expect(result.actions).toEqual([specAction]);
-  expect(result.optionActions).toEqual([optionAction]);
+  expect(result.action).toBe(optionAction);
 });
 
 test("parse: final option action is preferred", () => {
@@ -196,8 +202,29 @@ test("parse: final option action is preferred", () => {
     ],
   };
   const result = parse(["--option", "--final"], spec);
-  expect(result.actions).toEqual([specAction]);
-  expect(result.optionActions).toEqual([optionAction, finalAction]);
+  expect(result.action).toBe(finalAction);
+});
+
+test("parse: the final option action is picked from any command on the path", () => {
+  // run-fig preferred the first option action. @clo4/cli intentionally uses
+  // the final parsed option action so later helpers can override earlier ones.
+  const alpha: Action = () => {};
+  const spec: Spec = {
+    name: "test",
+    action: () => {},
+    options: [
+      { name: "--alpha", isPersistent: true, action: alpha },
+      { name: "--beta", isPersistent: true, action: () => {} },
+    ],
+    subcommands: [
+      {
+        name: "1",
+        action: () => {},
+        subcommands: [{ name: "2", action: () => {}, options: [{ name: "--test", action: () => {} }] }],
+      },
+    ],
+  };
+  expect(parse(["1", "--beta", "2", "--test", "--alpha"], spec).action).toBe(alpha);
 });
 
 test("parse: option actions allow incorrect arguments", () => {
@@ -852,7 +879,7 @@ test("parse: dependsOn, bidirectional", () => {
 
 test("parse: requiresSubcommand is equivalent to usage", () => {
   const result = parse([], { name: "command", requiresSubcommand: true });
-  expect(result.actions).toEqual([usage]);
+  expect(result.action).toBe(usage);
 });
 
 test("parse: requiresSubcommand doesn't return usage when there is an action", () => {
@@ -862,7 +889,7 @@ test("parse: requiresSubcommand doesn't return usage when there is an action", (
     requiresSubcommand: true,
     action,
   });
-  expect(result.actions).toEqual([action]);
+  expect(result.action).toBe(action);
 });
 
 test("parse: Option.isRequired throws when not provided", () => {
@@ -1446,22 +1473,24 @@ test("parse: a command without room for arguments reports a mistyped subcommand"
   const withArg: Spec = { ...spec, args: {} };
   expect(() => parse(["a", "b"], withArg)).toThrow(TooManyArguments);
   // An option action still runs.
-  const withHelp: Spec = { ...spec, options: [{ name: "--help", action: () => {} }] };
-  expect(parse(["biuld", "--help"], withHelp).optionActions).toHaveLength(1);
+  const helpAction: Action = () => {};
+  const withHelp: Spec = { ...spec, options: [{ name: "--help", action: helpAction }] };
+  expect(parse(["biuld", "--help"], withHelp).action).toBe(helpAction);
 });
 
 test("parse: an option action skips required arguments and options", () => {
+  const helpAction: Action = () => {};
   const spec: Spec = {
     name: "test",
     args: {},
     options: [
-      { name: "--help", action: () => {} },
+      { name: "--help", action: helpAction },
       { name: "--r", isRequired: true },
     ],
   };
   const result = parse(["--help"], spec);
   expect(result.args).toEqual([]);
-  expect(result.optionActions).toHaveLength(1);
+  expect(result.action).toBe(helpAction);
 });
 
 test("parse: a value attached to a short option without args says it takes none", () => {
@@ -1481,18 +1510,19 @@ test("parse: requiresSeparator true rejects a short option's unseparated value",
 });
 
 test("parse: an option action skips argument count and option relationship checks", () => {
+  const helpAction: Action = () => {};
   const spec: Spec = {
     name: "test",
     options: [
-      { name: "--help", action: () => {} },
+      { name: "--help", action: helpAction },
       { name: "--a", dependsOn: ["--b"] },
       { name: "--b" },
       { name: "--c", exclusiveOn: ["--b"] },
     ],
   };
-  expect(parse(["a", "b", "--help"], spec).optionActions).toHaveLength(1);
-  expect(parse(["--help", "--a"], spec).optionActions).toHaveLength(1);
-  expect(parse(["--help", "--b", "--c"], spec).optionActions).toHaveLength(1);
+  expect(parse(["a", "b", "--help"], spec).action).toBe(helpAction);
+  expect(parse(["--help", "--a"], spec).action).toBe(helpAction);
+  expect(parse(["--help", "--b", "--c"], spec).action).toBe(helpAction);
   // Without the action, each of these is still an error.
   expect(() => parse(["a"], spec)).toThrow(TooManyArguments);
   expect(() => parse(["--a"], spec)).toThrow("--a requires --b");
@@ -1506,18 +1536,18 @@ test("parse: a command that shows usage for a missing subcommand skips required 
     options: [{ name: "--token", isPersistent: true, isRequired: true }],
     subcommands: [{ name: "a" }],
   };
-  expect(parse([], spec).actions).toEqual([usage]);
+  expect(parse([], spec).action).toBe(usage);
   expect(() => parse(["a"], spec)).toThrow(MissingRequiredOption);
 });
 
 test("parse: a command that requires a subcommand accepts '--' alone, but no argument after it", () => {
   const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
   const result = parse(["--"], spec);
-  expect(result.actions).toEqual([usage]);
+  expect(result.action).toBe(usage);
   expect(result.argSeparatorIndex).toBe(0);
   expect(() => parse(["--", "a"], spec)).toThrow('Too many arguments, "a" was unexpected');
   const action: Action = () => {};
-  expect(parse(["--"], { ...spec, action }).actions).toEqual([action]);
+  expect(parse(["--"], { ...spec, action }).action).toBe(action);
 });
 
 test("parse: '--' after an argument is an argument when options must precede arguments", () => {
