@@ -78,6 +78,16 @@ const scenarios: readonly Scenario[] = [
   ["unknown option", ["build", "a", "--uot", "dist"]],
 ];
 
+/**
+ * Scenarios only @clo4/cli can run. They're left out of the comparison, and
+ * their CSV columns come after every other column, so adding one keeps the
+ * earlier columns of the history file in place.
+ */
+const ownScenarios: readonly Scenario[] = [
+  // What bash runs on Tab after `forge remote add origin url --`.
+  ["completion", ["completion", "complete", "--gate-options", "--", "remote", "add", "origin", "url", "--"]],
+];
+
 process.exitCode = await CLI.run({
   name: "clo4-cli-bench",
   description: "Benchmark @clo4/cli against other JavaScript CLI libraries.",
@@ -129,7 +139,8 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     }
     const results = new Map<string, Bucket>();
     const baselineScenario = "process startup";
-    const totalRuns = (warmup + samples) * (1 + scenarios.length * measuredLibraries.length);
+    const totalRuns =
+      (warmup + samples) * (1 + scenarios.length * measuredLibraries.length + ownScenarios.length);
 
     console.log(`In-process CLI benchmark (${samples} samples, ${warmup} warmups, interleaved)`);
     console.log(`cwd: ${packageRoot}`);
@@ -177,6 +188,9 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
       for (const [scenario] of scenarios) {
         printRow(results.get(keyFor(library, scenario)), library, scenario);
       }
+    }
+    for (const [scenario] of ownScenarios) {
+      printRow(results.get(keyFor("@clo4/cli", scenario)), "@clo4/cli", scenario);
     }
     printComparison(results, measuredLibraries);
 
@@ -227,6 +241,11 @@ function buildCsv(
     row.push(cell(geometricMean(medians)));
   }
 
+  for (const [scenario] of ownScenarios) {
+    header.push(`${slug(scenario)}_lode_self_med`);
+    row.push(cell(stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median));
+  }
+
   return `${header.join(",")}\n${row.join(",")}\n`;
 }
 
@@ -274,6 +293,15 @@ async function runRound(
       if (shouldRecord) {
         recordResult(bucketFor(results, library, scenario), result);
       }
+    }
+  }
+
+  const ours = measuredLibraries.find(([library]) => library === "@clo4/cli");
+  for (const [scenario, args] of ours ? ownScenarios : []) {
+    const result = await runOnce(ours![1], args, interrupt);
+    progress.tick();
+    if (shouldRecord) {
+      recordResult(bucketFor(results, "@clo4/cli", scenario), result);
     }
   }
 }

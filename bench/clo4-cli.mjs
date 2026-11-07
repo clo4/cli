@@ -1,7 +1,7 @@
 import { startTiming } from "./_timing.mjs";
 
 startTiming();
-const { help, run } = await import("../dist/index.js");
+const { completion, help, run } = await import("../dist/index.js");
 
 // A richer, realistic CLI shared (equivalently) across every adapter so the
 // benchmark exercises deep nesting, variadic args, aliases, repeatable options,
@@ -92,6 +92,9 @@ const spec = {
         },
       ],
     },
+    // Only @clo4/cli has runtime completion, so it's measured on its own.
+    // Hidden, so the help scenarios print the same help as the other adapters.
+    { ...completion, hidden: true },
   ],
 };
 

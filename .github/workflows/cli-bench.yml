@@ -71,6 +71,21 @@ jobs:
             echo "Commit $GITHUB_SHA already recorded; skipping."
           else
             if [ -f "$hist" ]; then
+              new_header="$(head -n 1 "$GITHUB_WORKSPACE/bench-row.csv")"
+              old_header="$(head -n 1 "$hist")"
+              if [ "$new_header" != "$old_header" ]; then
+                case "$new_header" in
+                  # Columns added at the end: older rows just leave them empty.
+                  "$old_header",*)
+                    { echo "$new_header"; tail -n +2 "$hist"; } > "$hist.new"
+                    mv "$hist.new" "$hist"
+                    ;;
+                  *)
+                    echo "::error::The benchmark's CSV columns changed in a way that doesn't line up with $HISTORY_FILE. Add new columns at the end."
+                    exit 1
+                    ;;
+                esac
+              fi
               tail -n +2 "$GITHUB_WORKSPACE/bench-row.csv" >> "$hist"
             else
               cp "$GITHUB_WORKSPACE/bench-row.csv" "$hist"
