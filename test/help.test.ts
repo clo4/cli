@@ -210,3 +210,15 @@ test("help: a description's common indentation is removed", () => {
   };
   expect(getHelp([spec]).startsWith("First line.\n  Indented line.\n\nUsage:")).toBe(true);
 });
+
+test("help: an option that requires a separator shows the separator in effect", () => {
+  const sub: Spec = { name: "sub", parserDirectives: { optionArgSeparators: "=" } };
+  const spec: Spec = {
+    name: "TEST_NAME",
+    parserDirectives: { optionArgSeparators: [":", "="] },
+    options: [{ name: "--o", args: { name: "v" }, requiresSeparator: true, isPersistent: true }],
+    subcommands: [sub],
+  };
+  expectIncludes(getHelp([spec]), "  --o:<v>  ");
+  expectIncludes(getHelp([spec, sub]), "  --o=<v>  ");
+});

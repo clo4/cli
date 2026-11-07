@@ -1,22 +1,10 @@
 import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } from "./types.js";
+import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";
 
 function getNamed<T extends { name: SingleOrArray<string> }>(named: readonly T[], name: string): T | null {
   return named.find((obj) => makeArray(obj.name).includes(name)) ?? null;
-}
-
-function getParserDirective<Key extends keyof NonNullable<Subcommand["parserDirectives"]>>(
-  path: readonly Subcommand[],
-  key: Key,
-): NonNullable<Subcommand["parserDirectives"]>[Key] | undefined {
-  for (let index = path.length - 1; index >= 0; index -= 1) {
-    const command = path[index];
-    if (command?.parserDirectives && key in command.parserDirectives) {
-      return command.parserDirectives[key];
-    }
-  }
-  return undefined;
 }
 
 function dedent(str: string) {
@@ -76,7 +64,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
     .flatMap((cmd) => cmd.name);
 
   if (subcommands && subcommands.length > 0) {
-    const matchPrefix = getParserDirective(path, "subcommandsMatchUniquePrefix");
+    const matchPrefix = directivesFor(path).subcommandsMatchUniquePrefix;
     if (matchPrefix) {
       const possible = subcommands.filter((name) => name.startsWith(command));
       if (possible.length > 0) {
@@ -194,6 +182,8 @@ function nonNullable<T>(value: T): value is NonNullable<T> {
 
 function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const command = commands[commands.length - 1];
+  const separator = directivesFor(commands).optionArgSeparators[0] ?? "=";
+  const show = (option: Option) => optionToString(option, separator);
 
   const description = command.description;
   const defaultDesc = "No description";
@@ -217,7 +207,7 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
 
   if (commands.length === 1 && subcommands.length === 0) {
     optionObjects = command.options ? command.options.filter((option) => !option.hidden) : [];
-    options = optionObjects.map((option) => [optionToString(option), option.description ?? defaultDesc]);
+    options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
   } else {
     persistentOptionObjects = commands
       .map((command) => command.options)
@@ -226,13 +216,13 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
       .filter((option) => option.isPersistent && !option.hidden);
 
     persistentOptions = persistentOptionObjects.map((option) => [
-      optionToString(option),
+      show(option),
       option.description ?? defaultDesc,
     ]);
 
     optionObjects = (command.options ?? []).filter((option) => !option.hidden && !option.isPersistent);
 
-    options = optionObjects.map((option) => [optionToString(option), option.description ?? defaultDesc]);
+    options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
   }
 
   const usage = (() => {
@@ -242,7 +232,7 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
       ...persistentOptionObjects.filter((option) => option.isRequired),
     ];
     for (const option of required) {
-      parts.push(optionToString(option));
+      parts.push(show(option));
     }
     if (options.length || persistentOptions.length) {
       parts.push("[flags]");
@@ -339,7 +329,11 @@ export function getLongestString(strings: NonEmptyArray<string>): string {
   return longest;
 }
 
-export function optionToString(option: Option): string {
+/**
+ * Show an option's names and arguments. `separator` is shown between an option
+ * and its value when the option requires one but doesn't say which.
+ */
+export function optionToString(option: Option, separator = "="): string {
   const name = makeArray1(option.name)
     .sort((a, b) => a.length - b.length)
     .join(", ");
@@ -351,11 +345,11 @@ export function optionToString(option: Option): string {
   }
 
   if (option.requiresSeparator) {
-    const separator = option.requiresSeparator === true ? "=" : option.requiresSeparator;
+    const sep = option.requiresSeparator === true ? separator : option.requiresSeparator;
     if (optionArgs[0].isOptional) {
-      return `${name}[${separator}${optionArgs[0].name || "argument"}]`;
+      return `${name}[${sep}${optionArgs[0].name || "argument"}]`;
     }
-    return `${name}${separator}<${optionArgs[0].name || "argument"}>`;
+    return `${name}${sep}<${optionArgs[0].name || "argument"}>`;
   }
   return `${name} ${summarizeArguments(optionArgs)}`;
 }

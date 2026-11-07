@@ -10,6 +10,8 @@ import {
   UnknownOption,
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
+import { applyDirectives, defaultDirectives } from "./directives.js";
+import type { Directives } from "./directives.js";
 import { usage as builtinUsageAction } from "./help.js";
 
 export interface ParseResult {
@@ -19,14 +21,6 @@ export interface ParseResult {
   path: CommandPath;
   actions: Action[];
   optionActions: Action[];
-}
-
-/** The parser directives in effect for a command, with defaults filled in. */
-export interface Directives {
-  optionArgSeparators: readonly string[];
-  flagsArePosixNoncompliant: boolean;
-  optionsMustPrecedeArguments: boolean;
-  subcommandsMatchUniquePrefix: boolean;
 }
 
 /** Everything {@link scan} learns about a command line. */
@@ -47,6 +41,7 @@ export interface ScanResult extends ParseResult {
 }
 
 export { getMaxArgs, getMinArgs };
+export type { Directives };
 
 function hasName(names: string | readonly string[], name: string): boolean {
   return typeof names === "string" ? names === name : names.includes(name);
@@ -210,12 +205,8 @@ class Scanner {
   private commandArgsMin = 0;
   private commandArgsMax = 0;
   // A subcommand inherits each directive until it sets its own.
-  readonly directives: Directives = {
-    optionArgSeparators: ["="],
-    flagsArePosixNoncompliant: false,
-    optionsMustPrecedeArguments: false,
-    subcommandsMatchUniquePrefix: false,
-  };
+  readonly directives: Directives = defaultDirectives();
+
   hasFoundArg = false;
 
   // The last option used, and how many more separate tokens it can take as
@@ -285,22 +276,7 @@ class Scanner {
     } else if (command.requiresSubcommand) {
       this.actions.push(builtinUsageAction);
     }
-    const configured = command.parserDirectives;
-    if (configured) {
-      const directives = this.directives;
-      if (configured.optionArgSeparators) {
-        directives.optionArgSeparators = asArray(configured.optionArgSeparators);
-      }
-      if (typeof configured.subcommandsMatchUniquePrefix === "boolean") {
-        directives.subcommandsMatchUniquePrefix = configured.subcommandsMatchUniquePrefix;
-      }
-      if (typeof configured.optionsMustPrecedeArguments === "boolean") {
-        directives.optionsMustPrecedeArguments = configured.optionsMustPrecedeArguments;
-      }
-      if (typeof configured.flagsArePosixNoncompliant === "boolean") {
-        directives.flagsArePosixNoncompliant = configured.flagsArePosixNoncompliant;
-      }
-    }
+    applyDirectives(this.directives, command);
   }
 
   private findOption(name: string): Option | null {
