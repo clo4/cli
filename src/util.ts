@@ -1,4 +1,4 @@
-import type { NonEmptyArray } from "./types.js";
+import type { NonEmptyArray, Option } from "./types.js";
 
 export function isArray<T>(o: T | readonly T[]): o is readonly T[] {
   return Array.isArray(o);
@@ -151,4 +151,26 @@ export function getMaxArgs(
   }
   // None of the arguments are variadic, max is the number of args
   return args.length;
+}
+
+/**
+ * The options that at least one of their names still refers to, in definition
+ * order. Like the parser, a local option wins over a persistent one with the
+ * same name, and a later option wins over an earlier one in the same list.
+ */
+export function reachableOptions(local: readonly Option[], persistent: readonly Option[]): Option[] {
+  const isShadowed = (name: string, list: readonly Option[], from: number) => {
+    for (let i = from; i < list.length; i++) {
+      if (asArray(list[i].name).includes(name)) return true;
+    }
+    return false;
+  };
+  return [
+    ...local.filter((option, i) => asArray(option.name).some((name) => !isShadowed(name, local, i + 1))),
+    ...persistent.filter((option, i) =>
+      asArray(option.name).some(
+        (name) => !isShadowed(name, local, 0) && !isShadowed(name, persistent, i + 1),
+      ),
+    ),
+  ];
 }

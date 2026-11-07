@@ -1,7 +1,7 @@
 import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } from "./types.js";
 import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
-import { makeArray, makeArray1, print, printActionError } from "./util.js";
+import { makeArray, makeArray1, print, printActionError, reachableOptions } from "./util.js";
 
 function getNamed<T extends { name: SingleOrArray<string> }>(named: readonly T[], name: string): T | null {
   return named.find((obj) => makeArray(obj.name).includes(name)) ?? null;
@@ -209,24 +209,15 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
     optionObjects = command.options ? command.options.filter((option) => !option.hidden) : [];
     options = optionObjects.map((option) => [show(option), option.description ?? defaultDesc]);
   } else {
-    // Like the parser, a local option wins over a persistent one with the same
-    // name, and a later persistent option wins over an earlier one. An option
-    // is listed if any of its names still refers to it.
+    // Only options that a name still refers to are listed.
     const local = (command.options ?? []).filter((option) => !option.isPersistent);
     const persistent = commands
       .map((command) => command.options)
       .filter(nonNullable)
       .flat()
       .filter((option) => option.isPersistent);
-    persistentOptionObjects = persistent.filter(
-      (option, i) =>
-        !option.hidden &&
-        makeArray(option.name).some(
-          (name) =>
-            !local.some((other) => makeArray(other.name).includes(name)) &&
-            !persistent.slice(i + 1).some((other) => makeArray(other.name).includes(name)),
-        ),
-    );
+    const reachable = new Set(reachableOptions(local, persistent));
+    persistentOptionObjects = persistent.filter((option) => reachable.has(option) && !option.hidden);
 
     persistentOptions = persistentOptionObjects.map((option) => [
       show(option),

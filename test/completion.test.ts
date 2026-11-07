@@ -456,3 +456,25 @@ test("runtime: a subcommand's identical repeatable option continues the parent's
   expect(values(await resolve(spec, ["sub", "-v"], ""))).toContain("-v");
   expect(values(await resolve(spec, ["-v", "sub", "-v"], ""))).not.toContain("-v");
 });
+
+test("runtime: an option that another option shadows isn't offered", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: "--g", isPersistent: true, description: "parent" },
+      { name: ["-k", "--keep"], isPersistent: true, description: "still reachable" },
+    ],
+    subcommands: [
+      {
+        name: "sub",
+        options: [
+          { name: "--g", description: "child" },
+          { name: "--keep", isPersistent: true, description: "child keep" },
+        ],
+      },
+    ],
+  };
+  const candidates = await resolve(spec, ["sub"], "");
+  expect(candidates.filter((c) => c.value === "--g").map((c) => c.description)).toEqual(["child"]);
+  expect(candidates.map((c) => c.description)).toContain("still reachable");
+});

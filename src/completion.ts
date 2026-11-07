@@ -13,7 +13,7 @@
  */
 
 import type { Arg, Option, Spec, Subcommand, Template } from "./types.js";
-import { asArray, makeArray, print, printActionError } from "./util.js";
+import { asArray, makeArray, print, printActionError, reachableOptions } from "./util.js";
 import { repeatCount, scan } from "./parse.js";
 import type { Directives } from "./parse.js";
 
@@ -95,22 +95,8 @@ function readLine(spec: Spec, before: readonly string[]): CompletionState {
   const open = scanned.openOption;
   const pending = open ? { option: open.option, argIndex: open.valueCount } : null;
 
-  // An option is available if one of its names still refers to it: a later
-  // option with the same name shadows an earlier one.
-  const availableOptions: Option[] = [];
-  const seen = new Set<Option>();
-  for (const list of [scanned.localOptions, scanned.persistentOptions]) {
-    const byName = new Map<string, Option>();
-    for (const option of list) {
-      for (const name of makeArray(option.name)) byName.set(name, option);
-    }
-    for (const option of byName.values()) {
-      if (!seen.has(option)) {
-        seen.add(option);
-        availableOptions.push(option);
-      }
-    }
-  }
+  // An option is available if one of its names still refers to it.
+  const availableOptions = [...new Set(reachableOptions(scanned.localOptions, scanned.persistentOptions))];
 
   return {
     path,
