@@ -34,19 +34,6 @@ function forEachArgArray(
   }
 }
 
-/** Run a function once for each `options` property in the spec (recursive) */
-function forEachOptionArray(
-  spec: Subcommand,
-  fn: (options: Option[], path: Subcommand[]) => void,
-  path: Subcommand[] = [],
-): void {
-  path = path.concat(spec);
-  fn(makeArray(spec.options), path);
-  for (const subcommand of makeArray(spec.subcommands)) {
-    forEachOptionArray(subcommand, fn, path);
-  }
-}
-
 /**
  * Run a function once for each `subcommands` property in the spec (recursive)
  *
@@ -106,28 +93,51 @@ function describeCommand(path: readonly Subcommand[]): string {
 }
 
 /**
- * Run a function once for each option that can be used at each command: its
- * own options and the persistent ones it inherits. A persistent option is
- * visited once for every command it reaches, with the scope of that command,
- * so a check sees the option the way the parser does there. `where` names the
- * option in a message, and says which command it's used in when that isn't
- * the one that defines it.
+ * Name the option at `index` on the last command on `definedIn` in a message,
+ * and the command it's used in when that isn't the one that defines it.
  */
-function forEachOptionInScope(
-  spec: Subcommand,
-  fn: (option: Option, where: string, scope: OptionScope, path: Subcommand[]) => void,
-): void {
-  forEachSubcommand(spec, (_command, path) => {
+function describeOption(definedIn: readonly Subcommand[], index: number, usedIn = definedIn): string {
+  const option = makeArray(definedIn[definedIn.length - 1].options)[index];
+  const name = `${namedArrayToString(...definedIn, option)} (index ${index})`;
+  return usedIn === definedIn ? `Option ${name}` : `In ${namedArrayToString(...usedIn)}, option ${name}`;
+}
+
+/** One option, at one command it can be used in. */
+interface OptionUse {
+  option: Option;
+  /** The commands from the root to the one the option is used in. */
+  path: Subcommand[];
+  /** The options and directives in effect there. */
+  scope: OptionScope;
+  /** Whether the command it's used in is the one that defines it. */
+  isDefinedHere: boolean;
+  /** Names the option at the start of a message. See {@link describeOption}. */
+  where: string;
+}
+
+/**
+ * Run a function once for each option at each command it can be used in: the
+ * command's own options, in definition order, then the persistent ones it
+ * inherits. A check that is about how the option is written skips the uses
+ * that aren't `isDefinedHere`. A check that depends on the scope sees the
+ * option the way the parser does at each command.
+ */
+function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
+  // An option, the path to the command that defines it, and its index there.
+  type Definition = { option: Option; definedIn: Subcommand[]; index: number };
+  // `inherited` holds the persistent options from the commands above.
+  const visit = (path: Subcommand[], inherited: Definition[]) => {
+    const command = path[path.length - 1];
     const scope = OptionScope.at(path);
-    for (const option of [...scope.local, ...scope.persistent]) {
-      let depth = path.length - 1;
-      while (!path[depth].options?.includes(option)) depth--;
-      const index = path[depth].options!.indexOf(option);
-      const name = `${namedArrayToString(...path.slice(0, depth + 1), option)} (index ${index})`;
-      const isOwn = depth === path.length - 1;
-      fn(option, isOwn ? `Option ${name}` : `In ${namedArrayToString(...path)}, option ${name}`, scope, path);
+    const own = makeArray(command.options).map((option, index) => ({ option, definedIn: path, index }));
+    for (const { option, definedIn, index } of [...own, ...inherited]) {
+      const where = describeOption(definedIn, index, path);
+      fn({ option, path, scope, isDefinedHere: definedIn === path, where });
     }
-  });
+    const next = [...inherited, ...own.filter(({ option }) => option.isPersistent)];
+    for (const subcommand of makeArray(command.subcommands)) visit([...path, subcommand], next);
+  };
+  visit([spec], []);
 }
 
 /** Asserts that required arguments do not come after an optional argument */
@@ -151,23 +161,20 @@ export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcom
 
 /** Asserts that `isRepeatable` is only assigned a positive integer */
 export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of options.entries()) {
-      if (typeof option.isRepeatable === "number") {
-        assert(
-          Number.isSafeInteger(option.isRepeatable),
-          `The option ${namedArrayToString(...path, option)} (index ${index}) has its \`isRepeatable\` value set to a number that is not an integer`,
-        );
-        assert(
-          !(option.isRepeatable < 1),
-          `The option ${namedArrayToString(...path, option)} (index ${index}) has its \`isRepeatable\` value set to a number below 1, which means it can't be used at all`,
-        );
-        assert(
-          option.isRepeatable !== 1,
-          `The option ${namedArrayToString(...path, option)} (index ${index}) has its \`isRepeatable\` value set to 1, which is no different that omitting the property entirely`,
-        );
-      }
-    }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere || typeof option.isRepeatable !== "number") return;
+    assert(
+      Number.isSafeInteger(option.isRepeatable),
+      `${where} has its \`isRepeatable\` value set to a number that is not an integer`,
+    );
+    assert(
+      !(option.isRepeatable < 1),
+      `${where} has its \`isRepeatable\` value set to a number below 1, which means it can't be used at all`,
+    );
+    assert(
+      option.isRepeatable !== 1,
+      `${where} has its \`isRepeatable\` value set to 1, which is no different that omitting the property entirely`,
+    );
   });
 }
 
@@ -179,7 +186,7 @@ export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
       for (const name of makeArray(option.name)) {
         assert(
           !optionNames.has(name),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) has a non-unique name, '${name}'. Option names must be unique.`,
+          `${describeOption(path, index)} has a non-unique name, '${name}'. Option names must be unique.`,
         );
         optionNames.add(name);
       }
@@ -189,17 +196,15 @@ export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
 
 /** Asserts that options don't shadow a persistent option */
 export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
+  forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
+    if (!isDefinedHere) return;
     // The persistent options this command inherits from its parents.
     const inherited = OptionScope.at(path.slice(0, -1)).persistent;
-    const persistentOptionNames = new Set(inherited.flatMap((option) => makeArray(option.name)));
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          !persistentOptionNames.has(name),
-          `The option ${namedArrayToString(...path, option)} (index ${index}) shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
-        );
-      }
+    for (const name of makeArray(option.name)) {
+      assert(
+        !inherited.some((persistent) => makeArray(persistent.name).includes(name)),
+        `${where} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
+      );
     }
   });
 }
@@ -217,20 +222,20 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
  * `allowShadowingPersistentOptions` opts out of it.
  */
 export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    const parents = path.slice(0, -1);
-    for (const [index, option] of options.entries()) {
-      for (const parent of parents) {
-        for (const parentOption of makeArray(parent.options)) {
-          const isClash =
-            !parentOption.isPersistent &&
-            isSameName(parentOption.name, option.name) &&
-            !isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 });
-          assert(
-            !isClash,
-            `The option ${namedArrayToString(...path, option)} (index ${index}) has the same names as a different option, ${namedArrayToString(parent, parentOption)}, so the parent's value can't be read. Add a name that only one of them uses.`,
-          );
-        }
+  forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
+    if (!isDefinedHere) return;
+    // A parent's non-persistent options aren't in this command's scope, so
+    // they're found on the parents themselves.
+    for (const parent of path.slice(0, -1)) {
+      for (const parentOption of makeArray(parent.options)) {
+        const isClash =
+          !parentOption.isPersistent &&
+          isSameName(parentOption.name, option.name) &&
+          !isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 });
+        assert(
+          !isClash,
+          `${where} has the same names as a different option, ${namedArrayToString(parent, parentOption)}, so the parent's value can't be read. Add a name that only one of them uses.`,
+        );
       }
     }
   });
@@ -261,7 +266,7 @@ export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void 
  * asks the parser how it reads each name.
  */
 export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope) => {
+  forEachOption(spec, ({ option, where, scope }) => {
     if (scope.directives.flagsArePosixNoncompliant) return;
     for (const name of makeArray(option.name)) {
       assert(
@@ -279,7 +284,7 @@ export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand):
  * asks the parser how it reads each name.
  */
 export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope) => {
+  forEachOption(spec, ({ option, where, scope }) => {
     if (scope.directives.flagsArePosixNoncompliant) return;
     for (const name of makeArray(option.name)) {
       assert(
@@ -299,7 +304,7 @@ export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
  * asks the parser how it reads each name.
  */
 export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope, path) => {
+  forEachOption(spec, ({ option, where, scope, path }) => {
     const subcommands = path[path.length - 1].subcommands;
     if (!subcommands) return;
     for (const name of makeArray(option.name)) {
@@ -322,14 +327,13 @@ export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
  * asks the parser how it reads each name.
  */
 export function assertNothingIsNamedDashDash(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          name !== "--",
-          `Option ${namedArrayToString(...path, option)} (index ${index}) is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
-        );
-      }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere) return;
+    for (const name of makeArray(option.name)) {
+      assert(
+        name !== "--",
+        `${where} is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
+      );
     }
   });
   forEachSubcommand(spec, (command, path) => {
@@ -361,7 +365,7 @@ export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void 
  * Asserts that options named "+" or "-" takes one arg
  */
 export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope) => {
+  forEachOption(spec, ({ option, where, scope }) => {
     if (scope.directives.flagsArePosixNoncompliant) return;
     for (const name of makeArray(option.name)) {
       if (name !== "-" && name !== "+") continue;
@@ -374,14 +378,10 @@ export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
  * Asserts that names do not have leading or trailing whitespace
  */
 export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          name === name.trim(),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) has a name with extra whitespace`,
-        );
-      }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere) return;
+    for (const name of makeArray(option.name)) {
+      assert(name === name.trim(), `${where} has a name with extra whitespace`);
     }
   });
   forEachSubcommand(spec, (command, path) => {
@@ -406,13 +406,8 @@ export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
  */
 export function assertEverythingHasDescription(spec: Subcommand): void {
   assert(spec.description, `Spec has no description`);
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of makeArray(options).entries()) {
-      assert(
-        option.description,
-        `Option ${namedArrayToString(...path, option)} (index ${index}) has no description`,
-      );
-    }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (isDefinedHere) assert(option.description, `${where} has no description`);
   });
   forEachSubcommand(spec, (command, path) => {
     assert(command.description, `${describeCommand(path)} has no description`);
@@ -429,15 +424,12 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
       `Spec has a description line over 68 characters`,
     );
   }
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of makeArray(options).entries()) {
-      if (option.description) {
-        assert(
-          option.description.split("\n").every((line) => line.length <= 68),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) has a description line over 68 characters`,
-        );
-      }
-    }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere || !option.description) return;
+    assert(
+      option.description.split("\n").every((line) => line.length <= 68),
+      `${where} has a description line over 68 characters`,
+    );
   });
   forEachSubcommand(spec, (command, path) => {
     if (command.description) {
@@ -450,20 +442,17 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
 }
 
 export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    for (const [index, option] of makeArray(options).entries()) {
-      if (option.requiresSeparator) {
-        const args = makeArray(option.args);
-        assert(
-          getMinArgs(args) <= 1,
-          `Option ${namedArrayToString(...path, option)} (index ${index}) takes a minimum of ${getMinArgs(args)} arg(s), but because of requiresSeparator, it must instead be 0 or 1`,
-        );
-        assert(
-          getMaxArgs(args) === 1,
-          `Option ${namedArrayToString(...path, option)} (index ${index}) takes a maximum of ${getMaxArgs(args)} arg(s), but because of requiresSeparator, it's only able to take 1`,
-        );
-      }
-    }
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere || !option.requiresSeparator) return;
+    const args = makeArray(option.args);
+    assert(
+      getMinArgs(args) <= 1,
+      `${where} takes a minimum of ${getMinArgs(args)} arg(s), but because of requiresSeparator, it must instead be 0 or 1`,
+    );
+    assert(
+      getMaxArgs(args) === 1,
+      `${where} takes a maximum of ${getMaxArgs(args)} arg(s), but because of requiresSeparator, it's only able to take 1`,
+    );
   });
 }
 
@@ -476,7 +465,7 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
  * asks the parser how it reads each name.
  */
 export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope) => {
+  forEachOption(spec, ({ option, where, scope }) => {
     if (!option.requiresSeparator) return;
     const separators = scope.directives.optionArgSeparators;
     if (option.requiresSeparator === true) {
@@ -537,7 +526,7 @@ export function assertNamesReadBack(spec: Subcommand): void {
     }
   });
 
-  forEachOptionInScope(spec, (option, where, scope, path) => {
+  forEachOption(spec, ({ option, where, scope, path }) => {
     const before = tokensTo(path);
     const separator = scope.requiredSeparator(option);
     for (const name of makeArray(option.name)) {
@@ -594,7 +583,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
  * that exist in scope, at every command the option can be used in
  */
 export function assertOptionNameReferencesExist(spec: Subcommand): void {
-  forEachOptionInScope(spec, (option, where, scope) => {
+  forEachOption(spec, ({ option, where, scope }) => {
     for (const name of makeArray(option.dependsOn)) {
       assert(
         scope.resolve(name) !== null,

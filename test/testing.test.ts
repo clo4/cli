@@ -1047,3 +1047,29 @@ test("testing: test rejects an option name the parser splits at a separator", as
   expect(() => parse(["--a=b"], spec)).toThrow();
   await expect(Testing.test(spec)()).rejects.toThrow("has the name '--a=b'");
 });
+
+test("testing: option messages start by naming the option the same way", () => {
+  expect(() =>
+    Testing.assertRepeatableOptionsArePositiveIntegers({
+      name: "t",
+      options: [{ name: "-v", isRepeatable: 1 }],
+    }),
+  ).toThrow(/^Option `t -v` \(index 0\) has its `isRepeatable` value set to 1/);
+  expect(() =>
+    Testing.assertOptionsDoNotShadowPersistentOptions({
+      name: "t",
+      options: [{ name: "-v", isPersistent: true }],
+      subcommands: [{ name: "sub", options: [{ name: "-q" }, { name: "-v" }] }],
+    }),
+  ).toThrow(/^Option `t sub -v` \(index 1\) shadows the name of a persistent option, "-v"/);
+  expect(() =>
+    Testing.assertOptionsHaveDifferentNamesFromParents({
+      name: "t",
+      options: [{ name: "-C", args: {} }],
+      subcommands: [{ name: "sub", options: [{ name: "-C" }] }],
+    }),
+  ).toThrow(/^Option `t sub -C` \(index 0\) has the same names as a different option, `t -C`/);
+  expect(() =>
+    Testing.assertOptionNameReferencesExist({ name: "t", options: [{ name: "-a", dependsOn: ["-b"] }] }),
+  ).toThrow(/^Option `t -a` \(index 0\) depends on an option named "-b"/);
+});
