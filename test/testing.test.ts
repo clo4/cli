@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { help, helpCommand } from "../src/help.js";
-import type { Option, Spec } from "../src/types.js";
+import type { Option, Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
 
 test("testing: run testSpec on helpCommand", async () => {
@@ -714,7 +714,7 @@ test("testing: assertRequiredSeparatorsAreUsable", () => {
   });
   // The separator isn't one the parser splits at.
   expect(() => Testing.assertRequiredSeparatorsAreUsable({ name: "test", options: [option(":")] })).toThrow(
-    /`test --o` requires the separator ':', but/,
+    /`test --o` \(index 0\) requires the separator ':', but/,
   );
   // There are no separators at all.
   expect(() =>
@@ -723,7 +723,7 @@ test("testing: assertRequiredSeparatorsAreUsable", () => {
       parserDirectives: { optionArgSeparators: [] },
       options: [option(true)],
     }),
-  ).toThrow(/`test --o` requires a separator, but/);
+  ).toThrow(/`test --o` \(index 0\) requires a separator, but/);
   // A persistent option has to work in every subcommand that inherits it.
   expect(() =>
     Testing.assertRequiredSeparatorsAreUsable({
@@ -731,7 +731,38 @@ test("testing: assertRequiredSeparatorsAreUsable", () => {
       options: [option("=", true)],
       subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: ":" } }],
     }),
-  ).toThrow(/In `test sub`, option `test --o` requires the separator '=', but/);
+  ).toThrow(/In `test sub`, option `test --o` \(index 0\) requires the separator '=', but/);
+});
+
+test("testing: option name checks use the directives where a persistent option is used", () => {
+  const spec: Subcommand = {
+    name: "t",
+    parserDirectives: { flagsArePosixNoncompliant: true },
+    options: [{ name: "verbose", isPersistent: true }],
+    subcommands: [{ name: "sub", parserDirectives: { flagsArePosixNoncompliant: false } }],
+  };
+  expect(() => Testing.assertOptionNamesStartWithDashes(spec)).toThrow(
+    /^In `t sub`, option `t verbose` \(index 0\) doesn't start with a dash/,
+  );
+  // Without the subcommand turning it off, the option is fine everywhere.
+  Testing.assertOptionNamesStartWithDashes({ ...spec, subcommands: [{ name: "sub" }] });
+});
+
+test("testing: subcommand messages name the subcommand once, with its index", () => {
+  const spec: Subcommand = {
+    name: "t",
+    description: "root",
+    subcommands: [
+      { name: "a", description: "first" },
+      { name: "bad ", description: "second" },
+    ],
+  };
+  expect(() => Testing.assertNamesHaveNoExtraWhitespace(spec)).toThrow(
+    "Subcommand `t bad ` (index 1) has a name with extra whitespace",
+  );
+  expect(() => Testing.assertEverythingHasDescription({ ...spec, subcommands: [{ name: "a" }] })).toThrow(
+    "Subcommand `t a` (index 0) has no description",
+  );
 });
 
 test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {

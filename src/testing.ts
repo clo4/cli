@@ -96,6 +96,40 @@ function namedArrayToString(...parts: { name: SingleOrArray<string> }[]) {
   return `\`${names.join(" ")}\``;
 }
 
+/** Name the last command on `path` in a message, with its index among its siblings. */
+function describeCommand(path: readonly Subcommand[]): string {
+  const command = path[path.length - 1];
+  const parent = path[path.length - 2];
+  if (!parent) return `Command ${namedArrayToString(command)}`;
+  const index = makeArray(parent.subcommands).indexOf(command);
+  return `Subcommand ${namedArrayToString(...path)} (index ${index})`;
+}
+
+/**
+ * Run a function once for each option that can be used at each command: its
+ * own options and the persistent ones it inherits. A persistent option is
+ * visited once for every command it reaches, with the scope of that command,
+ * so a check sees the option the way the parser does there. `where` names the
+ * option in a message, and says which command it's used in when that isn't
+ * the one that defines it.
+ */
+function forEachOptionInScope(
+  spec: Subcommand,
+  fn: (option: Option, where: string, scope: OptionScope) => void,
+): void {
+  forEachSubcommand(spec, (_command, path) => {
+    const scope = OptionScope.at(path);
+    for (const option of [...scope.local, ...scope.persistent]) {
+      let depth = path.length - 1;
+      while (!path[depth].options?.includes(option)) depth--;
+      const index = path[depth].options!.indexOf(option);
+      const name = `${namedArrayToString(...path.slice(0, depth + 1), option)} (index ${index})`;
+      const isOwn = depth === path.length - 1;
+      fn(option, isOwn ? `Option ${name}` : `In ${namedArrayToString(...path)}, option ${name}`, scope);
+    }
+  });
+}
+
 /** Asserts that required arguments do not come after an optional argument */
 export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcommand): void {
   forEachArgArray(spec, (args, path) => {
@@ -230,23 +264,13 @@ export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void 
  * set on an ancestor command.
  */
 export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    // TODO: check if this is correct
-    const skip =
-      path
-        .map((command) => command.parserDirectives?.flagsArePosixNoncompliant)
-        .filter((value) => value !== undefined)
-        .at(-1) || false;
-
-    if (skip) return;
-
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          !((name.startsWith("-") || name.startsWith("+")) && !name.startsWith("--") && name.length > 2),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) has a name that the parser is unable to parse, as it starts with a single '${name[0]}'. Tokens starting with that character are interpreted as short options, so passing '${name}' will be interpreted as '${Array.from(name.slice(1), (letter) => name[0] + letter).join(" ")}'. \`parserDirectives.flagsArePosixNoncompliant\` must be \`true\` on an ancestor command.`,
-        );
-      }
+  forEachOptionInScope(spec, (option, where, scope) => {
+    if (scope.directives.flagsArePosixNoncompliant) return;
+    for (const name of makeArray(option.name)) {
+      assert(
+        !((name.startsWith("-") || name.startsWith("+")) && !name.startsWith("--") && name.length > 2),
+        `${where} has a name that the parser is unable to parse, as it starts with a single '${name[0]}'. Tokens starting with that character are interpreted as short options, so passing '${name}' will be interpreted as '${Array.from(name.slice(1), (letter) => name[0] + letter).join(" ")}'. \`parserDirectives.flagsArePosixNoncompliant\` must be \`true\` on an ancestor command.`,
+      );
     }
   });
 }
@@ -255,23 +279,13 @@ export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand):
  * Asserts that all option names start with dashes
  */
 export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    // TODO: check if this is correct
-    const skip =
-      path
-        .map((command) => command.parserDirectives?.flagsArePosixNoncompliant)
-        .filter((value) => value !== undefined)
-        .at(-1) || false;
-
-    if (skip) return;
-
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          name.startsWith("-") || name.startsWith("+"),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) doesn't start with a dash or plus, the parser will be unable to find matching options without \`parserDirectives.flagsAreNonPosixCompliant\` being set to 'true' on an ancestor command`,
-        );
-      }
+  forEachOptionInScope(spec, (option, where, scope) => {
+    if (scope.directives.flagsArePosixNoncompliant) return;
+    for (const name of makeArray(option.name)) {
+      assert(
+        name.startsWith("-") || name.startsWith("+"),
+        `${where} doesn't start with a dash or plus, the parser will be unable to find matching options without \`parserDirectives.flagsAreNonPosixCompliant\` being set to 'true' on an ancestor command`,
+      );
     }
   });
 }
@@ -290,14 +304,12 @@ export function assertNothingIsNamedDashDash(spec: Subcommand): void {
       }
     }
   });
-  forEachSubcommand(spec, (subcommands, path) => {
-    for (const [index, subcommand] of makeArray(subcommands).entries()) {
-      for (const name of makeArray(subcommand.name)) {
-        assert(
-          name !== "--",
-          `Subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
-        );
-      }
+  forEachSubcommand(spec, (command, path) => {
+    for (const name of makeArray(command.name)) {
+      assert(
+        name !== "--",
+        `${describeCommand(path)} is named '--', which is a special instruction to the parser to treat all following tokens as arguments. This will never be matched`,
+      );
     }
   });
 }
@@ -306,16 +318,13 @@ export function assertNothingIsNamedDashDash(spec: Subcommand): void {
  * Asserts that no option arg separator is an empty string
  */
 export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void {
-  // FIXME: `subcommands` isn't an array
-  forEachSubcommand(spec, (subcommands, path) => {
-    for (const [index, subcommand] of makeArray(subcommands).entries()) {
-      const separators = makeArray(subcommand.parserDirectives?.optionArgSeparators);
-      for (const [sepIndex, separator] of separators.entries()) {
-        assert(
-          separator !== "",
-          `Subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has an empty string for an option arg separator at index ${sepIndex}. If you wanted to disable option arg separators, use an empty array.`,
-        );
-      }
+  forEachSubcommand(spec, (command, path) => {
+    const separators = makeArray(command.parserDirectives?.optionArgSeparators);
+    for (const [sepIndex, separator] of separators.entries()) {
+      assert(
+        separator !== "",
+        `${describeCommand(path)} has an empty string for an option arg separator at index ${sepIndex}. If you wanted to disable option arg separators, use an empty array.`,
+      );
     }
   });
 }
@@ -324,26 +333,11 @@ export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void 
  * Asserts that options named "+" or "-" takes one arg
  */
 export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    // TODO: check if this is correct
-    const skip =
-      path
-        .map((command) => command.parserDirectives?.flagsArePosixNoncompliant)
-        .filter((value) => value !== undefined)
-        .at(-1) || false;
-
-    if (skip) return;
-
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.name)) {
-        if (name !== "-" && name !== "+") {
-          continue;
-        }
-        assert(
-          option.args && !Array.isArray(option.args),
-          `Option ${namedArrayToString(...path, option)} (index ${index}) must take exactly one argument`,
-        );
-      }
+  forEachOptionInScope(spec, (option, where, scope) => {
+    if (scope.directives.flagsArePosixNoncompliant) return;
+    for (const name of makeArray(option.name)) {
+      if (name !== "-" && name !== "+") continue;
+      assert(option.args && !Array.isArray(option.args), `${where} must take exactly one argument`);
     }
   });
 }
@@ -362,15 +356,9 @@ export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
       }
     }
   });
-  // FIXME: `subcommands` isn't an array
-  forEachSubcommand(spec, (subcommands, path) => {
-    for (const [index, subcommand] of makeArray(subcommands).entries()) {
-      for (const name of makeArray(subcommand.name)) {
-        assert(
-          name === name.trim(),
-          `Subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has a name with extra whitespace`,
-        );
-      }
+  forEachSubcommand(spec, (command, path) => {
+    for (const name of makeArray(command.name)) {
+      assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
     }
   });
   forEachArgArray(spec, (args, path) => {
@@ -398,14 +386,8 @@ export function assertEverythingHasDescription(spec: Subcommand): void {
       );
     }
   });
-  // FIXME: `subcommands` isn't an array
-  forEachSubcommand(spec, (subcommands, path) => {
-    for (const [index, subcommand] of makeArray(subcommands).entries()) {
-      assert(
-        subcommand.description,
-        `Subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has no description`,
-      );
-    }
+  forEachSubcommand(spec, (command, path) => {
+    assert(command.description, `${describeCommand(path)} has no description`);
   });
 }
 
@@ -429,15 +411,12 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
       }
     }
   });
-  // FIXME: `subcommands` isn't an array
-  forEachSubcommand(spec, (subcommands, path) => {
-    for (const [index, subcommand] of makeArray(subcommands).entries()) {
-      if (subcommand.description) {
-        assert(
-          subcommand.description.split("\n").every((line) => line.length <= 68),
-          `Subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has a description line over 68 characters`,
-        );
-      }
+  forEachSubcommand(spec, (command, path) => {
+    if (command.description) {
+      assert(
+        command.description.split("\n").every((line) => line.length <= 68),
+        `${describeCommand(path)} has a description line over 68 characters`,
+      );
     }
   });
 }
@@ -466,27 +445,17 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
  * it requires, or at any separator when it doesn't name one.
  */
 export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
-  forEachSubcommand(spec, (_command, path) => {
-    const scope = OptionScope.at(path);
+  forEachOptionInScope(spec, (option, where, scope) => {
+    if (!option.requiresSeparator) return;
     const separators = scope.directives.optionArgSeparators;
-    const accepted = separators.map((separator) => `'${separator}'`).join(", ");
-    for (const option of [...scope.local, ...scope.persistent]) {
-      if (!option.requiresSeparator) continue;
-      let depth = path.length - 1;
-      while (!path[depth].options?.includes(option)) depth--;
-      const where = depth === path.length - 1 ? "Option" : `In ${namedArrayToString(...path)}, option`;
-      const name = namedArrayToString(...path.slice(0, depth + 1), option);
-      if (option.requiresSeparator === true) {
-        assert(
-          separators.length > 0,
-          `${where} ${name} requires a separator, but there are no option arg separators`,
-        );
-      } else {
-        assert(
-          separators.includes(option.requiresSeparator),
-          `${where} ${name} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
-        );
-      }
+    if (option.requiresSeparator === true) {
+      assert(separators.length > 0, `${where} requires a separator, but there are no option arg separators`);
+    } else {
+      const accepted = separators.map((separator) => `'${separator}'`).join(", ");
+      assert(
+        separators.includes(option.requiresSeparator),
+        `${where} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
+      );
     }
   });
 }
