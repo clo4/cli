@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
 import { InvalidOptionArg, UnknownOption } from "../src/errors.js";
-import { parse, scan } from "../src/parse.js";
-import type { Option, Spec, Subcommand } from "../src/types.js";
+import { parse, readNext } from "../src/parse.js";
+import type { Arg, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 
 // How each input token is classified, checked through the result of `parse`.
@@ -155,75 +155,74 @@ test("scan: a separate option value belongs to the option", () => {
   expect(result.args).toEqual(["def"]);
 });
 
-// Lenient mode, which completion uses, never throws and keeps reading.
+// readNext reads leniently for completion: it never throws, and keeps reading
+// past whatever is invalid.
 
-test("scan: lenient mode skips unknown options", () => {
-  const spec: Spec = { name: "test", args: {}, options: [{ name: "-a" }] };
-  const result = scan(["--nope", "--nope=value", "-zaz", "arg"], spec, false);
-  expect(result.options).toEqual(map({ "-a": [] }));
-  expect(result.args).toEqual(["arg"]);
+test("readNext: skips unknown options", () => {
+  const a: Option = { name: "-a" };
+  const spec: Spec = { name: "test", args: [{ name: "first" }, { name: "second" }], options: [a] };
+  const next = readNext(spec, ["--nope", "--nope=value", "-zaz", "arg"], "");
+  expect(next.seenOptions).toEqual([a]);
+  expect(next.arg).toBe((spec.args as Arg[])[1]);
 });
 
-test("scan: lenient mode keeps arguments past the maximum", () => {
-  const result = scan(["one", "two", "--", "three"], { name: "test" }, false);
-  expect(result.args).toEqual(["one", "two", "three"]);
-  expect(result.argSeparatorIndex).toBe(2);
+test("readNext: keeps counting arguments past the maximum", () => {
+  const next = readNext({ name: "test", args: { name: "only" } }, ["one", "two", "--", "three"], "");
+  expect(next.arg).toBeUndefined();
+  expect(next.optionsAllowed).toBe(false);
 });
 
-test("scan: lenient mode ignores a value attached to an option without args", () => {
-  const spec: Spec = { name: "test", options: [{ name: "--flag" }] };
-  const result = scan(["--flag=value"], spec, false);
-  expect(result.options).toEqual(map({ "--flag": [] }));
-  expect(result.args).toEqual([]);
+test("readNext: a value attached to an option without args isn't an argument", () => {
+  const flag: Option = { name: "--flag" };
+  const spec: Spec = { name: "test", args: { name: "a" }, options: [flag] };
+  const next = readNext(spec, ["--flag=value"], "");
+  expect(next.seenOptions).toEqual([flag]);
+  expect(next.arg).toBe(spec.args);
 });
 
-test("scan: lenient mode ignores missing and repeated option values", () => {
-  const spec: Spec = {
-    name: "test",
-    options: [
-      { name: "--out", args: {} },
-      { name: "-v", isRepeatable: 1 },
-    ],
-  };
-  const result = scan(["-v", "-v", "--out"], spec, false);
-  expect(result.options.get("-v")).toEqual(["", ""]);
-  expect(result.options.get("--out")).toEqual([]);
-  expect(result.seenOptions).toEqual([spec.options![1], spec.options![1], spec.options![0]]);
+test("readNext: keeps reading past missing and repeated option values", () => {
+  const out: Option = { name: "--out", args: {} };
+  const verbose: Option = { name: "-v", isRepeatable: 1 };
+  const spec: Spec = { name: "test", options: [out, verbose] };
+  const next = readNext(spec, ["-v", "-v", "--out"], "");
+  expect(next.seenOptions).toEqual([verbose, verbose, out]);
+  expect(next.conflicts(verbose)).toBe(true);
+  expect(next.value).toEqual({ option: out, arg: out.args, required: true });
 });
 
-test("scan: lenient mode doesn't require options or arguments", () => {
-  const spec: Spec = {
-    name: "test",
-    args: {},
-    options: [{ name: "--req", isRequired: true }],
-  };
-  expect(() => scan([], spec, false)).not.toThrow();
-  expect(() => scan([], spec, true)).toThrow();
+test("readNext: doesn't require options or arguments", () => {
+  const spec: Spec = { name: "test", args: {}, options: [{ name: "--req", isRequired: true }] };
+  expect(() => readNext(spec, [], "")).not.toThrow();
+  expect(() => parse([], spec)).toThrow();
 });
 
-test("scan: an option with room for values is reported as open", () => {
+test("readNext: an option with room for values can take the next token", () => {
   const option: Option = { name: "--tags", args: { isVariadic: true } };
   const spec: Spec = { name: "test", options: [option] };
-  expect(scan(["--tags"], spec, false).openOption).toEqual({ option, valueCount: 0 });
-  expect(scan(["--tags", "a", "b"], spec, false).openOption).toEqual({ option, valueCount: 2 });
+  expect(readNext(spec, ["--tags"], "").value).toEqual({ option, arg: option.args, required: true });
+  expect(readNext(spec, ["--tags", "a", "b"], "").value).toEqual({
+    option,
+    arg: option.args,
+    required: false,
+  });
   // An attached value is the option's only value.
-  expect(scan(["--tags=a"], spec, false).openOption).toBeNull();
+  expect(readNext(spec, ["--tags=a"], "").value).toBeNull();
 });
 
-test("scan: '--' closes an open option", () => {
+test("readNext: '--' closes an open option", () => {
   const option: Option = { name: "--tags", args: { isVariadic: true } };
   const spec: Spec = { name: "test", options: [option] };
-  expect(scan(["--tags", "a", "--"], spec, false).openOption).toBeNull();
-  expect(scan(["--tags", "--", "b"], spec, false).openOption).toBeNull();
+  expect(readNext(spec, ["--tags", "a", "--"], "").value).toBeNull();
+  expect(readNext(spec, ["--tags", "--", "b"], "").value).toBeNull();
 });
 
-test("scan: an option that requires a separator is never left open", () => {
+test("readNext: an option that requires a separator never takes the next token", () => {
   const option: Option = { name: "--option", args: {}, requiresSeparator: true };
   const spec: Spec = { name: "test", options: [option] };
-  expect(scan(["--option"], spec, false).openOption).toBeNull();
+  expect(readNext(spec, ["--option"], "").value).toBeNull();
 });
 
-test("scan: reports the directives in effect for the final command", () => {
+test("readNext: reports the directives in effect for the final command", () => {
   const spec: Spec = {
     name: "test",
     parserDirectives: {
@@ -238,13 +237,13 @@ test("scan: reports the directives in effect for the final command", () => {
       },
     ],
   };
-  expect(scan([], spec, false).scope.directives).toEqual({
+  expect(readNext(spec, [], "").scope.directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: false,
     optionsMustPrecedeArguments: true,
     subcommandsMatchUniquePrefix: true,
   });
-  expect(scan(["sub"], spec, false).scope.directives).toEqual({
+  expect(readNext(spec, ["sub"], "").scope.directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: true,
     optionsMustPrecedeArguments: false,
@@ -252,7 +251,8 @@ test("scan: reports the directives in effect for the final command", () => {
   });
 });
 
-test("scan: lenient mode skips unknown characters in a chain and keeps the rest", () => {
-  const spec: Spec = { name: "test", options: [{ name: "-a" }, { name: "-b" }] };
-  expect(scan(["-axb"], spec, false).options).toEqual(map({ "-a": [], "-b": [] }));
+test("readNext: skips unknown characters in a chain and keeps the rest", () => {
+  const a: Option = { name: "-a" };
+  const b: Option = { name: "-b" };
+  expect(readNext({ name: "test", options: [a, b] }, ["-axb"], "").seenOptions).toEqual([a, b]);
 });

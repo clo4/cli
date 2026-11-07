@@ -10,13 +10,14 @@ import { expect, test } from "vitest";
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
-import { readNext, scan } from "../src/parse.js";
+import { parse, readNext } from "../src/parse.js";
+import type { NextToken } from "../src/parse.js";
 import type { Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
-import { asArray, getMaxArgs } from "../src/util.js";
+import { asArray } from "../src/util.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { generator, shrink } from "./fuzz/generate.js";
-import { attempt, difference } from "./fuzz/snapshot.js";
+import { attempt } from "./fuzz/snapshot.js";
 
 /** What the directives should be after following `path`, worked out separately from the parser. */
 function expectedDirectives(path: readonly (Spec | Subcommand)[]): Directives {
@@ -52,47 +53,49 @@ function invalidPath(path: readonly (Spec | Subcommand)[], spec: Spec): string |
   return null;
 }
 
-/** The first property that `scan` breaks for this spec and input, or null. */
+/** The first property that `readNext` or `parse` breaks for this spec and input, or null. */
 function violation(spec: Spec, input: string[]): string | null {
-  const lenient = attempt(scan, input, spec, false);
-  if (!lenient.ok) return `lenient scan threw ${lenient.error.name}: ${lenient.error.message}`;
-  const result = lenient.result;
+  let next: NextToken;
+  try {
+    next = readNext(spec, input, "");
+  } catch (error) {
+    return `readNext threw ${String(error)}`;
+  }
 
-  const path = result.path as (Spec | Subcommand)[];
+  const path = next.path as readonly (Spec | Subcommand)[];
   const badPath = invalidPath(path, spec);
   if (badPath) return badPath;
 
-  // Every argument is a whole input token, in order.
-  let from = 0;
-  for (const arg of result.args) {
-    const at = input.indexOf(arg, from);
-    if (at === -1) return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
-    from = at + 1;
-  }
-  if (result.argSeparatorIndex > result.args.length) return "argSeparatorIndex is past the arguments";
-
-  const seenNames = new Set(result.seenOptions.flatMap((option) => asArray((option as Spec).name)));
-  for (const name of result.options.keys()) {
-    if (!seenNames.has(name)) return `options has ${name}, which no seen option is called`;
-  }
-
-  if (result.openOption) {
-    const { option, valueCount } = result.openOption as { option: Spec; valueCount: number };
-    if (valueCount >= getMaxArgs(option.args)) return "openOption has no room for another value";
-  }
-
-  const directives = JSON.stringify(result.directives);
+  const directives = JSON.stringify(next.scope.directives);
   const expected = JSON.stringify(expectedDirectives(path));
   if (directives !== expected) return `directives are ${directives}, expected ${expected}`;
 
-  const strict = attempt(scan, input, spec, true);
+  const strict = attempt(parse, input, spec);
   if (strict.ok) {
-    const diff = difference(strict, lenient);
-    return diff ? `strict and lenient scans disagree: ${diff}` : null;
+    const result = strict.result;
+    // Every argument is a whole input token, in order.
+    let from = 0;
+    for (const arg of result.args) {
+      const at = input.indexOf(arg, from);
+      if (at === -1) return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
+      from = at + 1;
+    }
+    if (result.argSeparatorIndex > result.args.length) return "argSeparatorIndex is past the arguments";
+
+    // The lenient read used for completion agrees with the parse.
+    if (result.path.length !== path.length || result.path.some((command, i) => command !== path[i])) {
+      return "readNext and parse end at different commands";
+    }
+    const seenNames = [...new Set(next.seenOptions.flatMap((option) => asArray(option.name)))].sort();
+    const parsedNames = [...result.options.keys()].sort();
+    if (JSON.stringify(seenNames) !== JSON.stringify(parsedNames)) {
+      return `readNext saw options named ${JSON.stringify(seenNames)}, but parse has ${JSON.stringify(parsedNames)}`;
+    }
+    return null;
   }
 
   const error = strict.error;
-  if (!(error instanceof ParseError)) return `strict scan threw ${error.name}: ${error.message}`;
+  if (!(error instanceof ParseError)) return `parse threw ${error.name}: ${error.message}`;
   const errorPath = invalidPath(error.context.path as readonly (Spec | Subcommand)[], spec);
   if (errorPath) return `error ${errorPath}`;
   if (typeof error.index === "number") {
@@ -112,7 +115,7 @@ function violation(spec: Spec, input: string[]): string | null {
   return null;
 }
 
-test("scan keeps its invariants on random specs", () => {
+test("readNext and parse keep their invariants on random specs", () => {
   for (const n of caseNumbers()) {
     const gen = generator(caseSeed(n));
     const spec = gen.spec();
@@ -159,7 +162,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   const next = readNext(spec, before, "");
   const seen = next.seenOptions.length;
   const depth = next.path.length;
-  const readAfter = (token: string) => scan([...before, token], spec, false);
+  const readAfter = (token: string) => readNext(spec, [...before, token], "");
   for (const sub of next.subcommands) {
     for (const name of asArray(sub.name)) {
       if (!offered.has(name)) continue;

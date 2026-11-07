@@ -1,57 +1,28 @@
-// Comparable snapshots of what `scan` returns or throws, so two runs (strict
-// and lenient, or two versions of the parser) can be checked for differences.
+// Comparable snapshots of what `parse` and `readNext` return or throw, so two
+// versions of the parser can be checked for differences.
 
+import type { NextToken, ParseResult } from "../../src/parse.js";
 import type { Action, Spec } from "../../src/types.js";
 
-type Scan = (input: readonly string[], spec: Spec, strict: boolean) => unknown;
+type Parse = (input: readonly string[], spec: Spec) => ParseResult;
 
-interface Result {
-  path: readonly unknown[];
-  actions: readonly Action[];
-  optionActions: readonly Action[];
-  args: readonly string[];
-  argSeparatorIndex: number;
-  options: Map<string, string[]>;
-  seenOptions: readonly unknown[];
-  localOptions: readonly unknown[];
-  persistentOptions: readonly unknown[];
-  openOption: { option: unknown; valueCount: number } | null;
-  directives?: unknown;
-}
+export type Outcome =
+  | { ok: true; result: ParseResult }
+  | { ok: false; error: Error & Record<string, unknown> };
 
-// Older versions of `scan` return these fields at the top level.
-interface Scope {
-  local: readonly unknown[];
-  persistent: readonly unknown[];
-  directives: unknown;
-}
-
-function normalize(result: Result & { scope?: Scope }): Result {
-  const { scope } = result;
-  if (!scope) return result;
-  return {
-    ...result,
-    localOptions: scope.local,
-    persistentOptions: scope.persistent,
-    directives: scope.directives,
-  };
-}
-
-export type Outcome = { ok: true; result: Result } | { ok: false; error: Error & Record<string, unknown> };
-
-export function attempt(scan: Scan, input: readonly string[], spec: Spec, strict: boolean): Outcome {
+export function attempt(parse: Parse, input: readonly string[], spec: Spec): Outcome {
   try {
-    return { ok: true, result: normalize(scan(input, spec, strict) as Result & { scope?: Scope }) };
+    return { ok: true, result: parse(input, spec) };
   } catch (error) {
     return { ok: false, error: error as Error & Record<string, unknown> };
   }
 }
 
 /**
- * Describe how two outcomes differ, or return null if they match. Spec objects
- * (path entries, options, actions) must be the same objects. `sameAction`
- * decides whether two actions match, so two copies of the built-in usage
- * action can count as the same.
+ * Describe how two outcomes of `parse` differ, or return null if they match.
+ * Spec objects (path entries, options, actions) must be the same objects.
+ * `sameAction` decides whether two actions match, so two copies of the
+ * built-in usage action can count as the same.
  */
 export function difference(
   a: Outcome,
@@ -71,9 +42,7 @@ export function difference(
   }
   const x = a.result;
   const y = b.result;
-  for (const key of ["path", "seenOptions", "localOptions", "persistentOptions"] as const) {
-    if (!sameItems(x[key], y[key])) return `${key} differ`;
-  }
+  if (!sameItems(x.path, y.path)) return "path differs";
   for (const key of ["actions", "optionActions"] as const) {
     if (!sameItems(x[key], y[key], sameAction)) return `${key} differ`;
   }
@@ -84,11 +53,31 @@ export function difference(
   const optionsA = JSON.stringify(optionEntries(x.options));
   const optionsB = JSON.stringify(optionEntries(y.options));
   if (optionsA !== optionsB) return `options differ: ${optionsA} vs ${optionsB}`;
-  const openA = x.openOption;
-  const openB = y.openOption;
-  if (openA?.option !== openB?.option || openA?.valueCount !== openB?.valueCount) return "openOption differs";
-  if (x.directives && y.directives && JSON.stringify(x.directives) !== JSON.stringify(y.directives)) {
-    return "directives differ";
+  return null;
+}
+
+/** Describe how two results of `readNext` differ, or return null if they match. */
+export function nextDifference(x: NextToken, y: NextToken): string | null {
+  if (!sameItems(x.path, y.path)) return "path differs";
+  if (!sameItems(x.seenOptions, y.seenOptions)) return "seenOptions differ";
+  if (JSON.stringify(x.scope.directives) !== JSON.stringify(y.scope.directives)) return "directives differ";
+  if (x.optionsAllowed !== y.optionsAllowed) return "optionsAllowed differs";
+  if (!sameItems(x.subcommands, y.subcommands)) return "subcommands differ";
+  if (x.arg !== y.arg) return "arg differs";
+  const [valueA, valueB] = [x.value, y.value];
+  if (
+    valueA?.option !== valueB?.option ||
+    valueA?.arg !== valueB?.arg ||
+    valueA?.required !== valueB?.required
+  ) {
+    return "value differs";
+  }
+  const [attachedA, attachedB] = [x.attached, y.attached];
+  for (const key of ["option", "arg", "prefix", "value"] as const) {
+    if (attachedA?.[key] !== attachedB?.[key]) return `attached ${key} differs`;
+  }
+  for (const option of [...x.scope.local, ...x.scope.persistent]) {
+    if (x.conflicts(option) !== y.conflicts(option)) return "conflicts differ";
   }
   return null;
 }

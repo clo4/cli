@@ -24,16 +24,6 @@ export interface ParseResult {
   optionActions: Action[];
 }
 
-/** Everything {@link scan} learns about a command line. */
-export interface ScanResult extends ParseResult {
-  /** Every use of an option, in order. */
-  seenOptions: Option[];
-  /** The options and directives in effect for the final command. */
-  scope: OptionScope;
-  /** The option that can still take a separate value, and how many it has. */
-  openOption: { option: Option; valueCount: number } | null;
-}
-
 /** What the token after a command line can be, as the parser would read it. */
 export interface NextToken {
   /** The commands from the root to the current one. */
@@ -163,7 +153,14 @@ export function checkOptionRules(
   }
 }
 
-/** The state of one {@link scan}. Each method handles one kind of token. */
+/**
+ * The state of reading one command line in a single pass. This is the only
+ * code that decides what each input token is. When `strict`, it throws on the
+ * first problem, which is what {@link parse} needs. Otherwise it never throws:
+ * it skips whatever is invalid and keeps going, so {@link readNext} can still
+ * read a line that's wrong at the moment. Each method handles one kind of
+ * token.
+ */
 class Scanner {
   readonly path: [Spec, ...Subcommand[]];
   readonly actions: Action[] = [];
@@ -321,7 +318,7 @@ class Scanner {
 
   /**
    * Add a value to the open option. Returns whether it's a value the option
-   * accepts. The lenient scan keeps going either way.
+   * accepts. A lenient read keeps going either way.
    */
   private addValue(index: number, start: number, end: number, value: string, separator: string): boolean {
     this.valueCount += 1;
@@ -636,33 +633,6 @@ function argAt(args: readonly Arg[], index: number): Arg | undefined {
 }
 
 /**
- * Read a command line against a spec in one pass.
- *
- * This is the only code that decides what each input token is. With `strict`,
- * it throws on the first problem, which is what {@link parse} needs. Without
- * it, it never throws: it skips whatever is invalid and keeps going, so
- * completion can still read a line that's wrong at the moment.
- */
-export function scan(input: readonly string[], spec: Spec, strict: boolean): ScanResult {
-  const s = new Scanner(spec, strict);
-  s.read(input);
-  if (strict) s.finish();
-
-  const open = s.openOption;
-  return {
-    path: s.path,
-    actions: s.actions,
-    optionActions: s.optionActions,
-    args: s.args,
-    argSeparatorIndex: s.argSeparatorIndex,
-    options: s.options,
-    seenOptions: s.seenOptions,
-    scope: s.scope,
-    openOption: open && s.hasRoomForValue ? { option: open, valueCount: s.valueCount } : null,
-  };
-}
-
-/**
  * Work out what the token after `before` can be, and how the parser reads
  * `partial` if it's an option with a value attached. Reads leniently, so a
  * line that's wrong at the moment still has an answer. Completion is built on
@@ -702,5 +672,15 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
  * This function is exposed to make it easier to build a custom runner.
  */
 export function parse(input: readonly string[], spec: Spec): ParseResult {
-  return scan(input, spec, true);
+  const s = new Scanner(spec, true);
+  s.read(input);
+  s.finish();
+  return {
+    path: s.path,
+    actions: s.actions,
+    optionActions: s.optionActions,
+    args: s.args,
+    argSeparatorIndex: s.argSeparatorIndex,
+    options: s.options,
+  };
 }

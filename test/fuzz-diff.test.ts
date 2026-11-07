@@ -15,11 +15,11 @@ import { join } from "node:path";
 import { afterAll, expect, test } from "vitest";
 
 import { usage } from "../src/help.js";
-import { scan } from "../src/parse.js";
+import { parse, readNext } from "../src/parse.js";
 import type { Action, Spec } from "../src/types.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { generator, shrink } from "./fuzz/generate.js";
-import { attempt, difference } from "./fuzz/snapshot.js";
+import { attempt, difference, nextDifference } from "./fuzz/snapshot.js";
 
 const ref = process.env.FUZZ_AGAINST;
 const dir = ref ? mkdtempSync(join(tmpdir(), "clo4-cli-fuzz-")) : "";
@@ -27,36 +27,39 @@ afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!ref)(`scan behaves the same as at ${ref}`, async () => {
+test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () => {
   const archive = execFileSync("git", ["archive", ref!, "src"], { maxBuffer: 64 * 1024 * 1024 });
   execFileSync("tar", ["-x", "-C", dir], { input: archive });
   // A plain path keeps one module instance per file, shared with their parse.ts.
   const load = (file: string) => import(join(dir, "src", file));
-  const theirs = (await load("parse.ts")) as { scan: typeof scan };
+  const theirs = (await load("parse.ts")) as { parse: typeof parse; readNext?: typeof readNext };
   const theirUsage = ((await load("help.ts")) as { usage: Action }).usage;
 
   // Each copy of the source has its own built-in usage action.
   const sameAction = (x: Action, y: Action) => x === y || (x === usage && y === theirUsage);
-  const differs = (spec: Spec, input: string[]) => {
-    for (const strict of [true, false]) {
-      const diff = difference(
-        attempt(scan, input, spec, strict),
-        attempt(theirs.scan, input, spec, strict),
-        sameAction,
-      );
-      if (diff) return `${strict ? "strict" : "lenient"}: ${diff}`;
-    }
-    return null;
+  const differs = (spec: Spec, input: string[], partial: string) => {
+    const diff = difference(attempt(parse, input, spec), attempt(theirs.parse, input, spec), sameAction);
+    if (diff) return `parse: ${diff}`;
+    // Versions before readNext only have `parse` to compare.
+    if (!theirs.readNext) return null;
+    const next = nextDifference(readNext(spec, input, partial), theirs.readNext(spec, input, partial));
+    return next && `readNext: ${next}`;
   };
 
   for (const n of caseNumbers()) {
     const gen = generator(caseSeed(n), { emptySeparators: true });
     const spec = gen.spec();
     const input = gen.input(spec);
-    if (differs(spec, input) === null) continue;
-    const small = shrink(spec, input, (s, i) => differs(s, i) !== null);
+    const partial = gen.input(spec)[0] ?? "";
+    if (differs(spec, input, partial) === null) continue;
+    const small = shrink(spec, input, (s, i) => differs(s, i, partial) !== null);
     expect.fail(
-      report(n, small.spec, small.input, `differs from ${ref}, ${differs(small.spec, small.input)}`),
+      report(
+        n,
+        small.spec,
+        [...small.input, partial],
+        `differs from ${ref}, ${differs(small.spec, small.input, partial)}`,
+      ),
     );
   }
 });
