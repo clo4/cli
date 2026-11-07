@@ -66,41 +66,33 @@ export interface NextToken {
 /**
  * Find the subcommand `token` names. An exact name always wins. With
  * `allowPrefix`, a token that's a prefix of exactly one command's names
- * matches that command. An empty token is a prefix of every name, so it never
- * matches by prefix. A hidden command only matches its exact name, so it
- * can't make a visible command's prefix ambiguous.
+ * matches that command (see {@link prefixMatches}).
  */
 export function matchSubcommand(
   subcommands: readonly Subcommand[],
   token: string,
   allowPrefix: boolean,
 ): Subcommand | null {
-  allowPrefix &&= token !== "";
-  let match: Subcommand | null = null;
-  let prefixCount = 0;
   for (const candidate of subcommands) {
     const names = candidate.name;
-    const prefixable = allowPrefix && !candidate.hidden;
-    if (typeof names === "string") {
-      if (names === token) return candidate;
-      if (prefixable && names.startsWith(token)) {
-        match = candidate;
-        prefixCount += 1;
-      }
-      continue;
-    }
-    // Count each command at most once, however many of its names match.
-    let prefixMatched = false;
-    for (const name of names) {
-      if (name === token) return candidate;
-      if (prefixable && !prefixMatched && name.startsWith(token)) {
-        prefixMatched = true;
-        match = candidate;
-        prefixCount += 1;
-      }
-    }
+    if (typeof names === "string" ? names === token : names.includes(token)) return candidate;
   }
-  return prefixCount === 1 ? match : null;
+  if (!allowPrefix) return null;
+  const matches = prefixMatches(subcommands, token);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * The commands that `token` is a prefix of a name of, each listed once. An
+ * empty token is a prefix of every name, so it matches none. A hidden command
+ * only matches its exact name, so it can't make a visible command's prefix
+ * ambiguous.
+ */
+export function prefixMatches(subcommands: readonly Subcommand[], token: string): Subcommand[] {
+  if (token === "") return [];
+  return subcommands.filter(
+    (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(token)),
+  );
 }
 
 /** The first of `separators` that `text` starts with, or "" if none. */

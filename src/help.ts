@@ -1,7 +1,7 @@
 import type { Action, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
-import { matchSubcommand } from "./parse.js";
+import { matchSubcommand, prefixMatches } from "./parse.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";
@@ -57,23 +57,25 @@ export const usage: Action = ({ path, args: [command], help }) => {
     return 1;
   }
 
-  const subcommands = path
-    .at(-1)
-    ?.subcommands?.filter((cmd) => !cmd.hidden)
-    .flatMap((cmd) => cmd.name);
+  const subcommands = path.at(-1)?.subcommands ?? [];
+  const visibleNames = subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
 
-  if (subcommands && subcommands.length > 0) {
+  if (visibleNames.length > 0) {
+    // The parser enters a command that the token is a unique prefix of, so
+    // reaching here with a prefix match means more than one command matched.
     const matchPrefix = directivesFor(path).subcommandsMatchUniquePrefix;
-    if (matchPrefix) {
-      const possible = subcommands.filter((name) => name.startsWith(command));
-      if (possible.length > 0) {
-        printActionError(
-          `Ambiguous command '${command}', could be: ${possible.join(", ")}\n\n${help({
-            description: false,
-          })}`,
-        );
-        return 1;
-      }
+    const possible = matchPrefix
+      ? prefixMatches(subcommands, command).flatMap((cmd) =>
+          makeArray(cmd.name).filter((name) => name.startsWith(command)),
+        )
+      : [];
+    if (possible.length > 0) {
+      printActionError(
+        `Ambiguous command '${command}', could be: ${possible.join(", ")}\n\n${help({
+          description: false,
+        })}`,
+      );
+      return 1;
     }
 
     printActionError(
@@ -81,7 +83,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
         description: false,
         didYouMean: {
           input: command,
-          choices: subcommands,
+          choices: visibleNames,
         },
       })}`,
     );

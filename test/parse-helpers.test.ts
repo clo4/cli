@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import { MissingRequiredOption, ParseError } from "../src/errors.js";
-import { checkOptionRules, firstSeparator, leadingSeparator, matchSubcommand } from "../src/parse.js";
+import {
+  checkOptionRules,
+  firstSeparator,
+  leadingSeparator,
+  matchSubcommand,
+  prefixMatches,
+} from "../src/parse.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 
 describe("matchSubcommand", () => {
@@ -107,4 +113,13 @@ describe("checkOptionRules", () => {
     const { options, seen } = used([["-v", "--verbose"], verbose]);
     expect(() => checkOptionRules(options, seen, [quiet], context)).toThrow(/requires --out/);
   });
+});
+
+test("prefixMatches lists each visible command once, and nothing for an empty token", () => {
+  const build: Subcommand = { name: ["build", "bu-build"] };
+  const bundle: Subcommand = { name: "bundle" };
+  const secret: Subcommand = { name: "bunker", hidden: true };
+  expect(prefixMatches([build, bundle, secret], "bu")).toEqual([build, bundle]);
+  expect(prefixMatches([build, bundle, secret], "bun")).toEqual([bundle]);
+  expect(prefixMatches([build, bundle, secret], "")).toEqual([]);
 });
