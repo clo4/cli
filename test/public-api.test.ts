@@ -48,3 +48,34 @@ test("package exports stay limited to runtime and testing entrypoints", async ()
   };
   expect(Object.keys(pkg.exports).sort()).toEqual([".", "./testing"]);
 });
+
+/** The names of the types a source file exports. */
+async function exportedTypes(file: string): Promise<string[]> {
+  const source = await readFile(new URL(`../src/${file}`, import.meta.url), "utf8");
+  const listed = [...source.matchAll(/^export type \{([^}]*)\}/gm)].flatMap((match) =>
+    match[1].split(",").map((name) => name.trim()),
+  );
+  const declared = [...source.matchAll(/^export (?:type|interface) (\w+)/gm)].map((match) => match[1]);
+  return [...listed, ...declared].filter(Boolean).sort();
+}
+
+test("the entrypoints export these types", async () => {
+  expect(await exportedTypes("index.ts")).toEqual([
+    "Action",
+    "ActionInit",
+    "Arg",
+    "CommandPath",
+    "Generator",
+    "NonEmptyArray",
+    "Option",
+    "OptionArgs",
+    "Shell",
+    "SingleOrArray",
+    "SingleOrArrayOrEmpty",
+    "Spec",
+    "Subcommand",
+    "Suggestion",
+    "Template",
+  ]);
+  expect(await exportedTypes("testing.ts")).toEqual(["TestContextLike", "TestNamingStyle", "TestOptions"]);
+});
