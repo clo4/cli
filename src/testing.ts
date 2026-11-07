@@ -203,13 +203,17 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
 }
 
 /**
- * Asserts that a subcommand's option isn't a different option with exactly the
- * same names as one on a parent.
+ * Asserts that when a subcommand's option and a different option on a parent
+ * share a name, each of them has a name of its own.
  *
- * The parser treats options with the same names, in any order, as one option,
- * and parsed values are looked up by name, so that parent's value would be
- * unreadable. A shared name is fine when each option has a name of its own, and
- * when the options are identical, such as an option kept in a constant.
+ * Parsed values are looked up by name, and an option sets every one of its
+ * names when it's used. If every name of the parent's option is also the
+ * subcommand's, using the subcommand's option replaces the parent's value, so
+ * it can't be read. If every name of the subcommand's option is also the
+ * parent's, its names hold the parent's value when it isn't used, so it can't
+ * tell whether it was. Options with the same names are fine when they're
+ * identical, such as an option kept in a constant, because the parser treats
+ * them as one option.
  *
  * This skips persistent parent options, because
  * {@link assertOptionsDoNotShadowPersistentOptions} covers those and
@@ -218,17 +222,28 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
 export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): void {
   forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
     if (!isDefinedHere) return;
+    const names = makeArray(option.name);
     // A parent's non-persistent options aren't in this command's scope, so
     // they're found on the parents themselves.
     for (const parent of path.slice(0, -1)) {
       for (const parentOption of makeArray(parent.options)) {
-        const isClash =
-          !parentOption.isPersistent &&
-          optionKey(parentOption) === optionKey(option) &&
-          !isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 });
+        if (parentOption.isPersistent) continue;
+        const parentNames = makeArray(parentOption.name);
+        const other = namedArrayToString(parent, parentOption);
+        if (optionKey(parentOption) === optionKey(option)) {
+          assert(
+            isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 }),
+            `${where} has the same names as a different option, ${other}, so the parent's value can't be read. Add a name that only one of them uses.`,
+          );
+          continue;
+        }
         assert(
-          !isClash,
-          `${where} has the same names as a different option, ${namedArrayToString(parent, parentOption)}, so the parent's value can't be read. Add a name that only one of them uses.`,
+          !parentNames.every((name) => names.includes(name)),
+          `${where} has every name of a different option, ${other}, so the parent's value can't be read. Add a name that only the parent's option uses.`,
+        );
+        assert(
+          !names.every((name) => parentNames.includes(name)),
+          `${where} only has names of a different option, ${other}, so it can't tell whether it was used. Add a name that only the subcommand's option uses.`,
         );
       }
     }
