@@ -1536,6 +1536,44 @@ test("parse: an ambiguous prefix is reported with the commands it could be", () 
   expect(() => parse(["sta"], spec)).toThrow("Ambiguous command 'sta', could be: status, stash");
 });
 
+test("parse: a prefix of several names of one command is unique", () => {
+  const status: Subcommand = { name: ["status", "stat"] };
+  const build: Subcommand = { name: ["build", "b"] };
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [status, build, { name: "bundle" }],
+  };
+  expect(parse(["sta"], spec).path).toEqual([spec, status]);
+  expect(parse(["bui"], spec).path).toEqual([spec, build]);
+});
+
+test("parse: a hidden command only matches its exact name in prefix mode", () => {
+  const build: Subcommand = { name: "build" };
+  const bundle: Subcommand = { name: "bundle", hidden: true };
+  const spec: Spec = {
+    name: "test",
+    requiresSubcommand: true,
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [build, bundle],
+  };
+  expect(parse(["bu"], spec).path).toEqual([spec, build]);
+  expect(parse(["bundle"], spec).path).toEqual([spec, bundle]);
+  const error = thrown(() => parse(["bun"], spec));
+  expect((error as ParseError).message).toBe("Unknown command 'bun'");
+  expect((error as ParseError).didYouMean?.choices).toEqual([["build"]]);
+});
+
+test("parse: an empty token matches a command with an empty name", () => {
+  const empty: Subcommand = { name: "" };
+  const spec: Spec = {
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [{ name: "remote" }, empty],
+  };
+  expect(parse([""], spec).path).toEqual([spec, empty]);
+});
+
 test("parse: a command without room for arguments reports a mistyped subcommand", () => {
   const spec: Spec = { name: "test", action: () => {}, subcommands: [{ name: "build" }] };
   const error = thrown(() => parse(["biuld"], spec));
