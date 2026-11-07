@@ -562,3 +562,15 @@ test("runtime: an option isn't offered under a name that a subcommand matches", 
   const candidates = (await resolve(spec, [], "")).map((c) => `${c.value}:${c.description}`);
   expect(candidates).toEqual(["--foo:subcommand", "-f:option"]);
 });
+
+test("runtime: gateOptions offers dashed suggestions after '--', where they're arguments", async () => {
+  const spec: Spec = {
+    name: "demo",
+    action: () => {},
+    args: { name: "n", isVariadic: true, suggestions: ["-1", "-2", "3"] },
+  };
+  expect(values(await resolve(spec, ["--"], "-", true))).toEqual(["-1", "-2", "3"]);
+  // Once options must stop, too.
+  const stopped: Spec = { ...spec, parserDirectives: { optionsMustPrecedeArguments: true } };
+  expect(values(await resolve(stopped, ["a"], "-", true))).toEqual(["-1", "-2", "3"]);
+});

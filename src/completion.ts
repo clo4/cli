@@ -18,7 +18,6 @@ import { printUsageError } from "./help.js";
 import { visibleSubcommands } from "./subcommands.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
-import type { Directives } from "./directives.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";
@@ -113,9 +112,11 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
 }
 
 /** Decide which kinds of candidate the word being completed can use. */
-function wantedCandidates(directives: Directives, req: CompletionRequest) {
-  const posixNoncompliant = directives.flagsArePosixNoncompliant;
-  const partialIsOption = !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
+function wantedCandidates(next: NextToken, req: CompletionRequest) {
+  const posixNoncompliant = next.scope.directives.flagsArePosixNoncompliant;
+  // After `--`, or once options must stop, a dashed word is an argument.
+  const partialIsOption =
+    next.optionsAllowed && !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
   // When gating, a dashed word completes options only; everything else completes
   // commands/positionals. Posix-noncompliant options have no dash, so they're
   // exempt and always offered alongside the other candidates.
@@ -161,7 +162,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   }
 
   const candidates: Candidate[] = [];
-  const { wantValues, wantOptions } = wantedCandidates(next.scope.directives, req);
+  const { wantValues, wantOptions } = wantedCandidates(next, req);
   if (wantValues) {
     // While an option can take another value, a word that isn't an option or
     // subcommand is its value instead of an argument.
