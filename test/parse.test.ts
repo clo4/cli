@@ -1,9 +1,10 @@
 import { expect, test } from "vitest";
 
-import { usage } from "../src/help.js";
+import { usage } from "../src/subcommands.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
+  ParseError,
   TooFewArguments,
   TooFewOptionArguments,
   TooManyArguments,
@@ -1415,12 +1416,38 @@ test("parse: a variadic option value takes a subcommand's name", () => {
   expect(optional.options).toEqual(map({ "--maybe": ["build"] }));
 });
 
-test("parse: a command that requires a subcommand accepts stray arguments", () => {
-  const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
-  const result = parse(["typo", "extra"], spec);
-  expect(result.path).toEqual([spec]);
-  expect(result.args).toEqual(["typo", "extra"]);
-  expect(result.actions).toEqual([usage]);
+test("parse: a command that requires a subcommand reports a stray argument as an unknown command", () => {
+  const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "add" }] };
+  const error = thrown(() => parse(["ad", "extra"], spec));
+  expect(error).toBeInstanceOf(ParseError);
+  expect((error as ParseError).message).toBe("Unknown command 'ad'");
+  expect((error as ParseError).didYouMean).toEqual({ input: "ad", choices: ["add"] });
+  expect(() => parse([""], spec)).toThrow("Expected a command, but the value was empty");
+  // Its own action doesn't take the stray arguments either.
+  expect(() => parse(["ad"], { ...spec, action: () => {} })).toThrow("Unknown command 'ad'");
+});
+
+test("parse: an ambiguous prefix is reported with the commands it could be", () => {
+  const spec: Spec = {
+    name: "test",
+    requiresSubcommand: true,
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [{ name: "status" }, { name: ["stash", "st"] }, { name: "store", hidden: true }],
+  };
+  expect(() => parse(["sta"], spec)).toThrow("Ambiguous command 'sta', could be: status, stash");
+});
+
+test("parse: a command without room for arguments reports a mistyped subcommand", () => {
+  const spec: Spec = { name: "test", action: () => {}, subcommands: [{ name: "build" }] };
+  const error = thrown(() => parse(["biuld"], spec));
+  expect((error as ParseError).message).toBe("Unknown command 'biuld'");
+  expect((error as ParseError).didYouMean?.choices).toEqual(["build"]);
+  // Once an argument is found, a later one is just too many.
+  const withArg: Spec = { ...spec, args: {} };
+  expect(() => parse(["a", "b"], withArg)).toThrow(TooManyArguments);
+  // An option action still runs.
+  const withHelp: Spec = { ...spec, options: [{ name: "--help", action: () => {} }] };
+  expect(parse(["biuld", "--help"], withHelp).optionActions).toHaveLength(1);
 });
 
 test("parse: an option action skips required arguments and options", () => {
@@ -1483,11 +1510,14 @@ test("parse: a command that shows usage for a missing subcommand skips required 
   expect(() => parse(["a"], spec)).toThrow(MissingRequiredOption);
 });
 
-test("parse: a command that requires a subcommand accepts '--' like other stray arguments", () => {
+test("parse: a command that requires a subcommand accepts '--' alone, but no argument after it", () => {
   const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
-  const result = parse(["--", "x"], spec);
-  expect(result.args).toEqual(["x"]);
+  const result = parse(["--"], spec);
+  expect(result.actions).toEqual([usage]);
   expect(result.argSeparatorIndex).toBe(0);
+  expect(() => parse(["--", "a"], spec)).toThrow('Too many arguments, "a" was unexpected');
+  const action: Action = () => {};
+  expect(parse(["--"], { ...spec, action }).actions).toEqual([action]);
 });
 
 test("parse: '--' after an argument is an argument when options must precede arguments", () => {

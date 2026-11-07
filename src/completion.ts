@@ -15,6 +15,7 @@
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, print } from "./util.js";
 import { printUsageError } from "./help.js";
+import { visibleSubcommands } from "./subcommands.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import type { Directives } from "./directives.js";
@@ -166,8 +167,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
     // subcommand is its value instead of an argument.
     const arg = next.value ? next.value.arg : next.arg;
     if (arg) candidates.push(...(await argValues(arg, tokens, req.partial)));
-    for (const sub of next.subcommands) {
-      if (sub.hidden) continue;
+    for (const sub of visibleSubcommands(next.subcommands)) {
       const description = firstLine(sub.description);
       for (const token of makeArray(sub.name)) {
         candidates.push({ value: token, description });

@@ -1,7 +1,6 @@
-import type { Action, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
-import { directivesFor } from "./directives.js";
+import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
-import { matchSubcommand, prefixMatches } from "./subcommands.js";
+import { matchSubcommand, noSubcommandMatch, visibleSubcommands } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
@@ -53,46 +52,6 @@ export function printUsageError(
   printError(`${message}\n\n${getHelp(path, { description: false, didYouMean })}`);
 }
 
-/**
- * Action that prints usage for commands where a subcommand must be provided.
- */
-export const usage: Action = ({ path, args: [command], help }) => {
-  if (command === undefined) {
-    print(help());
-    return 0;
-  }
-
-  if (command === "") {
-    printUsageError(path, "Expected a command, but the value was empty");
-    return 1;
-  }
-
-  const subcommands = path.at(-1)?.subcommands ?? [];
-  const visibleNames = subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
-
-  if (visibleNames.length > 0) {
-    // The parser enters a command that the token is a unique prefix of, so
-    // reaching here with a prefix match means more than one command matched.
-    const matchPrefix = directivesFor(path).subcommandsMatchUniquePrefix;
-    const possible = matchPrefix
-      ? prefixMatches(subcommands, command).flatMap((cmd) =>
-          makeArray(cmd.name).filter((name) => name.startsWith(command)),
-        )
-      : [];
-    if (possible.length > 0) {
-      printUsageError(path, `Ambiguous command '${command}', could be: ${possible.join(", ")}`);
-      return 1;
-    }
-
-    printUsageError(path, `Unknown command '${command}'`, { input: command, choices: visibleNames });
-    return 1;
-  }
-
-  printUsageError(path, `Unknown command '${command}'`);
-
-  return 1;
-};
-
 /** A subcommand that prints help for its parent or a sibling command. */
 export const helpCommand: Subcommand = {
   name: "help",
@@ -117,14 +76,11 @@ export const helpCommand: Subcommand = {
     }
 
     // Match the name the way the parser would have matched it in place of `help`.
-    const matchPrefix = directivesFor(helpRoot).subcommandsMatchUniquePrefix;
-    const command = matchSubcommand(parent.subcommands, commandName, matchPrefix);
+    const allowPrefix = OptionScope.at(helpRoot).directives.subcommandsMatchUniquePrefix;
+    const command = matchSubcommand(parent.subcommands, commandName, allowPrefix);
     if (!command) {
-      const subcommands = parent.subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
-      printUsageError(helpRoot, `There is no subcommand named '${commandName}'`, {
-        input: commandName,
-        choices: subcommands,
-      });
+      const { message, didYouMean } = noSubcommandMatch(parent.subcommands, commandName, allowPrefix);
+      printUsageError(helpRoot, message, didYouMean);
       return 1;
     }
 
@@ -165,16 +121,14 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const description = command.description;
   const defaultDesc = "No description";
 
-  const subcommands: HelpSections["subcommands"] = command.subcommands
-    ? command.subcommands
-        .filter((subcommand) => !subcommand.hidden)
-        .map((subcommand) => [
-          makeArray1(subcommand.name)
-            .sort((a, b) => a.length - b.length)
-            .join(", "),
-          subcommand.description ?? defaultDesc,
-        ])
-    : [];
+  const subcommands: HelpSections["subcommands"] = visibleSubcommands(command.subcommands).map(
+    (subcommand) => [
+      makeArray1(subcommand.name)
+        .sort((a, b) => a.length - b.length)
+        .join(", "),
+      subcommand.description ?? defaultDesc,
+    ],
+  );
 
   const visible = scope.visible();
   let optionObjects = visible.local;

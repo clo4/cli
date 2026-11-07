@@ -6,7 +6,6 @@
 
 import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
-import { directivesFor } from "./directives.js";
 import { matchSubcommand } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 
@@ -534,7 +533,7 @@ export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void
   forEachSubcommand(spec, (subcommand, path) => {
     // The path ends at this command, so this is the setting that decides how
     // its own subcommands are matched.
-    if (!directivesFor(path).subcommandsMatchUniquePrefix) return;
+    if (!OptionScope.at(path).directives.subcommandsMatchUniquePrefix) return;
 
     assert(
       !(subcommand.subcommands && subcommand.args),

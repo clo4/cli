@@ -39,10 +39,3 @@ export function applyDirectives(directives: Directives, command: Spec | Subcomma
     directives.flagsArePosixNoncompliant = configured.flagsArePosixNoncompliant;
   }
 }
-
-/** The directives in effect for the last command on `path`. */
-export function directivesFor(path: readonly (Spec | Subcommand)[]): Directives {
-  const directives = defaultDirectives();
-  for (const command of path) applyDirectives(directives, command);
-  return directives;
-}

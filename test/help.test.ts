@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { getHelp, usage } from "../src/help.js";
+import { getHelp } from "../src/help.js";
 import type { Spec } from "../src/types.js";
 import { expectIncludes, expectNotIncludes } from "./helpers.js";
 
@@ -90,7 +90,7 @@ test("help: no path, with subcommands, requires subcommand", () => {
 test("help: path with persistent options", () => {
   const spec: Spec = {
     name: "TEST_NAME",
-    action: usage,
+    action: () => {},
     options: [
       {
         name: ["-o", "--option"],
@@ -126,7 +126,7 @@ test("help: path with persistent options", () => {
 test("help: path with persistent options and no option on command", () => {
   const spec: Spec = {
     name: "TEST_NAME",
-    action: usage,
+    action: () => {},
     options: [
       {
         name: ["-o", "--option"],

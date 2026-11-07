@@ -12,8 +12,7 @@ import {
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { OptionScope } from "./scope.js";
-import { matchSubcommand } from "./subcommands.js";
-import { usage as builtinUsageAction } from "./help.js";
+import { matchSubcommand, noSubcommandMatch, usage as builtinUsageAction } from "./subcommands.js";
 
 export interface ParseResult {
   args: string[];
@@ -199,8 +198,9 @@ class Scanner {
   private valuesMax = 0;
   private requiredSeparator: string | boolean = false;
 
-  // The first argument past the command's limit. It's only an error once the
-  // whole line is read, because an option action like --help allows it.
+  // The first argument past the command's limit, or a subcommand that didn't
+  // match. It's only an error once the whole line is read, because an option
+  // action like --help allows it.
   private tooManyArgs: ParseError | null = null;
 
   // How many times each repeatable option has been used, keyed by the array
@@ -362,12 +362,11 @@ class Scanner {
 
   /**
    * Whether the command already has all the arguments it takes. A command that
-   * requires a subcommand takes any number, because they're a mistyped
-   * subcommand that its usage action reports.
+   * requires a subcommand takes none.
    */
   private get argsAreFull(): boolean {
     const path = this.path;
-    return !path[path.length - 1].requiresSubcommand && this.args.length >= this.commandArgsMax;
+    return path[path.length - 1].requiresSubcommand === true || this.args.length >= this.commandArgsMax;
   }
 
   private addArg(value: string): void {
@@ -381,7 +380,10 @@ class Scanner {
   /** Read `--` and every token after it as arguments. */
   argSeparator(input: readonly string[], index: number): void {
     this.closeOption();
-    if (this.strict && this.argsAreFull) {
+    // A command that requires a subcommand allows `--` alone, and reports
+    // any argument after it.
+    const command = this.path[this.path.length - 1];
+    if (this.strict && this.argsAreFull && !command.requiresSubcommand) {
       this.tooManyArgs ??= new ParseError(
         this.ctx(),
         "Unexpected argument '--', did you mean to use an option instead?",
@@ -510,6 +512,17 @@ class Scanner {
       this.addValue(token, "");
       return;
     }
+    // Where a subcommand could be, a token the command has no room for is a
+    // subcommand that didn't match.
+    const subcommands = this.matchableSubcommands;
+    if (this.strict && subcommands && this.argsAreFull) {
+      const command = this.path[this.path.length - 1];
+      if (subcommands.length > 0 || command.requiresSubcommand) {
+        const allowPrefix = this.directives.subcommandsMatchUniquePrefix;
+        const { message, didYouMean } = noSubcommandMatch(subcommands, token, allowPrefix);
+        this.tooManyArgs ??= new ParseError(this.ctx(), message, didYouMean);
+      }
+    }
     this.hasFoundArg = true;
     this.addArg(token);
   }
@@ -518,9 +531,9 @@ class Scanner {
   finish(): void {
     // An option with an action, like --help, works however the rest of the
     // command line is wrong, as long as every token could be read. So does the
-    // usage a command shows when its subcommand is missing.
+    // usage a command shows when no subcommand is named.
     const command = this.path[this.path.length - 1];
-    const showsUsage = command.requiresSubcommand && !command.action;
+    const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionActions.length > 0 || showsUsage;
     if (!skipsChecks && this.tooManyArgs) throw this.tooManyArgs;
     if (!skipsChecks && this.args.length < this.commandArgsMin) {
@@ -655,8 +668,6 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
  * subcommands used, the provided options, and the arguments.
  *
  * If parsing fails, this function throws.
- *
- * This function is exposed to make it easier to build a custom runner.
  */
 export function parse(input: readonly string[], spec: Spec): ParseResult {
   const s = new Scanner(spec, true);

@@ -1,5 +1,6 @@
-import type { Subcommand } from "./types.js";
-import { asArray } from "./util.js";
+import type { Action, Subcommand } from "./types.js";
+import type { DidYouMean } from "./errors.js";
+import { asArray, print } from "./util.js";
 
 /**
  * Find the subcommand `token` names. An exact name always wins. With
@@ -32,3 +33,40 @@ export function prefixMatches(subcommands: readonly Subcommand[], token: string)
     (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(token)),
   );
 }
+
+/** The subcommands that help, completion and suggestions show. */
+export function visibleSubcommands(subcommands: readonly Subcommand[] | undefined): Subcommand[] {
+  return subcommands?.filter((subcommand) => !subcommand.hidden) ?? [];
+}
+
+/**
+ * Why `token` doesn't name one of `subcommands`, for a token that
+ * {@link matchSubcommand} matched none of with the same `allowPrefix`.
+ */
+export function noSubcommandMatch(
+  subcommands: readonly Subcommand[] | undefined,
+  token: string,
+  allowPrefix: boolean,
+): { message: string; didYouMean?: DidYouMean } {
+  if (token === "") return { message: "Expected a command, but the value was empty" };
+  if (allowPrefix && subcommands) {
+    // A unique prefix would have matched, so these are two or more commands.
+    const possible = prefixMatches(subcommands, token).flatMap((command) =>
+      asArray(command.name).filter((name) => name.startsWith(token)),
+    );
+    if (possible.length > 0) {
+      return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
+    }
+  }
+  const choices = visibleSubcommands(subcommands).flatMap((command) => asArray(command.name));
+  return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
+}
+
+/**
+ * The action of a command that requires a subcommand and has no action of its
+ * own, when the command line names no subcommand: print the command's help.
+ */
+export const usage: Action = ({ help }) => {
+  print(help());
+  return 0;
+};

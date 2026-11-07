@@ -14,7 +14,7 @@ import { join } from "node:path";
 
 import { afterAll, expect, test } from "vitest";
 
-import { usage } from "../src/help.js";
+import { usage } from "../src/subcommands.js";
 import { parse, readNext } from "../src/parse.js";
 import type { Action, Spec } from "../src/types.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
@@ -33,7 +33,9 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   // A plain path keeps one module instance per file, shared with their parse.ts.
   const load = (file: string) => import(join(dir, "src", file));
   const theirs = (await load("parse.ts")) as { parse: typeof parse; readNext?: typeof readNext };
-  const theirUsage = ((await load("help.ts")) as { usage: Action }).usage;
+  // The built-in usage action moved from help.ts to subcommands.ts.
+  const theirSubcommands = (await load("subcommands.ts").catch(() => ({}))) as { usage?: Action };
+  const theirUsage = theirSubcommands.usage ?? ((await load("help.ts")) as { usage: Action }).usage;
 
   // Each copy of the source has its own built-in usage action.
   const sameAction = (x: Action, y: Action) => x === y || (x === usage && y === theirUsage);

@@ -190,7 +190,7 @@ test("run: helpCommand prints help for its parent and siblings", async () => {
 
   const unknown = await captureConsole(() => run(spec, ["help", "bld"]));
   expect(unknown.code).toBe(1);
-  expect(unknown.stderr).toMatch(/no subcommand named 'bld'/);
+  expect(unknown.stderr).toMatch(/^Error: Unknown command 'bld'/);
   expect(unknown.stderr).toMatch(/Did you mean 'build'/);
 });
 
@@ -210,7 +210,7 @@ test("run: helpCommand matches a unique prefix like the parser does", async () =
 
   const ambiguous = await captureConsole(() => run(spec, ["help", "bu"]));
   expect(ambiguous.code).toBe(1);
-  expect(ambiguous.stderr).toMatch(/no subcommand named 'bu'/);
+  expect(ambiguous.stderr).toMatch(/^Error: Ambiguous command 'bu', could be: build, bundle/);
 });
 
 test("run: ambiguous unique-prefix command reports the candidates", async () => {
@@ -303,4 +303,21 @@ test("run: a hidden command doesn't make a prefix ambiguous", async () => {
   const result = await captureConsole(() => run(spec, ["b"]));
   expect(result.stderr).toBe("");
   expect(ran).toBe("build");
+});
+
+test("run: a command's name after '--' is an argument, so it isn't ambiguous", async () => {
+  const spec: Spec = {
+    name: "demo",
+    requiresSubcommand: true,
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      { name: "build", action: () => {} },
+      { name: "bundle", action: () => {} },
+    ],
+  };
+  for (const command of ["build", "bui"]) {
+    const result = await captureConsole(() => run(spec, ["--", command]));
+    expect(result.code).toBe(1);
+    expect(result.stderr).toMatch(new RegExp(`^Error: Too many arguments, "${command}" was unexpected`));
+  }
 });
