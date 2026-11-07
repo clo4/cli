@@ -771,7 +771,7 @@ test("testing: assertNamesReadBack says what the parser reads a name as", () => 
   check({ name: "test", options: [{ name: ["-v", "--verbose"] }, { name: "-", args: {} }] });
   // A name with the separator in it is split there.
   expect(fails({ name: "test", options: [{ name: "--a=b" }] })).toBe(
-    "Option `test --a=b` (index 0) has the name '--a=b', but the parser reads it as an argument, or an option that doesn't exist",
+    "Option `test --a=b` (index 0) has the name '--a=b', but the parser reads it as an option that doesn't exist",
   );
   expect(fails({ name: "test", options: [{ name: "--a" }, { name: "--a=b" }] })).toMatch(
     /has the name '--a=b', but the parser reads it as the option `--a`$/,
@@ -878,7 +878,10 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
   for (const spec of passes) check(spec);
 
   const fails: [Subcommand, string | RegExp][] = [
-    [{ name: "test", options: [{ name: "-one" }] }, /'-one', but the parser reads it as an argument/],
+    [
+      { name: "test", options: [{ name: "-one" }] },
+      /'-one', but the parser reads it as an option that doesn't exist/,
+    ],
     [{ name: "test", subcommands: [{ name: "e", options: [{ name: "+one" }] }] }, /^Option `test e \+one`/],
     [{ name: "test", options: [{ name: "one" }] }, /'one', but the parser reads it as an argument/],
     [{ name: "test", subcommands: [{ name: "--" }] }, /^Subcommand `test --` \(index 0\) has the name '--'/],

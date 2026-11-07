@@ -241,6 +241,25 @@ test("runtime: isRepeatable and exclusiveOn filter the option list", async () =>
   expect(used).not.toContain("--a"); // non-repeatable, already present
 });
 
+test("runtime: a subcommand's copy of a used option isn't offered again", async () => {
+  // The parser reads the copy as the same option, because it has the same names.
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: "--x" }],
+    subcommands: [{ name: "sub", options: [{ name: "--x" }, { name: "--y" }] }],
+  };
+  expect(values(await resolve(spec, ["--x", "sub"], ""))).toEqual(["--y"]);
+});
+
+test("runtime: a hidden option isn't offered, but still shadows", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [{ name: ["-a", "--all"], isPersistent: true }],
+    subcommands: [{ name: "sub", options: [{ name: "--all", hidden: true }] }],
+  };
+  expect(values(await resolve(spec, ["sub"], ""))).toEqual(["-a"]);
+});
+
 test("runtime: requiresSeparator options are offered in their attached form", async () => {
   const spec: Spec = {
     name: "x",

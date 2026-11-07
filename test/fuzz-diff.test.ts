@@ -20,6 +20,7 @@ import type { Action, Spec } from "../src/types.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { generator, shrink } from "./fuzz/generate.js";
 import { attempt, difference, nextDifference } from "./fuzz/snapshot.js";
+import type { AnyNextToken } from "./fuzz/snapshot.js";
 
 const ref = process.env.FUZZ_AGAINST;
 const dir = ref ? mkdtempSync(join(tmpdir(), "clo4-cli-fuzz-")) : "";
@@ -32,7 +33,10 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   execFileSync("tar", ["-x", "-C", dir], { input: archive });
   // A plain path keeps one module instance per file, shared with their parse.ts.
   const load = (file: string) => import(join(dir, "src", file));
-  const theirs = (await load("parse.ts")) as { parse: typeof parse; readNext?: typeof readNext };
+  const theirs = (await load("parse.ts")) as {
+    parse: typeof parse;
+    readNext?: (spec: Spec, input: readonly string[], partial: string) => AnyNextToken;
+  };
   // The built-in usage action moved from help.ts to subcommands.ts.
   const theirSubcommands = (await load("subcommands.ts").catch(() => ({}))) as { usage?: Action };
   const theirUsage = theirSubcommands.usage ?? ((await load("help.ts")) as { usage: Action }).usage;

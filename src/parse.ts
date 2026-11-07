@@ -30,8 +30,8 @@ export interface ParseResult {
 export interface NextToken {
   /** The commands from the root to the current one. */
   path: CommandPath;
-  /** The options and directives in effect. */
-  scope: OptionScope;
+  /** The directives in effect. */
+  directives: Readonly<Directives>;
   /** Whether the token can be an option. */
   optionsAllowed: boolean;
   /**
@@ -39,22 +39,60 @@ export interface NextToken {
    * option can still take a value, only an exact name matches.
    */
   subcommands: readonly Subcommand[];
-  /** The subcommand the token enters if it's `token`. A subcommand wins over an option with the same name. */
-  subcommandFor(token: string): Subcommand | null;
+  /**
+   * The options the token can use, hidden ones included, local options first.
+   * Empty when the token can't be an option.
+   */
+  options: readonly UsableOption[];
   /** The open option, if the token can be its value, and whether it must be. */
   value: { option: Option; arg: Arg | undefined; required: boolean } | null;
   /** The argument the token fills if it isn't an option, subcommand or value. */
   arg: Arg | undefined;
-  /** Every use of an option so far, in order. */
-  seenOptions: readonly Option[];
-  /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
-  conflicts(option: Option): boolean;
   /**
    * The partial token, if the parser reads it as an option with a value
    * attached. `prefix` is everything before the value.
    */
   attached: { option: Option; arg: Arg; prefix: string; value: string } | null;
 }
+
+/**
+ * An option the next token can use without going over its repeat limit or
+ * breaking an `exclusiveOn` rule.
+ */
+export interface UsableOption {
+  option: Option;
+  /**
+   * The names the parser reads as this option here. A name that another
+   * option shadows, or that a subcommand matches, isn't one of them.
+   */
+  names: readonly string[];
+  /**
+   * The separator that must come between a name and its value, or null if the
+   * value can be a separate token.
+   */
+  separator: string | null;
+  /**
+   * Whether the option was used earlier on the line. Options with the same
+   * names count as the same option, like a subcommand's copy of a parent's.
+   */
+  used: boolean;
+}
+
+/** What the parser read one token as. See {@link readToken}. */
+export type TokenReading =
+  /** `--`, the end of options. */
+  | { kind: "separator" }
+  | { kind: "subcommand"; command: Subcommand }
+  /**
+   * One option, or several chained short options, in the order used. If the
+   * token also carries a value the option accepts, `attached` says where it starts.
+   */
+  | { kind: "options"; options: readonly Option[]; attached: { option: Option; start: number } | null }
+  /** A value of the option before it. */
+  | { kind: "value"; option: Option }
+  | { kind: "argument" }
+  /** An option that doesn't exist. */
+  | { kind: "unknown" };
 
 /** The first of `separators` that `text` starts with, or "" if none. */
 function leadingSeparator(text: string, separators: readonly string[]): string {
@@ -399,7 +437,7 @@ class Scanner {
   }
 
   /** The subcommand the next token enters if it's `token`. */
-  subcommandFor(token: string): Subcommand | null {
+  private subcommandFor(token: string): Subcommand | null {
     const subcommands = this.matchableSubcommands;
     if (!subcommands) return null;
     // A literal match always wins. A short optional value could be a prefix
@@ -541,7 +579,7 @@ class Scanner {
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
-  conflicts(option: Option): boolean {
+  private conflicts(option: Option): boolean {
     const names = asArray(option.name);
     const options = this.options;
     if (typeof option.isRepeatable === "number") {
@@ -551,27 +589,66 @@ class Scanner {
     return this.seenOptions.some((seen) => seen.exclusiveOn?.some((name) => names.includes(name)));
   }
 
+  /** The options the next token can use. See {@link NextToken.options}. */
+  private usableOptions(): UsableOption[] {
+    const used = new Set(this.seenOptions.map(namesKey));
+    const { local, persistent } = this.scope.live();
+    const usable: UsableOption[] = [];
+    for (const { option, names } of [...local, ...persistent]) {
+      if (this.conflicts(option)) continue;
+      // The parser reads a name that a subcommand matches as that subcommand.
+      const typeable = names.filter((name) => !this.subcommandFor(name));
+      if (typeable.length === 0) continue;
+      usable.push({
+        option,
+        names: typeable,
+        separator: this.scope.requiredSeparator(option),
+        used: used.has(namesKey(option)),
+      });
+    }
+    return usable;
+  }
+
   /** What the next token can be. See {@link readNext}. */
   next(): Omit<NextToken, "attached"> {
     const open = this.openOption && this.hasRoomForValue ? this.openOption : null;
     const command = this.path[this.path.length - 1];
     // Every token after `--` is an argument.
     const afterSeparator = this.argSeparatorIndex !== -1;
+    const optionsAllowed = !afterSeparator && this.optionsAllowed;
     return {
       path: this.path,
-      scope: this.scope,
-      optionsAllowed: !afterSeparator && this.optionsAllowed,
+      directives: this.directives,
+      optionsAllowed,
       subcommands: (!afterSeparator && this.matchableSubcommands) || [],
-      subcommandFor: (token) => (afterSeparator ? null : this.subcommandFor(token)),
+      options: optionsAllowed ? this.usableOptions() : [],
       value: open && {
         option: open,
         arg: argAt(asArray(open.args), this.valueCount),
         required: this.valueCount < this.valueMin,
       },
       arg: open ? undefined : argAt(asArray(command.args), this.args.length),
-      seenOptions: this.seenOptions,
-      conflicts: (option) => this.conflicts(option),
     };
+  }
+
+  /** Read the token at `index`, the next one, and say what it was read as. */
+  readAndClassify(input: readonly string[], index: number): TokenReading {
+    // Every token after `--` is an argument.
+    if (this.argSeparatorIndex !== -1) return { kind: "argument" };
+    const depth = this.path.length;
+    const seen = this.seenOptions.length;
+    const args = this.args.length;
+    const values = this.valueCount;
+    if (this.readAt(input, index)) return { kind: "separator" };
+    if (this.path.length > depth) return { kind: "subcommand", command: this.path[depth] as Subcommand };
+    if (this.seenOptions.length > seen) {
+      const found = this.attachedAt(index);
+      const attached = found && { option: found.option, start: found.start };
+      return { kind: "options", options: this.seenOptions.slice(seen), attached };
+    }
+    if (this.args.length > args) return { kind: "argument" };
+    if (this.valueCount > values) return { kind: "value", option: this.openOption! };
+    return { kind: "unknown" };
   }
 
   /** The value attached to the token at `index`, if it has one the option accepts. */
@@ -587,37 +664,46 @@ class Scanner {
   /** Read every token of `input`. */
   read(input: readonly string[]): void {
     for (let index = 0; index < input.length; index++) {
-      const token = input[index];
-      const optionsAllowed = this.optionsAllowed;
-
-      // "--" disables option & subcommand parsing, so it's checked first.
-      if (token === "--" && optionsAllowed) {
-        this.argSeparator(input, index);
-        return;
-      }
-
-      if (this.tryEnterSubcommand(token)) continue;
-
-      if (optionsAllowed) {
-        const flagsArePosixNoncompliant = this.directives.flagsArePosixNoncompliant;
-        const first = token.charCodeAt(0);
-        const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
-        if (
-          !flagsArePosixNoncompliant &&
-          token.length > 1 &&
-          (first === 45 || first === 43) /* + */ &&
-          !isDoubleDash
-        ) {
-          this.shortOptions(token, index);
-          continue;
-        }
-        if (flagsArePosixNoncompliant || (token.length > 2 && isDoubleDash)) {
-          if (this.longOption(token, index)) continue;
-        }
-      }
-
-      this.valueOrArg(token);
+      if (this.readAt(input, index)) return;
     }
+  }
+
+  /**
+   * Read the token at `index`. Returns true if it was `--`, which reads every
+   * token after it too.
+   */
+  private readAt(input: readonly string[], index: number): boolean {
+    const token = input[index];
+    const optionsAllowed = this.optionsAllowed;
+
+    // "--" disables option & subcommand parsing, so it's checked first.
+    if (token === "--" && optionsAllowed) {
+      this.argSeparator(input, index);
+      return true;
+    }
+
+    if (this.tryEnterSubcommand(token)) return false;
+
+    if (optionsAllowed) {
+      const flagsArePosixNoncompliant = this.directives.flagsArePosixNoncompliant;
+      const first = token.charCodeAt(0);
+      const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
+      if (
+        !flagsArePosixNoncompliant &&
+        token.length > 1 &&
+        (first === 45 || first === 43) /* + */ &&
+        !isDoubleDash
+      ) {
+        this.shortOptions(token, index);
+        return false;
+      }
+      if (flagsArePosixNoncompliant || (token.length > 2 && isDoubleDash)) {
+        if (this.longOption(token, index)) return false;
+      }
+    }
+
+    this.valueOrArg(token);
+    return false;
   }
 }
 
@@ -641,9 +727,8 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
   let attached: NextToken["attached"] = null;
   if (partial !== "" && next.optionsAllowed) {
     // Read the line again with the partial token, so `next` stays as it was.
-    const withPartial = new Scanner(spec, false);
-    withPartial.read([...before, partial]);
-    const found = withPartial.attachedAt(before.length);
+    const reading = readToken(spec, before, partial);
+    const found = reading.kind === "options" ? reading.attached : null;
     const arg = found && asArray(found.option.args)[0];
     if (found && arg) {
       attached = {
@@ -655,6 +740,16 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
     }
   }
   return { ...next, attached };
+}
+
+/**
+ * Say what the parser reads `token` as when it comes after `before`. Reads
+ * leniently, like {@link readNext}.
+ */
+export function readToken(spec: Spec, before: readonly string[], token: string): TokenReading {
+  const s = new Scanner(spec, false);
+  s.read(before);
+  return s.readAndClassify([...before, token], before.length);
 }
 
 /**

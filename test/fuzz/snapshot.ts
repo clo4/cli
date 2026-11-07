@@ -67,11 +67,25 @@ export function difference(
   return null;
 }
 
-/** Describe how two results of `readNext` differ, or return null if they match. */
-export function nextDifference(x: NextToken, y: NextToken): string | null {
+/**
+ * A result of `readNext` from this version or an older one. Before `readNext`
+ * listed the usable options, it returned the option scope, every option used,
+ * and a function to check each option's rules.
+ */
+export type AnyNextToken = Omit<NextToken, "directives" | "options"> & {
+  directives?: NextToken["directives"];
+  options?: NextToken["options"];
+  scope?: { directives: NextToken["directives"] };
+};
+
+/**
+ * Describe how two results of `readNext` differ, or return null if they match.
+ * The usable options are only compared when both versions list them.
+ */
+export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null {
   if (!sameItems(x.path, y.path)) return "path differs";
-  if (!sameItems(x.seenOptions, y.seenOptions)) return "seenOptions differ";
-  if (JSON.stringify(x.scope.directives) !== JSON.stringify(y.scope.directives)) return "directives differ";
+  const directives = (next: AnyNextToken) => JSON.stringify(next.directives ?? next.scope?.directives);
+  if (directives(x) !== directives(y)) return "directives differ";
   if (x.optionsAllowed !== y.optionsAllowed) return "optionsAllowed differs";
   if (!sameItems(x.subcommands, y.subcommands)) return "subcommands differ";
   if (x.arg !== y.arg) return "arg differs";
@@ -87,8 +101,19 @@ export function nextDifference(x: NextToken, y: NextToken): string | null {
   for (const key of ["option", "arg", "prefix", "value"] as const) {
     if (attachedA?.[key] !== attachedB?.[key]) return `attached ${key} differs`;
   }
-  for (const option of [...x.scope.local, ...x.scope.persistent]) {
-    if (x.conflicts(option) !== y.conflicts(option)) return "conflicts differ";
+  if (x.options && y.options) {
+    if (x.options.length !== y.options.length) return "options differ";
+    for (let i = 0; i < x.options.length; i++) {
+      const [a, b] = [x.options[i], y.options[i]];
+      if (
+        a.option !== b.option ||
+        a.separator !== b.separator ||
+        a.used !== b.used ||
+        !sameItems(a.names, b.names)
+      ) {
+        return `options differ at ${i}`;
+      }
+    }
   }
   return null;
 }

@@ -7,7 +7,8 @@
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
 import { OptionScope } from "./scope.js";
-import { readNext } from "./parse.js";
+import { readToken } from "./parse.js";
+import type { TokenReading } from "./parse.js";
 
 const repr = JSON.stringify;
 
@@ -367,19 +368,31 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
 }
 
 /**
- * What the parser read `token` as, after `before`, for a message. `token`
- * didn't do what it was meant to, so this only has to tell the other cases
- * apart.
+ * What the parser read a token as, for a message. `path` is the command the
+ * token came after.
  */
-function describeReading(spec: Spec, before: readonly string[], token: string): string {
-  if (token === "--") return "the end of options, '--'";
-  const start = readNext(spec, before, "");
-  const next = readNext(spec, [...before, token], "");
-  if (next.path.length > start.path.length) return `the subcommand ${namedArrayToString(...next.path)}`;
-  const used = next.seenOptions.slice(start.seenOptions.length);
-  if (used.length === 1) return `the option ${namedArrayToString(used[0])}`;
-  if (used.length > 1) return `the options ${used.map((option) => namedArrayToString(option)).join(", ")}`;
-  return "an argument, or an option that doesn't exist";
+function describeReading(reading: TokenReading, path: readonly Subcommand[]): string {
+  switch (reading.kind) {
+    case "separator":
+      return "the end of options, '--'";
+    case "subcommand":
+      return `the subcommand ${namedArrayToString(...path, reading.command)}`;
+    case "options":
+      return reading.options.length === 1
+        ? `the option ${namedArrayToString(reading.options[0])}`
+        : `the options ${reading.options.map((option) => namedArrayToString(option)).join(", ")}`;
+    case "value":
+      return `a value of the option ${namedArrayToString(reading.option)}`;
+    case "argument":
+      return "an argument";
+    case "unknown":
+      return "an option that doesn't exist";
+  }
+}
+
+/** Whether the parser read a token as `option` alone. */
+function readsAs(reading: TokenReading, option: Option): boolean {
+  return reading.kind === "options" && reading.options.length === 1 && reading.options[0] === option;
 }
 
 /**
@@ -402,11 +415,11 @@ export function assertNamesReadBack(spec: Subcommand): void {
     const before = tokensTo(path);
     for (const subcommand of makeArray(command.subcommands)) {
       for (const name of makeArray(subcommand.name)) {
-        const next = readNext(root, [...before, name], "");
-        if (next.path.length === path.length + 1 && next.path[path.length] === subcommand) continue;
+        const reading = readToken(root, before, name);
+        if (reading.kind === "subcommand" && reading.command === subcommand) continue;
         assert(
           false,
-          `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(root, before, name)}`,
+          `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
         );
       }
     }
@@ -419,18 +432,16 @@ export function assertNamesReadBack(spec: Subcommand): void {
       // A name that another option shadows is that option's to check.
       if (scope.resolve(name) !== option) continue;
       if (!scope.directives.flagsArePosixNoncompliant && (name === "-" || name === "+")) continue;
-      const seen = readNext(root, before, "").seenOptions.length;
-      const next = readNext(root, [...before, name], "");
+      const reading = readToken(root, before, name);
       assert(
-        next.path.length === path.length &&
-          next.seenOptions.length === seen + 1 &&
-          next.seenOptions[seen] === option,
-        `${where} has the name '${name}', but the parser reads it as ${describeReading(root, before, name)}`,
+        readsAs(reading, option),
+        `${where} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
       );
       if (separator === null) continue;
       const token = `${name}${separator}value`;
+      const withValue = readToken(root, before, token);
       assert(
-        readNext(root, before, token).attached?.option === option,
+        withValue.kind === "options" && withValue.attached?.option === option,
         `${where} requires the separator '${separator}', but the parser doesn't read '${token}' as the option with a value`,
       );
     }

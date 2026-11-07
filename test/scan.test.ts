@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { InvalidOptionArg, UnknownOption } from "../src/errors.js";
-import { parse, readNext } from "../src/parse.js";
+import { parse, readNext, readToken } from "../src/parse.js";
 import type { Arg, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 
@@ -161,9 +161,14 @@ test("scan: a separate option value belongs to the option", () => {
 test("readNext: skips unknown options", () => {
   const a: Option = { name: "-a" };
   const spec: Spec = { name: "test", args: [{ name: "first" }, { name: "second" }], options: [a] };
-  const next = readNext(spec, ["--nope", "--nope=value", "-zaz", "arg"], "");
-  expect(next.seenOptions).toEqual([a]);
-  expect(next.arg).toBe((spec.args as Arg[])[1]);
+  const input = ["--nope", "--nope=value", "-zaz", "arg"];
+  expect(readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
+  expect(readToken(spec, input.slice(0, 2), "-zaz")).toEqual({
+    kind: "options",
+    options: [a],
+    attached: null,
+  });
+  expect(readNext(spec, input, "").arg).toBe((spec.args as Arg[])[1]);
 });
 
 test("readNext: keeps counting arguments past the maximum", () => {
@@ -175,18 +180,18 @@ test("readNext: keeps counting arguments past the maximum", () => {
 test("readNext: a value attached to an option without args isn't an argument", () => {
   const flag: Option = { name: "--flag" };
   const spec: Spec = { name: "test", args: { name: "a" }, options: [flag] };
-  const next = readNext(spec, ["--flag=value"], "");
-  expect(next.seenOptions).toEqual([flag]);
-  expect(next.arg).toBe(spec.args);
+  expect(readToken(spec, [], "--flag=value")).toEqual({ kind: "options", options: [flag], attached: null });
+  expect(readNext(spec, ["--flag=value"], "").arg).toBe(spec.args);
 });
 
 test("readNext: keeps reading past missing and repeated option values", () => {
   const out: Option = { name: "--out", args: {} };
   const verbose: Option = { name: "-v", isRepeatable: 1 };
   const spec: Spec = { name: "test", options: [out, verbose] };
+  expect(readToken(spec, ["-v"], "-v")).toEqual({ kind: "options", options: [verbose], attached: null });
   const next = readNext(spec, ["-v", "-v", "--out"], "");
-  expect(next.seenOptions).toEqual([verbose, verbose, out]);
-  expect(next.conflicts(verbose)).toBe(true);
+  // -v can be used once, so the second use doesn't make it usable again.
+  expect(next.options.map((usable) => usable.option)).toEqual([out]);
   expect(next.value).toEqual({ option: out, arg: out.args, required: true });
 });
 
@@ -237,13 +242,13 @@ test("readNext: reports the directives in effect for the final command", () => {
       },
     ],
   };
-  expect(readNext(spec, [], "").scope.directives).toEqual({
+  expect(readNext(spec, [], "").directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: false,
     optionsMustPrecedeArguments: true,
     subcommandsMatchUniquePrefix: true,
   });
-  expect(readNext(spec, ["sub"], "").scope.directives).toEqual({
+  expect(readNext(spec, ["sub"], "").directives).toEqual({
     optionArgSeparators: [":", "="],
     flagsArePosixNoncompliant: true,
     optionsMustPrecedeArguments: false,
@@ -254,5 +259,45 @@ test("readNext: reports the directives in effect for the final command", () => {
 test("readNext: skips unknown characters in a chain and keeps the rest", () => {
   const a: Option = { name: "-a" };
   const b: Option = { name: "-b" };
-  expect(readNext({ name: "test", options: [a, b] }, ["-axb"], "").seenOptions).toEqual([a, b]);
+  expect(readToken({ name: "test", options: [a, b] }, [], "-axb")).toEqual({
+    kind: "options",
+    options: [a, b],
+    attached: null,
+  });
+});
+
+test("readToken: says what each kind of token is read as", () => {
+  const out: Option = { name: "--out", args: {} };
+  const sub: Subcommand = { name: "sub" };
+  const spec: Spec = { name: "test", args: { isVariadic: true }, options: [out], subcommands: [sub] };
+  expect(readToken(spec, [], "--")).toEqual({ kind: "separator" });
+  expect(readToken(spec, [], "sub")).toEqual({ kind: "subcommand", command: sub });
+  expect(readToken(spec, [], "--out=a")).toEqual({
+    kind: "options",
+    options: [out],
+    attached: { option: out, start: 6 },
+  });
+  expect(readToken(spec, ["--out"], "a")).toEqual({ kind: "value", option: out });
+  expect(readToken(spec, ["--out"], "--nope")).toEqual({ kind: "value", option: out });
+  expect(readToken(spec, [], "a")).toEqual({ kind: "argument" });
+  expect(readToken(spec, ["--"], "--out")).toEqual({ kind: "argument" });
+  expect(readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
+});
+
+test("readNext: lists the options the next token can use, with the names that read as each", () => {
+  const all: Option = { name: ["-a", "--all"], isPersistent: true };
+  const shadow: Option = { name: "--all", hidden: true };
+  const file: Option = { name: "--file", args: {}, requiresSeparator: true };
+  const lone: Option = { name: ["--lone", "build"] };
+  const sub: Subcommand = { name: "sub", options: [shadow, file, lone], subcommands: [{ name: "build" }] };
+  const spec: Spec = { name: "test", options: [all], subcommands: [sub] };
+  expect(readNext(spec, ["sub", "--lone"], "").options).toEqual([
+    { option: shadow, names: ["--all"], separator: null, used: false },
+    { option: file, names: ["--file"], separator: "=", used: false },
+    // A subcommand matches "build", so only "--lone" reads as the option.
+    { option: lone, names: ["--lone"], separator: null, used: true },
+    // --all refers to the hidden option here, so only -a is left.
+    { option: all, names: ["-a"], separator: null, used: false },
+  ]);
+  expect(readNext(spec, ["--"], "").options).toEqual([]);
 });

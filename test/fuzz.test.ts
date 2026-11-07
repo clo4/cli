@@ -10,7 +10,7 @@ import { expect, test } from "vitest";
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
-import { parse, readNext } from "../src/parse.js";
+import { parse, readNext, readToken } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import type { Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
@@ -53,6 +53,17 @@ function invalidPath(path: readonly (Spec | Subcommand)[], spec: Spec): string |
   return null;
 }
 
+/** The names of every option the lenient read uses, token by token. */
+function usedNames(spec: Spec, input: readonly string[]): Set<string> {
+  const names = new Set<string>();
+  for (let i = 0; i < input.length; i++) {
+    const reading = readToken(spec, input.slice(0, i), input[i]);
+    if (reading.kind !== "options") continue;
+    for (const option of reading.options) for (const name of asArray(option.name)) names.add(name);
+  }
+  return names;
+}
+
 /** The first property that `readNext` or `parse` breaks for this spec and input, or null. */
 function violation(spec: Spec, input: string[]): string | null {
   let next: NextToken;
@@ -66,7 +77,7 @@ function violation(spec: Spec, input: string[]): string | null {
   const badPath = invalidPath(path, spec);
   if (badPath) return badPath;
 
-  const directives = JSON.stringify(next.scope.directives);
+  const directives = JSON.stringify(next.directives);
   const expected = JSON.stringify(expectedDirectives(path));
   if (directives !== expected) return `directives are ${directives}, expected ${expected}`;
 
@@ -86,7 +97,7 @@ function violation(spec: Spec, input: string[]): string | null {
     if (result.path.length !== path.length || result.path.some((command, i) => command !== path[i])) {
       return "readNext and parse end at different commands";
     }
-    const seenNames = [...new Set(next.seenOptions.flatMap((option) => asArray(option.name)))].sort();
+    const seenNames = [...usedNames(spec, input)].sort();
     const parsedNames = [...result.options.keys()].sort();
     if (JSON.stringify(seenNames) !== JSON.stringify(parsedNames)) {
       return `readNext saw options named ${JSON.stringify(seenNames)}, but parse has ${JSON.stringify(parsedNames)}`;
@@ -144,31 +155,21 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   }
   const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));
   const next = readNext(spec, before, "");
-  const seen = next.seenOptions.length;
-  const depth = next.path.length;
-  const readAfter = (token: string) => readNext(spec, [...before, token], "");
   for (const sub of next.subcommands) {
     for (const name of asArray(sub.name)) {
       if (!offered.has(name)) continue;
-      const result = readAfter(name);
-      if (result.path.length !== depth + 1 || result.path[depth] !== sub) {
+      const reading = readToken(spec, before, name);
+      if (reading.kind !== "subcommand" || reading.command !== sub) {
         return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
       }
     }
   }
-  const { local, persistent } = next.scope.visible();
-  for (const { option, names } of [...local, ...persistent]) {
-    const sep = next.scope.requiredSeparator(option) ?? "";
+  for (const { option, names, separator } of next.options) {
     for (const name of names) {
-      // An option named "-" or "+" only takes a value attached to it, like
-      // `-5`. A name a subcommand matches is offered as that subcommand.
-      if (!offered.has(name + sep) || name === "-" || name === "+" || next.subcommandFor(name)) continue;
-      const result = readAfter(name);
-      if (
-        result.path.length !== depth ||
-        result.seenOptions.length !== seen + 1 ||
-        result.seenOptions[seen] !== option
-      ) {
+      // An option named "-" or "+" only takes a value attached to it, like `-5`.
+      if (!offered.has(name + (separator ?? "")) || name === "-" || name === "+") continue;
+      const reading = readToken(spec, before, name);
+      if (reading.kind !== "options" || reading.options.length !== 1 || reading.options[0] !== option) {
         return `option ${JSON.stringify(name)} is offered, but isn't read as that option`;
       }
     }

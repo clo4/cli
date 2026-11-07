@@ -57,11 +57,11 @@ export class OptionScope {
   }
 
   /**
-   * The options a user can see here, in definition order, each with only its
-   * live names. Hidden options, and options with every name shadowed, are
-   * left out.
+   * The options that can be used here, in definition order, each with only
+   * its live names: the names that still refer to it. Options with every name
+   * shadowed are left out.
    */
-  visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
+  live(): { local: VisibleOption[]; persistent: VisibleOption[] } {
     // Which option each name refers to, built in one pass so the later and the
     // local options overwrite the ones they shadow. Same answer as `resolve`.
     const owner = new Map<string, Option>();
@@ -73,13 +73,19 @@ export class OptionScope {
     const pick = (options: readonly Option[]) => {
       const picked: VisibleOption[] = [];
       for (const option of options) {
-        if (option.hidden) continue;
         const names = asArray(option.name).filter((name) => owner.get(name) === option);
         if (names.length > 0) picked.push({ option, names });
       }
       return picked;
     };
     return { local: pick(this.local), persistent: pick(this.persistent) };
+  }
+
+  /** The options a user can see here: the {@link live} ones that aren't hidden. */
+  visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
+    const { local, persistent } = this.live();
+    const shown = (visible: VisibleOption) => !visible.option.hidden;
+    return { local: local.filter(shown), persistent: persistent.filter(shown) };
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */
