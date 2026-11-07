@@ -1,13 +1,10 @@
-import type { Action, Arg, Option, NonEmptyArray, SingleOrArray, Subcommand } from "./types.js";
+import type { Action, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { directivesFor } from "./directives.js";
 import { closestChoice } from "./suggest.js";
+import { matchSubcommand } from "./parse.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
 import { makeArray, makeArray1, print, printActionError } from "./util.js";
-
-function getNamed<T extends { name: SingleOrArray<string> }>(named: readonly T[], name: string): T | null {
-  return named.find((obj) => makeArray(obj.name).includes(name)) ?? null;
-}
 
 function dedent(str: string) {
   if (str[0] !== "\n") return str;
@@ -124,7 +121,9 @@ export const helpCommand: Subcommand = {
       return 1;
     }
 
-    const command = getNamed(parent.subcommands, commandName);
+    // Match the name the way the parser would have matched it in place of `help`.
+    const matchPrefix = directivesFor(helpRoot).subcommandsMatchUniquePrefix;
+    const command = matchSubcommand(parent.subcommands, commandName, matchPrefix);
     if (!command) {
       const subcommands = parent.subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
 

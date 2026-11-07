@@ -194,6 +194,25 @@ test("run: helpCommand prints help for its parent and siblings", async () => {
   expect(unknown.stderr).toMatch(/Did you mean 'build'/);
 });
 
+test("run: helpCommand matches a unique prefix like the parser does", async () => {
+  const spec: Spec = {
+    name: "demo",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      { name: "build", description: "build the thing", action: () => {} },
+      { name: "bundle", description: "bundle the thing", action: () => {} },
+      helpCommand,
+    ],
+  };
+  const unique = await captureConsole(() => run(spec, ["help", "bui"]));
+  expect(unique.code).toBe(0);
+  expect(unique.stdout).toMatch(/build the thing/);
+
+  const ambiguous = await captureConsole(() => run(spec, ["help", "bu"]));
+  expect(ambiguous.code).toBe(1);
+  expect(ambiguous.stderr).toMatch(/no subcommand named 'bu'/);
+});
+
 test("run: ambiguous unique-prefix command reports the candidates", async () => {
   const spec: Spec = {
     name: "demo",
