@@ -699,6 +699,41 @@ test("testing: assertOptionNameReferencesExist", () => {
   ).toThrow();
 });
 
+test("testing: assertRequiredSeparatorsAreUsable", () => {
+  const option = (requiresSeparator: true | string, isPersistent = false): Option => ({
+    name: "--o",
+    args: {},
+    requiresSeparator,
+    ...(isPersistent ? { isPersistent: true } : {}),
+  });
+  Testing.assertRequiredSeparatorsAreUsable({ name: "test", options: [option(true), option("=")] });
+  Testing.assertRequiredSeparatorsAreUsable({
+    name: "test",
+    parserDirectives: { optionArgSeparators: [":", "="] },
+    options: [option(":")],
+  });
+  // The separator isn't one the parser splits at.
+  expect(() => Testing.assertRequiredSeparatorsAreUsable({ name: "test", options: [option(":")] })).toThrow(
+    /`test --o` requires the separator ':', but/,
+  );
+  // There are no separators at all.
+  expect(() =>
+    Testing.assertRequiredSeparatorsAreUsable({
+      name: "test",
+      parserDirectives: { optionArgSeparators: [] },
+      options: [option(true)],
+    }),
+  ).toThrow(/`test --o` requires a separator, but/);
+  // A persistent option has to work in every subcommand that inherits it.
+  expect(() =>
+    Testing.assertRequiredSeparatorsAreUsable({
+      name: "test",
+      options: [option("=", true)],
+      subcommands: [{ name: "sub", parserDirectives: { optionArgSeparators: ":" } }],
+    }),
+  ).toThrow(/In `test sub`, option `test --o` requires the separator '=', but/);
+});
+
 test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
   Testing.assertPrefixMatchCommandsHaveNoArguments({ name: "test" });
   Testing.assertPrefixMatchCommandsHaveNoArguments({
@@ -772,6 +807,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Everything has a description",
     "Each line in descriptions is less than or equal to 68 characters",
     "Options with `requiresSeparator` take exactly one argument",
+    "Options with `requiresSeparator` use a separator the parser accepts",
     "Common options are not defined on every subcommand",
     "References to other options by name are valid",
     "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",

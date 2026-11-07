@@ -459,6 +459,38 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
   });
 }
 
+/**
+ * Asserts that an option with `requiresSeparator` can be given a value
+ * everywhere it can be used: the parser has to split options at the separator
+ * it requires, or at any separator when it doesn't name one.
+ */
+export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
+  forEachSubcommand(spec, (command, path) => {
+    const separators = directivesFor(path).optionArgSeparators;
+    const accepted = separators.map((separator) => `'${separator}'`).join(", ");
+    // The command's own options, and the persistent ones it inherits.
+    for (const [depth, definedIn] of path.entries()) {
+      const isOwn = depth === path.length - 1;
+      const where = isOwn ? "Option" : `In ${namedArrayToString(...path)}, option`;
+      for (const option of makeArray(definedIn.options)) {
+        if (!option.requiresSeparator || !(isOwn || option.isPersistent)) continue;
+        const name = namedArrayToString(...path.slice(0, depth + 1), option);
+        if (option.requiresSeparator === true) {
+          assert(
+            separators.length > 0,
+            `${where} ${name} requires a separator, but there are no option arg separators`,
+          );
+        } else {
+          assert(
+            separators.includes(option.requiresSeparator),
+            `${where} ${name} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
+          );
+        }
+      }
+    }
+  });
+}
+
 export function assertCommonOptionsArePersistent(spec: Subcommand): void {
   const failures: [string | readonly string[], string][] = [];
   forEachSubcommand(spec, (subcommand, path) => {
@@ -769,6 +801,16 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       }),
       () => {
         assertRequiresSeparatorTakesOneArg(spec);
+      },
+    );
+    await runStep(
+      t,
+      getName(namingStyle, {
+        sentence: "Options with `requiresSeparator` use a separator the parser accepts",
+        function: "assertRequiredSeparatorsAreUsable",
+      }),
+      () => {
+        assertRequiredSeparatorsAreUsable(spec);
       },
     );
     await runStep(
