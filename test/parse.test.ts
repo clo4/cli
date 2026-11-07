@@ -647,6 +647,35 @@ test("parse: a repeatable option's count follows its names across commands", () 
   const separate = withChild({ name: ["-v", "--inner"], isRepeatable: true });
   expect(count(separate, "--verbose")).toBe(2);
   expect(count(separate, "--inner")).toBe(1);
+  // An option with some of the parent's names is a different option too.
+  const subset = withChild({ name: "-v", isRepeatable: true });
+  expect(count(subset, "--verbose")).toBe(2);
+  expect(count(subset, "-v")).toBe(1);
+  // A copy with its names in another order is the same option.
+  expect(count(withChild({ name: ["--verbose", "-v"], isRepeatable: true }), "-v")).toBe(3);
+});
+
+test("parse: a repeatable option's uses stay its own when another option shares a name", () => {
+  // The persistent option shares `+a` with the local one, which wins it.
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "+a", isRepeatable: 2 },
+      { name: ["-c", "+a"], args: {}, isPersistent: true },
+    ],
+  };
+  const result = parse(["-c", "v", "+a", "+a"], spec);
+  expect(result.options.get("-c")).toEqual(["v"]);
+  expect(result.options.get("+a")).toEqual(["", ""]);
+  // A use of the other option between two uses doesn't drop the first.
+  const twice: Spec = {
+    name: "test",
+    options: [
+      { name: ["-x", "+x"], args: {}, isRepeatable: true },
+      { name: ["-x", "-y"], args: {}, isPersistent: true },
+    ],
+  };
+  expect(parse(["-x1", "-y2", "+x3"], twice).options.get("+x")).toEqual(["1", "3"]);
 });
 
 test("parse: a subcommand can reuse a parent option's name", () => {

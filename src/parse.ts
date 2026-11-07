@@ -87,33 +87,25 @@ export function firstSeparator(
   return sep ? { index, sep } : null;
 }
 
-/**
- * The values array that every one of `names` shares in `options`, if they all
- * share one. A repeatable option with these names continues that array's uses.
- */
-function sharedValues(
-  options: ReadonlyMap<string, string[]>,
-  names: readonly string[],
-): string[] | undefined {
-  const existing = options.get(names[0]);
-  for (const name of names) {
-    if (options.get(name) !== existing) return undefined;
-  }
-  return existing;
+/** The values a repeatable option has collected, and how many times it's been used. */
+interface RepeatedUses {
+  values: string[];
+  count: number;
 }
 
+const namesKeys = new WeakMap<Option, string>();
+
 /**
- * How many times a repeatable option with these names has been used. The count
- * carries over from a parent's identical option. A subcommand option with a
- * name of its own keeps a separate count.
+ * A key for the set of `option`'s names. Options with the same names, in any
+ * order, get the same key.
  */
-function repeatCount(
-  options: ReadonlyMap<string, string[]>,
-  repeatCounts: ReadonlyMap<string[], number>,
-  names: readonly string[],
-): number {
-  const uses = sharedValues(options, names);
-  return uses ? (repeatCounts.get(uses) ?? uses.length) : 0;
+function namesKey(option: Option): string {
+  let key = namesKeys.get(option);
+  if (key === undefined) {
+    key = typeof option.name === "string" ? option.name : [...option.name].sort().join("\0");
+    namesKeys.set(option, key);
+  }
+  return key;
 }
 
 /**
@@ -206,9 +198,11 @@ class Scanner {
   // action like --help allows it.
   private tooManyArgs: ParseError | null = null;
 
-  // How many times each repeatable option has been used, keyed by the array
-  // its names share in `options`.
-  private readonly repeatCounts: Map<string[], number> = new Map();
+  // The uses of each repeatable option, keyed by its names (see `namesKey`).
+  // A subcommand's copy of a parent's option has the same names, so it
+  // continues the parent's uses. An option with other names, even a subset,
+  // has uses of its own.
+  private readonly repeatedUses: Map<string, RepeatedUses> = new Map();
 
   // The last value attached to an option's own token, and where it starts.
   private attached: { option: Option; index: number; start: number } | null = null;
@@ -280,21 +274,23 @@ class Scanner {
       // A repeatable option collects the values from every use. Without
       // arguments, each use adds an empty string, so the values count the uses.
       const maxRepeat = option.isRepeatable === true ? Infinity : option.isRepeatable;
-      const count = repeatCount(options, this.repeatCounts, names);
-      let uses = sharedValues(options, names);
+      const key = namesKey(option);
+      let uses = this.repeatedUses.get(key);
       if (!uses) {
-        uses = [];
-        for (const other of names) options.set(other, uses);
+        uses = { values: [], count: 0 };
+        this.repeatedUses.set(key, uses);
       }
-      if (this.strict && count >= maxRepeat) {
+      if (this.strict && uses.count >= maxRepeat) {
         throw new ParseError(this.ctx(), "Too many repetitions");
       }
-      this.repeatCounts.set(uses, count + 1);
+      uses.count += 1;
+      // Another option may have taken one of the names since the last use.
+      for (const other of names) options.set(other, uses.values);
       if (!option.args) {
-        uses.push("");
+        uses.values.push("");
         return;
       }
-      optionValues = uses;
+      optionValues = uses.values;
     } else {
       // The last use of an option wins, so a user can override a flag that a
       // shell alias already sets.
@@ -552,7 +548,7 @@ class Scanner {
     const names = asArray(option.name);
     const options = this.options;
     if (typeof option.isRepeatable === "number") {
-      if (repeatCount(options, this.repeatCounts, names) >= option.isRepeatable) return true;
+      if ((this.repeatedUses.get(namesKey(option))?.count ?? 0) >= option.isRepeatable) return true;
     }
     if (option.exclusiveOn?.some((name) => options.has(name))) return true;
     return this.seenOptions.some((seen) => seen.exclusiveOn?.some((name) => names.includes(name)));
