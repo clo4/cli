@@ -113,7 +113,7 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
 
 /** Decide which kinds of candidate the word being completed can use. */
 function wantedCandidates(next: NextToken, req: CompletionRequest) {
-  const posixNoncompliant = next.scope.directives.flagsArePosixNoncompliant;
+  const posixNoncompliant = next.directives.flagsArePosixNoncompliant;
   // After `--`, or once options must stop, a dashed word is an argument.
   const partialIsOption =
     next.optionsAllowed && !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
@@ -175,7 +175,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
       }
     }
   }
-  if (wantOptions && next.optionsAllowed) {
+  if (wantOptions) {
     candidates.push(...optionCandidates(next));
   }
   return candidates;
@@ -185,14 +185,13 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
 function optionCandidates(next: NextToken): Candidate[] {
   const required: Candidate[] = [];
   const optional: Candidate[] = [];
-  const { local, persistent } = next.scope.visible();
 
-  for (const { option, names } of [...local, ...persistent]) {
+  for (const { option, names, separator, used } of next.options) {
+    if (option.hidden) continue;
     // The parser lets a later use of an option override an earlier one, but
     // that's rarely what someone wants, so an option that isn't repeatable is
     // offered once.
-    if (!option.isRepeatable && next.seenOptions.includes(option)) continue;
-    if (next.conflicts(option)) continue;
+    if (used && !option.isRepeatable) continue;
 
     let description = firstLine(option.description);
     if (option.dependsOn) {
@@ -205,13 +204,9 @@ function optionCandidates(next: NextToken): Candidate[] {
 
     // requiresSeparator options can only take an attached value, so offer the
     // separator form so the next Tab completes the value.
-    const sep = next.scope.requiredSeparator(option);
-
     const bucket = option.isRequired ? required : optional;
     for (const token of names) {
-      // The parser reads a name that a subcommand matches as that subcommand.
-      if (next.subcommandFor(token)) continue;
-      bucket.push({ value: sep ? `${token}${sep}` : token, description });
+      bucket.push({ value: separator ? `${token}${separator}` : token, description });
     }
   }
 
