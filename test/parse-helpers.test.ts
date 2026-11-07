@@ -29,6 +29,13 @@ describe("matchSubcommand", () => {
     expect(matchSubcommand([status, remote], "sta", true)).toBe(status);
   });
 
+  test("a hidden command only matches its exact name", () => {
+    const bundle: Subcommand = { name: "bundle", hidden: true };
+    expect(matchSubcommand([build, bundle], "bu", true)).toBe(build);
+    expect(matchSubcommand([build, bundle], "bun", true)).toBeNull();
+    expect(matchSubcommand([build, bundle], "bundle", true)).toBe(bundle);
+  });
+
   test("an empty name matches an empty token exactly", () => {
     const empty: Subcommand = { name: "" };
     expect(matchSubcommand([remote, empty], "", true)).toBe(empty);

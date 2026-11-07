@@ -269,3 +269,19 @@ test("run: an action receives the index of '--' among the arguments", async () =
   await run(spec, ["a"]);
   expect(init?.argSeparatorIndex).toBe(-1);
 });
+
+test("run: a hidden command doesn't make a prefix ambiguous", async () => {
+  let ran = "";
+  const spec: Spec = {
+    name: "demo",
+    requiresSubcommand: true,
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      { name: "build", action: () => void (ran = "build") },
+      { name: "bundle", hidden: true, action: () => void (ran = "bundle") },
+    ],
+  };
+  const result = await captureConsole(() => run(spec, ["b"]));
+  expect(result.stderr).toBe("");
+  expect(ran).toBe("build");
+});

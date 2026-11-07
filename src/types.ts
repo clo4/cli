@@ -129,7 +129,10 @@ export interface Subcommand {
     /** Separators that can attach a option argument to a option token. */
     optionArgSeparators?: SingleOrArrayOrEmpty<string>;
 
-    /** Match subcommands by shortest unique prefix instead of exact name. */
+    /**
+     * Match subcommands by shortest unique prefix instead of exact name.
+     * Hidden subcommands still only match their exact name.
+     */
     subcommandsMatchUniquePrefix?: boolean;
   };
 

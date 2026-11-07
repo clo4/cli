@@ -84,7 +84,8 @@ function optionNames(local: readonly Option[], persistent: readonly Option[]): s
  * Find the subcommand `token` names. An exact name always wins. With
  * `allowPrefix`, a token that's a prefix of exactly one command's names
  * matches that command. An empty token is a prefix of every name, so it never
- * matches by prefix.
+ * matches by prefix. A hidden command only matches its exact name, so it
+ * can't make a visible command's prefix ambiguous.
  */
 export function matchSubcommand(
   subcommands: readonly Subcommand[],
@@ -96,9 +97,10 @@ export function matchSubcommand(
   let prefixCount = 0;
   for (const candidate of subcommands) {
     const names = candidate.name;
+    const prefixable = allowPrefix && !candidate.hidden;
     if (typeof names === "string") {
       if (names === token) return candidate;
-      if (allowPrefix && names.startsWith(token)) {
+      if (prefixable && names.startsWith(token)) {
         match = candidate;
         prefixCount += 1;
       }
@@ -108,7 +110,7 @@ export function matchSubcommand(
     let prefixMatched = false;
     for (const name of names) {
       if (name === token) return candidate;
-      if (allowPrefix && !prefixMatched && name.startsWith(token)) {
+      if (prefixable && !prefixMatched && name.startsWith(token)) {
         prefixMatched = true;
         match = candidate;
         prefixCount += 1;
