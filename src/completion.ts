@@ -15,7 +15,8 @@
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, print, printActionError } from "./util.js";
 import { readNext } from "./parse.js";
-import type { Directives, NextToken } from "./parse.js";
+import type { NextToken } from "./parse.js";
+import type { Directives } from "./directives.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
 export type Shell = "bash" | "zsh" | "fish";

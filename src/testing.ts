@@ -5,9 +5,8 @@
  */
 
 import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
-import { assert, isArray, makeArray } from "./util.js";
+import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
 import { directivesFor } from "./directives.js";
-import { getMaxArgs, getMinArgs } from "./parse.js";
 import { OptionScope } from "./scope.js";
 
 const repr = JSON.stringify;

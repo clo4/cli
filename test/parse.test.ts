@@ -9,7 +9,8 @@ import {
   TooManyArguments,
   UnknownOption,
 } from "../src/errors.js";
-import { getMaxArgs, getMinArgs, parse } from "../src/parse.js";
+import { parse } from "../src/parse.js";
+import { getMaxArgs, getMinArgs } from "../src/util.js";
 import type { Action, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 

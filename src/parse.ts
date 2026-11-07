@@ -63,9 +63,6 @@ export interface NextToken {
   attached: { option: Option; arg: Arg; prefix: string; value: string } | null;
 }
 
-export { getMaxArgs, getMinArgs };
-export type { Directives };
-
 /**
  * Find the subcommand `token` names. An exact name always wins. With
  * `allowPrefix`, a token that's a prefix of exactly one command's names

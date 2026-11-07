@@ -9,11 +9,11 @@ import { expect, test } from "vitest";
 
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
-import { getMaxArgs, readNext, scan } from "../src/parse.js";
-import type { Directives } from "../src/parse.js";
+import type { Directives } from "../src/directives.js";
+import { readNext, scan } from "../src/parse.js";
 import type { Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
-import { asArray } from "../src/util.js";
+import { asArray, getMaxArgs } from "../src/util.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { generator, shrink } from "./fuzz/generate.js";
 import { attempt, difference } from "./fuzz/snapshot.js";
