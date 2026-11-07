@@ -1161,33 +1161,32 @@ function thrown(fn: () => unknown): unknown {
   throw new Error("Expected a throw");
 }
 
-test("parse: an unknown option in a chain points at its character", () => {
+test("parse: an unknown option in a chain names its character", () => {
   const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "-v" }] };
   const error = thrown(() => parse(["x", "-vx"], spec));
   expect(error).toBeInstanceOf(UnknownOption);
-  expect(error).toMatchObject({ option: "-x", index: 1, start: 2, end: 3 });
+  expect(error).toMatchObject({ option: "-x" });
 });
 
-test("parse: an unknown long option's span leaves out its attached value", () => {
+test("parse: an unknown long option's name leaves out its attached value", () => {
   const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "--known" }] };
   const error = thrown(() => parse(["a", "--nope=1"], spec));
   expect(error).toBeInstanceOf(UnknownOption);
-  expect(error).toMatchObject({ option: "--nope", index: 1, start: 0, end: 6 });
+  expect(error).toMatchObject({ option: "--nope" });
   expect((error as Error).message).toBe('"--nope" looks like a flag, but is unknown in this context');
 });
 
-test("parse: a value attached to an option without args points at the value", () => {
+test("parse: a value attached to an option without args names the option", () => {
   const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
   const error = thrown(() => parse(["--verbose=1"], spec));
   expect(error).toBeInstanceOf(InvalidOptionArg);
-  expect(error).toMatchObject({ option: "--verbose", arg: "1", index: 0, start: 10, end: 11 });
+  expect((error as Error).message).toBe("Option --verbose doesn't take arguments");
 });
 
-test("parse: too many arguments reports the token's index, including after '--'", () => {
+test("parse: too many arguments names the first extra one, including after '--'", () => {
   const spec: Spec = { name: "test", args: {} };
   const error = thrown(() => parse(["--", "a", "b"], spec));
   expect(error).toBeInstanceOf(TooManyArguments);
-  expect(error).toMatchObject({ value: "b", index: 2 });
   expect((error as Error).message).toBe('Too many arguments, "b" was unexpected');
 });
 
@@ -1327,7 +1326,7 @@ test("parse: a POSIX-noncompliant option takes an attached value", () => {
   expect(result.args).toEqual(["y"]);
   const error = thrown(() => parse(["flag=x"], spec));
   expect(error).toBeInstanceOf(InvalidOptionArg);
-  expect(error).toMatchObject({ option: "flag", arg: "x", start: 5, end: 6 });
+  expect(error).toMatchObject({ option: "flag" });
 });
 
 test("parse: a short option's attached value can follow any configured separator", () => {
@@ -1442,7 +1441,7 @@ test("parse: a value attached to a short option without args says it takes none"
   const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
   const error = thrown(() => parse(["-v=1"], spec));
   expect(error).toBeInstanceOf(InvalidOptionArg);
-  expect(error).toMatchObject({ option: "-v", arg: "1", index: 0, start: 3, end: 4 });
+  expect(error).toMatchObject({ option: "-v" });
   // An option named like the separator still chains.
   const chained: Spec = { name: "test", options: [{ name: "-v" }, { name: "-=" }] };
   expect(parse(["-v="], chained).options).toEqual(map({ "-v": [], "-=": [] }));

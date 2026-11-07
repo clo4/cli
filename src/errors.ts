@@ -29,51 +29,25 @@ export class ParseError extends Error {
 }
 
 export class UnknownOption extends ParseError {
-  readonly index: number;
-  readonly start: number;
-  readonly end: number;
   readonly option: string;
-  constructor(
-    found: { option: string; validOptions: string[]; index: number; start: number; end: number },
-    context: ErrorContext,
-  ) {
-    const msg = `${repr(found.option)} looks like a flag, but is unknown in this context`;
-    super(context, msg, { input: found.option, choices: found.validOptions });
-    this.option = found.option;
-    this.index = found.index;
-    this.start = found.start;
-    this.end = found.end;
+  constructor(option: string, validOptions: readonly string[], context: ErrorContext) {
+    const msg = `${repr(option)} looks like a flag, but is unknown in this context`;
+    super(context, msg, { input: option, choices: validOptions });
+    this.option = option;
   }
 }
 
 export class InvalidOptionArg extends ParseError {
-  readonly index: number;
-  readonly start: number;
-  readonly end: number;
-  readonly arg: string;
   readonly option: string;
-  constructor(
-    found: { option: string; arg: string; index: number; start: number; end: number },
-    context: ErrorContext,
-  ) {
-    const msg = `Option ${found.option} doesn't take arguments`;
-    super(context, msg);
-    this.index = found.index;
-    this.start = found.start;
-    this.end = found.end;
-    this.option = found.option;
-    this.arg = found.arg;
+  constructor(option: string, context: ErrorContext) {
+    super(context, `Option ${option} doesn't take arguments`);
+    this.option = option;
   }
 }
 
 export class TooManyArguments extends ParseError {
-  readonly index: number;
-  readonly value: string;
-  constructor(found: { value: string; index: number }, context: ErrorContext) {
-    const msg = `Too many arguments, ${repr(found.value)} was unexpected`;
-    super(context, msg);
-    this.index = found.index;
-    this.value = found.value;
+  constructor(value: string, context: ErrorContext) {
+    super(context, `Too many arguments, ${repr(value)} was unexpected`);
   }
 }
 

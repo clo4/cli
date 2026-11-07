@@ -98,20 +98,6 @@ function violation(spec: Spec, input: string[]): string | null {
   if (!(error instanceof ParseError)) return `parse threw ${error.name}: ${error.message}`;
   const errorPath = invalidPath(error.context.path as readonly (Spec | Subcommand)[], spec);
   if (errorPath) return `error ${errorPath}`;
-  if (typeof error.index === "number") {
-    const { index, start, end } = error as unknown as { index: number; start?: number; end?: number };
-    if (index < 0 || index >= input.length) return `${error.name} index ${index} is outside the input`;
-    const token = input[index];
-    if (start !== undefined && end !== undefined && !(0 <= start && start <= end && end <= token.length)) {
-      return `${error.name} span ${start}-${end} is outside ${JSON.stringify(token)}`;
-    }
-    if ("arg" in error && error.arg !== token.slice(start, end)) {
-      return `${error.name} arg ${JSON.stringify(error.arg)} isn't its span of ${JSON.stringify(token)}`;
-    }
-    if ("value" in error && error.value !== token) {
-      return `${error.name} value ${JSON.stringify(error.value)} isn't the token ${JSON.stringify(token)}`;
-    }
-  }
   return null;
 }
 

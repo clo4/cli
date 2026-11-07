@@ -244,11 +244,8 @@ class Scanner {
     return this.scope.resolve(name);
   }
 
-  private unknownOption(option: string, index: number, start: number, end: number): UnknownOption {
-    return new UnknownOption(
-      { option, validOptions: this.scope.suggestionNames(), index, start, end },
-      this.ctx(),
-    );
+  private unknownOption(option: string): UnknownOption {
+    return new UnknownOption(option, this.scope.suggestionNames(), this.ctx());
   }
 
   // Every token except an option's value, or an unknown option, ends the
@@ -320,15 +317,10 @@ class Scanner {
    * Add a value to the open option. Returns whether it's a value the option
    * accepts. A lenient read keeps going either way.
    */
-  private addValue(index: number, start: number, end: number, value: string, separator: string): boolean {
+  private addValue(value: string, separator: string): boolean {
     this.valueCount += 1;
     if (!this.values) {
-      if (this.strict) {
-        throw new InvalidOptionArg(
-          { option: this.openOptionName, arg: value, index, start, end },
-          this.ctx(),
-        );
-      }
+      if (this.strict) throw new InvalidOptionArg(this.openOptionName, this.ctx());
       return false;
     }
     const requiredSeparator = this.requiredSeparator;
@@ -357,17 +349,12 @@ class Scanner {
   }
 
   /**
-   * Add a value attached to the option's own token. It's the option's only
-   * value, so no later token can be one.
+   * Add a value attached to the option's own token, the token at `index`,
+   * starting at `start`. It's the option's only value, so no later token can be
+   * one.
    */
-  private addAttachedValue(
-    index: number,
-    start: number,
-    end: number,
-    value: string,
-    separator: string,
-  ): void {
-    if (this.addValue(index, start, end, value, separator)) {
+  private addAttachedValue(index: number, start: number, value: string, separator: string): void {
+    if (this.addValue(value, separator)) {
       this.attached = { option: this.openOption!, index, start };
     }
     this.valueMin = this.separateValueMax = 0;
@@ -383,10 +370,10 @@ class Scanner {
     return !path[path.length - 1].requiresSubcommand && this.args.length >= this.commandArgsMax;
   }
 
-  private addArg(index: number, value: string): void {
+  private addArg(value: string): void {
     this.endOption();
     if (this.strict && this.argsAreFull) {
-      this.tooManyArgs ??= new TooManyArguments({ value, index }, this.ctx());
+      this.tooManyArgs ??= new TooManyArguments(value, this.ctx());
     }
     this.args.push(value);
   }
@@ -402,7 +389,7 @@ class Scanner {
     }
     this.argSeparatorIndex = this.args.length;
     for (index += 1; index < input.length; index++) {
-      this.addArg(index, input[index]);
+      this.addArg(input[index]);
     }
   }
 
@@ -451,7 +438,7 @@ class Scanner {
     const dashOption = this.findOption(leadingChar);
     if (dashOption?.args && !this.findOption(token.slice(0, 2))) {
       this.useOption(dashOption, leadingChar);
-      this.addAttachedValue(index, 1, token.length, token.slice(1), "");
+      this.addAttachedValue(index, 1, token.slice(1), "");
       return;
     }
 
@@ -462,10 +449,10 @@ class Scanner {
       if (!option) {
         // An open option takes anything unknown as a value, like `-5`.
         if (char === 1 && this.hasRoomForValue) {
-          this.addValue(index, 0, token.length, token, "");
+          this.addValue(token, "");
           return;
         }
-        if (this.strict) throw this.unknownOption(optionName, index, char, char + 1);
+        if (this.strict) throw this.unknownOption(optionName);
         continue;
       }
 
@@ -477,7 +464,7 @@ class Scanner {
       // fails like `--verbose=1`, unless the next character is an option.
       if (option.args || (sep && !this.findOption(leadingChar + token[char + 1]))) {
         const argStart = char + sep.length + 1;
-        this.addAttachedValue(index, argStart, token.length, token.slice(argStart), sep);
+        this.addAttachedValue(index, argStart, token.slice(argStart), sep);
         return;
       }
     }
@@ -495,7 +482,7 @@ class Scanner {
       this.useOption(option, optionName);
       if (found) {
         const valueStart = found.index + found.sep.length;
-        this.addAttachedValue(index, valueStart, token.length, token.slice(valueStart), found.sep);
+        this.addAttachedValue(index, valueStart, token.slice(valueStart), found.sep);
       }
       return true;
     }
@@ -504,12 +491,12 @@ class Scanner {
     // option then it's just a regular argument.
     if (this.directives.flagsArePosixNoncompliant) return false;
     if (this.hasRoomForValue) {
-      this.addValue(index, 0, token.length, token, "");
+      this.addValue(token, "");
       return true;
     }
     // The option is unknown and looks like a POSIX-compliant option, so
     // it's an unknown option instead of an arg.
-    if (this.strict) throw this.unknownOption(optionName, index, 0, optionName.length);
+    if (this.strict) throw this.unknownOption(optionName);
     return true;
   }
 
@@ -518,13 +505,13 @@ class Scanner {
    * the open option if that has room, and otherwise an argument, which stops
    * later tokens from being subcommands.
    */
-  valueOrArg(token: string, index: number): void {
+  valueOrArg(token: string): void {
     if (this.hasRoomForValue) {
-      this.addValue(index, 0, token.length, token, "");
+      this.addValue(token, "");
       return;
     }
     this.hasFoundArg = true;
-    this.addArg(index, token);
+    this.addArg(token);
   }
 
   /** Throw if the finished command line is missing anything. */
@@ -620,7 +607,7 @@ class Scanner {
         }
       }
 
-      this.valueOrArg(token, index);
+      this.valueOrArg(token);
     }
   }
 }

@@ -87,8 +87,8 @@ function describe(outcome: Outcome): string {
 }
 
 function errorFields(error: Error & Record<string, unknown>) {
-  const { name, message, index, start, end, option, arg, value, didYouMean } = error;
-  return { name, message, index, start, end, option, arg, value, didYouMean };
+  const { name, message, option, didYouMean } = error;
+  return { name, message, option, didYouMean };
 }
 
 function sameItems<T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => boolean = Object.is): boolean {
