@@ -571,10 +571,6 @@ export interface TestOptions {
   namingStyle?: TestNamingStyle;
 }
 
-function getName(namingStyle: TestNamingStyle, names: { [K in TestNamingStyle]: string }) {
-  return names[namingStyle];
-}
-
 export interface TestContextLike {
   step(name: string, fn: () => unknown | Promise<unknown>): unknown | Promise<unknown>;
 }
@@ -606,204 +602,126 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
     allowMatchingSubcommandPrefixAndArgs = false,
     namingStyle = "sentence",
   } = options;
+  const checks: [
+    sentence: string,
+    functionName: string,
+    check: (spec: Subcommand) => void,
+    enabled: boolean,
+  ][] = [
+    [
+      "Required arguments don't follow optional arguments",
+      "assertRequiredArgumentsDoNotFollowOptionalArguments",
+      assertRequiredArgumentsDoNotFollowOptionalArguments,
+      true,
+    ],
+    [
+      "Repeatable options that are numbers are integers greater than 1",
+      "assertRepeatableOptionsArePositiveIntegers",
+      assertRepeatableOptionsArePositiveIntegers,
+      true,
+    ],
+    [
+      "Long option names don't start with a single dash",
+      "assertLongOptionNamesDoNotStartWithSingleDash",
+      assertLongOptionNamesDoNotStartWithSingleDash,
+      true,
+    ],
+    [
+      "Option names all start with dashes",
+      "assertOptionNamesStartWithDashes",
+      assertOptionNamesStartWithDashes,
+      true,
+    ],
+    [
+      "Options have locally unique names",
+      "assertOptionsHaveLocallyUniqueNames",
+      assertOptionsHaveLocallyUniqueNames,
+      true,
+    ],
+    [
+      "Options don't shadow persistent options",
+      "assertOptionsDoNotShadowPersistentOptions",
+      assertOptionsDoNotShadowPersistentOptions,
+      !allowShadowingPersistentOptions,
+    ],
+    [
+      "Different options on a subcommand and its parents have different names",
+      "assertOptionsHaveDifferentNamesFromParents",
+      assertOptionsHaveDifferentNamesFromParents,
+      true,
+    ],
+    [
+      "Subcommands have locally unique names",
+      "assertSubcommandsHaveLocallyUniqueNames",
+      assertSubcommandsHaveLocallyUniqueNames,
+      true,
+    ],
+    ["Nothing is named '--'", "assertNothingIsNamedDashDash", assertNothingIsNamedDashDash, true],
+    [
+      "Option arg separators are not an empty string",
+      "assertOptionArgSeparatorsHaveCharacters",
+      assertOptionArgSeparatorsHaveCharacters,
+      true,
+    ],
+    [
+      "Options named '-' or '+' take exactly one argument",
+      "assertPlusMinusOptionsTakeOneArg",
+      assertPlusMinusOptionsTakeOneArg,
+      true,
+    ],
+    [
+      "Names have no extra leading or trailing whitespace",
+      "assertNamesHaveNoExtraWhitespace",
+      assertNamesHaveNoExtraWhitespace,
+      true,
+    ],
+    [
+      "Everything has a description",
+      "assertEverythingHasDescription",
+      assertEverythingHasDescription,
+      !allowNoDescription,
+    ],
+    [
+      "Each line in descriptions is less than or equal to 68 characters",
+      "assertDescriptionLineLengthUnder69",
+      assertDescriptionLineLengthUnder69,
+      !allowLongDescriptionLines,
+    ],
+    [
+      "Options with `requiresSeparator` take exactly one argument",
+      "assertRequiresSeparatorTakesOneArg",
+      assertRequiresSeparatorTakesOneArg,
+      true,
+    ],
+    [
+      "Options with `requiresSeparator` use a separator the parser accepts",
+      "assertRequiredSeparatorsAreUsable",
+      assertRequiredSeparatorsAreUsable,
+      true,
+    ],
+    [
+      "Common options are not defined on every subcommand",
+      "assertCommonOptionsArePersistent",
+      assertCommonOptionsArePersistent,
+      true,
+    ],
+    [
+      "References to other options by name are valid",
+      "assertOptionNameReferencesExist",
+      assertOptionNameReferencesExist,
+      true,
+    ],
+    [
+      "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
+      "assertPrefixMatchCommandsHaveNoArguments",
+      assertPrefixMatchCommandsHaveNoArguments,
+      !allowMatchingSubcommandPrefixAndArgs,
+    ],
+  ];
   return async (t) => {
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Required arguments don't follow optional arguments",
-        function: "assertRequiredArgumentsDoNotFollowOptionalArguments",
-      }),
-      () => {
-        assertRequiredArgumentsDoNotFollowOptionalArguments(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Repeatable options that are numbers are integers greater than 1",
-        function: "assertRepeatableOptionsArePositiveIntegers",
-      }),
-      () => {
-        assertRepeatableOptionsArePositiveIntegers(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Long option names don't start with a single dash",
-        function: "assertLongOptionNamesDoNotStartWithSingleDash",
-      }),
-      () => {
-        assertLongOptionNamesDoNotStartWithSingleDash(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Option names all start with dashes",
-        function: "assertOptionNamesStartWithDashes",
-      }),
-      () => {
-        assertOptionNamesStartWithDashes(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Options have locally unique names",
-        function: "assertOptionsHaveLocallyUniqueNames",
-      }),
-      () => {
-        assertOptionsHaveLocallyUniqueNames(spec);
-      },
-    );
-    if (!allowShadowingPersistentOptions) {
-      await runStep(
-        t,
-        getName(namingStyle, {
-          sentence: "Options don't shadow persistent options",
-          function: "assertOptionsDoNotShadowPersistentOptions",
-        }),
-        () => {
-          assertOptionsDoNotShadowPersistentOptions(spec);
-        },
-      );
-    }
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Different options on a subcommand and its parents have different names",
-        function: "assertOptionsHaveDifferentNamesFromParents",
-      }),
-      () => {
-        assertOptionsHaveDifferentNamesFromParents(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Subcommands have locally unique names",
-        function: "assertSubcommandsHaveLocallyUniqueNames",
-      }),
-      () => {
-        assertSubcommandsHaveLocallyUniqueNames(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Nothing is named '--'",
-        function: "assertNothingIsNamedDashDash",
-      }),
-      () => {
-        assertNothingIsNamedDashDash(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Option arg separators are not an empty string",
-        function: "assertOptionArgSeparatorsHaveCharacters",
-      }),
-      () => {
-        assertOptionArgSeparatorsHaveCharacters(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Options named '-' or '+' take exactly one argument",
-        function: "assertPlusMinusOptionsTakeOneArg",
-      }),
-      () => {
-        assertPlusMinusOptionsTakeOneArg(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Names have no extra leading or trailing whitespace",
-        function: "assertNamesHaveNoExtraWhitespace",
-      }),
-      () => {
-        assertNamesHaveNoExtraWhitespace(spec);
-      },
-    );
-    if (!allowNoDescription) {
-      await runStep(
-        t,
-        getName(namingStyle, {
-          sentence: "Everything has a description",
-          function: "assertEverythingHasDescription",
-        }),
-        () => {
-          assertEverythingHasDescription(spec);
-        },
-      );
-    }
-    if (!allowLongDescriptionLines) {
-      await runStep(
-        t,
-        getName(namingStyle, {
-          sentence: "Each line in descriptions is less than or equal to 68 characters",
-          function: "assertDescriptionLineLengthUnder69",
-        }),
-        () => {
-          assertDescriptionLineLengthUnder69(spec);
-        },
-      );
-    }
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Options with `requiresSeparator` take exactly one argument",
-        function: "assertRequiresSeparatorTakesOneArg",
-      }),
-      () => {
-        assertRequiresSeparatorTakesOneArg(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Options with `requiresSeparator` use a separator the parser accepts",
-        function: "assertRequiredSeparatorsAreUsable",
-      }),
-      () => {
-        assertRequiredSeparatorsAreUsable(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "Common options are not defined on every subcommand",
-        function: "assertCommonOptionsArePersistent",
-      }),
-      () => {
-        assertCommonOptionsArePersistent(spec);
-      },
-    );
-    await runStep(
-      t,
-      getName(namingStyle, {
-        sentence: "References to other options by name are valid",
-        function: "assertOptionNameReferencesExist",
-      }),
-      () => {
-        assertOptionNameReferencesExist(spec);
-      },
-    );
-    if (!allowMatchingSubcommandPrefixAndArgs) {
-      await runStep(
-        t,
-        getName(namingStyle, {
-          sentence: "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
-          function: "assertPrefixMatchCommandsHaveNoArguments",
-        }),
-        () => {
-          assertPrefixMatchCommandsHaveNoArguments(spec);
-        },
-      );
+    for (const [sentence, functionName, check, enabled] of checks) {
+      if (!enabled) continue;
+      await runStep(t, namingStyle === "function" ? functionName : sentence, () => check(spec));
     }
   };
 }
