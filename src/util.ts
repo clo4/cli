@@ -107,9 +107,9 @@ export function print(text: string): void {
   output.write(1, `${text.trimEnd()}\n`);
 }
 
-/** Print an error message to stderr with the shared `Error:` prefix. */
-export function printActionError(message: string): void {
-  output.write(2, `Error: ${message}\n`);
+/** Print `Error:` and the given values to stderr, separated by spaces. */
+export function printError(...strings: unknown[]): void {
+  output.write(2, `${["Error:", ...strings].map(String).join(" ")}\n`);
 }
 
 // }}}

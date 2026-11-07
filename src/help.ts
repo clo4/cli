@@ -4,7 +4,7 @@ import { closestChoice } from "./suggest.js";
 import { matchSubcommand, prefixMatches } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
-import { makeArray, makeArray1, print, printActionError } from "./util.js";
+import { makeArray, makeArray1, print, printError } from "./util.js";
 
 function dedent(str: string) {
   if (str[0] !== "\n") return str;
@@ -53,7 +53,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
   }
 
   if (command === "") {
-    printActionError(`Expected a command, but the value was empty\n\n${help({ description: false })}`);
+    printError(`Expected a command, but the value was empty\n\n${help({ description: false })}`);
     return 1;
   }
 
@@ -70,7 +70,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
         )
       : [];
     if (possible.length > 0) {
-      printActionError(
+      printError(
         `Ambiguous command '${command}', could be: ${possible.join(", ")}\n\n${help({
           description: false,
         })}`,
@@ -78,7 +78,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
       return 1;
     }
 
-    printActionError(
+    printError(
       `Unknown command '${command}'\n\n${help({
         description: false,
         didYouMean: {
@@ -90,7 +90,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
     return 1;
   }
 
-  printActionError(`Unknown command '${command}'\n\n${help({ description: false })}`);
+  printError(`Unknown command '${command}'\n\n${help({ description: false })}`);
 
   return 1;
 };
@@ -114,7 +114,7 @@ export const helpCommand: Subcommand = {
     const parent = path[path.length - 2];
 
     if (!parent.subcommands) {
-      printActionError(
+      printError(
         `No subcommands, try using 'help' with nothing after it\n\n${help({
           description: false,
           path: helpRoot,
@@ -130,7 +130,7 @@ export const helpCommand: Subcommand = {
       const subcommands = parent.subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
 
       if (subcommands.length > 0) {
-        printActionError(
+        printError(
           `There is no subcommand named '${commandName}'\n\n${help({
             path: helpRoot,
             didYouMean: {
@@ -142,7 +142,7 @@ export const helpCommand: Subcommand = {
         return 1;
       }
 
-      printActionError(
+      printError(
         `There is no subcommand named '${commandName}'\n\n${help({
           description: false,
           path: helpRoot,

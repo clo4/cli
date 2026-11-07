@@ -13,7 +13,7 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { makeArray, print, printActionError } from "./util.js";
+import { makeArray, print, printError } from "./util.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import type { Directives } from "./directives.js";
@@ -329,7 +329,7 @@ export const completion: Subcommand = {
     }
 
     if (!isShell(shell)) {
-      printActionError(
+      printError(
         `Unsupported shell '${shell}'\n\n${help({
           description: false,
           didYouMean: { input: shell, choices: SHELLS as string[] },
