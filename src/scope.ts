@@ -1,12 +1,25 @@
 import type { Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
-import { asArray } from "./util.js";
+import { asArray, getMaxArgs } from "./util.js";
 
 /** An option that can be used here, and the names that still refer to it. */
 export interface VisibleOption {
   option: Option;
   names: string[];
+}
+
+/** How one name of an option is written with its value, at one command. */
+export interface OptionForm {
+  name: string;
+  /**
+   * What joins the name to the option's first value in the same token, or null
+   * if the value is the next token. It's the required separator for an option
+   * that requires one, and "" for an option named "-" or "+", which reads its
+   * value straight after the name, like `-5`. It's null for an option without
+   * arguments.
+   */
+  join: string | null;
 }
 
 /**
@@ -97,6 +110,21 @@ export class OptionScope {
   /** The options that must be used, local first. */
   required(): Option[] {
     return [...this.local, ...this.persistent].filter((option) => option.isRequired);
+  }
+
+  /**
+   * How each of `names` is written with `option`'s value here. Help shows
+   * these, completion offers them, and the spec checker reads each one back
+   * through the parser.
+   */
+  forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
+    const join = (name: string): string | null => {
+      if (getMaxArgs(option.args) === 0) return null;
+      if (option.requiresSeparator) return this.requiredSeparator(option);
+      const glued = !this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+");
+      return glued ? "" : null;
+    };
+    return names.map((name) => ({ name, join: join(name) }));
   }
 
   /**

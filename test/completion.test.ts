@@ -269,6 +269,23 @@ test("runtime: requiresSeparator options are offered in their attached form", as
   expect(v).toContain("--sep=");
 });
 
+test("runtime: an option named '-' or '+' isn't offered until its value is typed", async () => {
+  const spec: Spec = {
+    name: "x",
+    options: [
+      { name: ["-", "--lines"], args: { suggestions: ["10"] } },
+      { name: "+", args: {} },
+    ],
+  };
+  expect(values(await resolve(spec, [], ""))).toEqual(["--lines"]);
+  expect(values(await resolve(spec, [], "-1"))).toContain("-10");
+});
+
+test("runtime: a requiresSeparator option without arguments is offered without the separator", async () => {
+  const spec: Spec = { name: "x", options: [{ name: "--flag", requiresSeparator: true }] };
+  expect(values(await resolve(spec, [], ""))).toEqual(["--flag"]);
+});
+
 test("runtime: a requiresSeparator string is offered as that separator", async () => {
   const spec: Spec = {
     name: "x",

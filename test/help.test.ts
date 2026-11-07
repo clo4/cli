@@ -169,6 +169,22 @@ test("help: option arguments are summarized", () => {
   expectIncludes(msg, "  --unnamed <argument>  ");
 });
 
+test("help: an option named '-' or '+' shows its value straight after the name", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    options: [
+      { name: ["--lines", "-"], args: { name: "n" } },
+      { name: "+", args: { name: "n" } },
+    ],
+  };
+  const msg = getHelp([spec]);
+  expectIncludes(msg, "  -<n>, --lines <n>  ");
+  expectIncludes(msg, "  +<n>  ");
+  // Without the POSIX rules, '-' is a name like any other.
+  const noncompliant: Spec = { ...spec, parserDirectives: { flagsArePosixNoncompliant: true } };
+  expectIncludes(getHelp([noncompliant]), "  -, --lines <n>  ");
+});
+
 test("help: a multi-line option description stays aligned", () => {
   const spec: Spec = {
     name: "TEST_NAME",

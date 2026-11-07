@@ -7,6 +7,8 @@
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
 import { OptionScope, optionKey } from "./scope.js";
+import type { OptionForm } from "./scope.js";
+import { optionToString } from "./help.js";
 import { readToken } from "./parse.js";
 import type { TokenReading } from "./parse.js";
 
@@ -265,16 +267,13 @@ export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void 
 }
 
 /**
- * Asserts that options named "+" or "-" takes one arg
+ * Asserts that the parser reads options named "+" or "-" the way they're
+ * written, which needs them to take one argument.
+ *
+ * @deprecated {@link assertNamesReadBack} checks this for every option.
  */
 export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope }) => {
-    if (scope.directives.flagsArePosixNoncompliant) return;
-    for (const name of makeArray(option.name)) {
-      if (name !== "-" && name !== "+") continue;
-      assert(option.args && !Array.isArray(option.args), `${where} must take exactly one argument`);
-    }
-  });
+  assertOptionFormsReadBack(spec, (_, name) => name === "-" || name === "+");
 }
 
 /**
@@ -344,19 +343,14 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
   });
 }
 
+/**
+ * Asserts that the parser reads options with `requiresSeparator` the way
+ * they're written, which needs them to take at most one argument.
+ *
+ * @deprecated {@link assertNamesReadBack} checks this for every option.
+ */
 export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere || !option.requiresSeparator) return;
-    const args = makeArray(option.args);
-    assert(
-      getMinArgs(args) <= 1,
-      `${where} takes a minimum of ${getMinArgs(args)} arg(s), but because of requiresSeparator, it must instead be 0 or 1`,
-    );
-    assert(
-      getMaxArgs(args) === 1,
-      `${where} takes a maximum of ${getMaxArgs(args)} arg(s), but because of requiresSeparator, it's only able to take 1`,
-    );
-  });
+  assertOptionFormsReadBack(spec, (option) => Boolean(option.requiresSeparator));
 }
 
 /**
@@ -388,21 +382,95 @@ function readsAs(reading: TokenReading, option: Option): boolean {
 }
 
 /**
+ * The tokens that reach the last command on `path`, using each command's first
+ * name. {@link assertNamesReadBack} checks subcommand names from the root down
+ * before options, so each of these is a name the parser reads.
+ */
+function tokensTo(path: readonly Subcommand[]): string[] {
+  return path.slice(1).map((command) => makeArray(command.name)[0]);
+}
+
+/**
+ * A value for writing options with at the last command on `path`. No name
+ * there starts with it, or with it after '-' or '+', so the parser can only
+ * read it as a value.
+ */
+function placeholderValue(path: readonly Subcommand[], scope: OptionScope): string {
+  const names = [
+    ...[...scope.local, ...scope.persistent].flatMap((option) => makeArray(option.name)),
+    ...makeArray(path[path.length - 1].subcommands).flatMap((command) => makeArray(command.name)),
+  ];
+  for (const value of "0123456789abcdefghijklmnopqrstuvwxyz") {
+    const starts = [value, `-${value}`, `+${value}`];
+    if (!names.some((name) => starts.some((start) => name.startsWith(start)))) return value;
+  }
+  return "0";
+}
+
+/**
+ * The tokens that write `form` with every value `option` takes, or one more
+ * than its minimum if it takes any number. The first value is joined to the
+ * name if the form says so, and the rest are separate tokens.
+ */
+function writeForm(option: Option, form: OptionForm, value: string): string[] {
+  const max = getMaxArgs(option.args);
+  const count = Number.isFinite(max) ? max : getMinArgs(option.args) + 1;
+  const values: string[] = Array.from({ length: count }, () => value);
+  if (form.join === null) return [form.name, ...values];
+  return [form.name + form.join + values[0], ...values.slice(1)];
+}
+
+/**
+ * Asserts that the parser reads each name of the options that `include`
+ * picks the way the name is written. See {@link assertNamesReadBack}.
+ */
+function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, name: string) => boolean) {
+  const root = spec as Spec;
+  forEachOption(spec, ({ option, where, scope, path }) => {
+    const before = tokensTo(path);
+    const value = placeholderValue(path, scope);
+    // A name that another option shadows is that option's to check.
+    const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
+    for (const form of scope.forms(option, names)) {
+      if (!include(option, form.name)) continue;
+      // A name joined to its value with nothing between isn't a token by itself.
+      if (form.join !== "") {
+        const reading = readToken(root, before, form.name);
+        assert(
+          readsAs(reading, option),
+          `${where} has the name '${form.name}', but the parser reads it as ${describeReading(reading, path)}`,
+        );
+      }
+      const tokens = writeForm(option, form, value);
+      const written = `${where} is written '${optionToString(option, [form])}'`;
+      if (form.join !== null) {
+        const first = readToken(root, before, tokens[0]);
+        const joined = first.kind === "options" && first.attached?.option === option;
+        assert(
+          readsAs(first, option) && joined,
+          `${written}, but the parser reads '${tokens[0]}' as ${describeReading(first, path)}${joined ? "" : " without a value"}`,
+        );
+      }
+      for (let index = 1; index < tokens.length; index++) {
+        const reading = readToken(root, [...before, ...tokens.slice(0, index)], tokens[index]);
+        assert(
+          reading.kind === "value" && reading.option === option,
+          `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeReading(reading, path)}`,
+        );
+      }
+    }
+  });
+}
+
+/**
  * Asserts that the parser reads every name the way it's written: each name of
  * a subcommand enters that subcommand, and each name of an option uses that
- * option, at every command the option can be used in. An option that requires
- * a separator must also take a value attached with it.
- *
- * Options named '-' or '+' only take a value attached to them, so
- * {@link assertPlusMinusOptionsTakeOneArg} checks those instead.
+ * option, at every command the option can be used in. Each option is also
+ * written the way help shows it, with every value it takes, and the parser has
+ * to read all of those values as the option's.
  */
 export function assertNamesReadBack(spec: Subcommand): void {
   const root = spec as Spec;
-  // The tokens that reach the last command on `path`. Subcommands are checked
-  // from the root down, so each name used here is one the parser reads.
-  const tokensTo = (path: readonly Subcommand[]) =>
-    path.slice(1).map((command) => makeArray(command.name)[0]);
-
   forEachSubcommand(spec, (command, path) => {
     const before = tokensTo(path);
     for (const subcommand of makeArray(command.subcommands)) {
@@ -416,28 +484,7 @@ export function assertNamesReadBack(spec: Subcommand): void {
       }
     }
   });
-
-  forEachOption(spec, ({ option, where, scope, path }) => {
-    const before = tokensTo(path);
-    const separator = scope.requiredSeparator(option);
-    for (const name of makeArray(option.name)) {
-      // A name that another option shadows is that option's to check.
-      if (scope.resolve(name) !== option) continue;
-      if (!scope.directives.flagsArePosixNoncompliant && (name === "-" || name === "+")) continue;
-      const reading = readToken(root, before, name);
-      assert(
-        readsAs(reading, option),
-        `${where} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
-      );
-      if (separator === null) continue;
-      const token = `${name}${separator}value`;
-      const withValue = readToken(root, before, token);
-      assert(
-        withValue.kind === "options" && withValue.attached?.option === option,
-        `${where} requires the separator '${separator}', but the parser doesn't read '${token}' as the option with a value`,
-      );
-    }
-  });
+  assertOptionFormsReadBack(spec, () => true);
 }
 
 export function assertCommonOptionsArePersistent(spec: Subcommand): void {
@@ -623,7 +670,7 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       true,
     ],
     [
-      "The parser reads every name as the option or subcommand it names",
+      "The parser reads every option and subcommand the way it's written",
       "assertNamesReadBack",
       assertNamesReadBack,
       true,
@@ -632,12 +679,6 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       "Option arg separators are not an empty string",
       "assertOptionArgSeparatorsHaveCharacters",
       assertOptionArgSeparatorsHaveCharacters,
-      true,
-    ],
-    [
-      "Options named '-' or '+' take exactly one argument",
-      "assertPlusMinusOptionsTakeOneArg",
-      assertPlusMinusOptionsTakeOneArg,
       true,
     ],
     [
@@ -657,12 +698,6 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       "assertDescriptionLineLengthUnder69",
       assertDescriptionLineLengthUnder69,
       !allowLongDescriptionLines,
-    ],
-    [
-      "Options with `requiresSeparator` take exactly one argument",
-      "assertRequiresSeparatorTakesOneArg",
-      assertRequiresSeparatorTakesOneArg,
-      true,
     ],
     [
       "Common options are not defined on every subcommand",

@@ -142,7 +142,6 @@ const specChecks = [
   Testing.assertNamesReadBack,
   Testing.assertOptionsHaveLocallyUniqueNames,
   Testing.assertSubcommandsHaveLocallyUniqueNames,
-  Testing.assertPlusMinusOptionsTakeOneArg,
 ];
 
 /** An option or subcommand that completion offers, but that the parser reads as something else. */
@@ -164,13 +163,13 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
       }
     }
   }
-  for (const { option, names, separator } of next.options) {
-    for (const name of names) {
-      // An option named "-" or "+" only takes a value attached to it, like `-5`.
-      if (!offered.has(name + (separator ?? "")) || name === "-" || name === "+") continue;
-      const reading = readToken(spec, before, name);
+  for (const { option, forms } of next.options) {
+    for (const { name, join } of forms) {
+      const token = name + (join ?? "");
+      if (!offered.has(token)) continue;
+      const reading = readToken(spec, before, token);
       if (reading.kind !== "options" || reading.options.length !== 1 || reading.options[0] !== option) {
-        return `option ${JSON.stringify(name)} is offered, but isn't read as that option`;
+        return `option ${JSON.stringify(token)} is offered, but isn't read as that option`;
       }
     }
   }

@@ -292,12 +292,12 @@ test("readNext: lists the options the next token can use, with the names that re
   const sub: Subcommand = { name: "sub", options: [shadow, file, lone], subcommands: [{ name: "build" }] };
   const spec: Spec = { name: "test", options: [all], subcommands: [sub] };
   expect(readNext(spec, ["sub", "--lone"], "").options).toEqual([
-    { option: shadow, names: ["--all"], separator: null, used: false },
-    { option: file, names: ["--file"], separator: "=", used: false },
+    { option: shadow, forms: [{ name: "--all", join: null }], used: false },
+    { option: file, forms: [{ name: "--file", join: "=" }], used: false },
     // A subcommand matches "build", so only "--lone" reads as the option.
-    { option: lone, names: ["--lone"], separator: null, used: true },
+    { option: lone, forms: [{ name: "--lone", join: null }], used: true },
     // --all refers to the hidden option here, so only -a is left.
-    { option: all, names: ["-a"], separator: null, used: false },
+    { option: all, forms: [{ name: "-a", join: null }], used: false },
   ]);
   expect(readNext(spec, ["--"], "").options).toEqual([]);
 });
