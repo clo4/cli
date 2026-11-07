@@ -4,10 +4,11 @@
  * @module
  */
 
-import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
+import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
 import { matchSubcommand } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
+import { readNext } from "./parse.js";
 
 const repr = JSON.stringify;
 
@@ -255,6 +256,9 @@ export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void 
  * Asserts that option names starting with a single dash aren't longer
  * than two characters, unless parserDirectives.flagsArePosixNoncompliant is
  * set on an ancestor command.
+ *
+ * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
+ * asks the parser how it reads each name.
  */
 export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand): void {
   forEachOptionInScope(spec, (option, where, scope) => {
@@ -270,6 +274,9 @@ export function assertLongOptionNamesDoNotStartWithSingleDash(spec: Subcommand):
 
 /**
  * Asserts that all option names start with dashes
+ *
+ * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
+ * asks the parser how it reads each name.
  */
 export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
   forEachOptionInScope(spec, (option, where, scope) => {
@@ -287,6 +294,9 @@ export function assertOptionNamesStartWithDashes(spec: Subcommand): void {
  * Asserts that no option name is one that a subcommand matches, exactly or
  * by a unique prefix. Until an argument is found, the parser reads such a
  * name as the subcommand.
+ *
+ * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
+ * asks the parser how it reads each name.
  */
 export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
   forEachOptionInScope(spec, (option, where, scope, path) => {
@@ -307,6 +317,9 @@ export function assertOptionsDoNotMatchSubcommands(spec: Subcommand): void {
 
 /**
  * Asserts that nothing is named exactly '--'
+ *
+ * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
+ * asks the parser how it reads each name.
  */
 export function assertNothingIsNamedDashDash(spec: Subcommand): void {
   forEachOptionArray(spec, (options, path) => {
@@ -458,6 +471,9 @@ export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
  * Asserts that an option with `requiresSeparator` can be given a value
  * everywhere it can be used: the parser has to split options at the separator
  * it requires, or at any separator when it doesn't name one.
+ *
+ * @deprecated {@link test} runs {@link assertNamesReadBack} instead, which
+ * asks the parser how it reads each name.
  */
 export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
   forEachOptionInScope(spec, (option, where, scope) => {
@@ -470,6 +486,77 @@ export function assertRequiredSeparatorsAreUsable(spec: Subcommand): void {
       assert(
         separators.includes(option.requiresSeparator),
         `${where} requires the separator '${option.requiresSeparator}', but the parser only splits options at ${accepted || "no separators"}`,
+      );
+    }
+  });
+}
+
+/**
+ * What the parser read `token` as, after `before`, for a message. `token`
+ * didn't do what it was meant to, so this only has to tell the other cases
+ * apart.
+ */
+function describeReading(spec: Spec, before: readonly string[], token: string): string {
+  if (token === "--") return "the end of options, '--'";
+  const start = readNext(spec, before, "");
+  const next = readNext(spec, [...before, token], "");
+  if (next.path.length > start.path.length) return `the subcommand ${namedArrayToString(...next.path)}`;
+  const used = next.seenOptions.slice(start.seenOptions.length);
+  if (used.length === 1) return `the option ${namedArrayToString(used[0])}`;
+  if (used.length > 1) return `the options ${used.map((option) => namedArrayToString(option)).join(", ")}`;
+  return "an argument, or an option that doesn't exist";
+}
+
+/**
+ * Asserts that the parser reads every name the way it's written: each name of
+ * a subcommand enters that subcommand, and each name of an option uses that
+ * option, at every command the option can be used in. An option that requires
+ * a separator must also take a value attached with it.
+ *
+ * Options named '-' or '+' only take a value attached to them, so
+ * {@link assertPlusMinusOptionsTakeOneArg} checks those instead.
+ */
+export function assertNamesReadBack(spec: Subcommand): void {
+  const root = spec as Spec;
+  // The tokens that reach the last command on `path`. Subcommands are checked
+  // from the root down, so each name used here is one the parser reads.
+  const tokensTo = (path: readonly Subcommand[]) =>
+    path.slice(1).map((command) => makeArray(command.name)[0]);
+
+  forEachSubcommand(spec, (command, path) => {
+    const before = tokensTo(path);
+    for (const subcommand of makeArray(command.subcommands)) {
+      for (const name of makeArray(subcommand.name)) {
+        const next = readNext(root, [...before, name], "");
+        if (next.path.length === path.length + 1 && next.path[path.length] === subcommand) continue;
+        assert(
+          false,
+          `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(root, before, name)}`,
+        );
+      }
+    }
+  });
+
+  forEachOptionInScope(spec, (option, where, scope, path) => {
+    const before = tokensTo(path);
+    const separator = scope.requiredSeparator(option);
+    for (const name of makeArray(option.name)) {
+      // A name that another option shadows is that option's to check.
+      if (scope.resolve(name) !== option) continue;
+      if (!scope.directives.flagsArePosixNoncompliant && (name === "-" || name === "+")) continue;
+      const seen = readNext(root, before, "").seenOptions.length;
+      const next = readNext(root, [...before, name], "");
+      assert(
+        next.path.length === path.length &&
+          next.seenOptions.length === seen + 1 &&
+          next.seenOptions[seen] === option,
+        `${where} has the name '${name}', but the parser reads it as ${describeReading(root, before, name)}`,
+      );
+      if (separator === null) continue;
+      const token = `${name}${separator}value`;
+      assert(
+        readNext(root, before, token).attached?.option === option,
+        `${where} requires the separator '${separator}', but the parser doesn't read '${token}' as the option with a value`,
       );
     }
   });
@@ -636,18 +723,6 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       true,
     ],
     [
-      "Long option names don't start with a single dash",
-      "assertLongOptionNamesDoNotStartWithSingleDash",
-      assertLongOptionNamesDoNotStartWithSingleDash,
-      true,
-    ],
-    [
-      "Option names all start with dashes",
-      "assertOptionNamesStartWithDashes",
-      assertOptionNamesStartWithDashes,
-      true,
-    ],
-    [
       "Options have locally unique names",
       "assertOptionsHaveLocallyUniqueNames",
       assertOptionsHaveLocallyUniqueNames,
@@ -672,12 +747,11 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       true,
     ],
     [
-      "Options don't share a name with a subcommand",
-      "assertOptionsDoNotMatchSubcommands",
-      assertOptionsDoNotMatchSubcommands,
+      "The parser reads every name as the option or subcommand it names",
+      "assertNamesReadBack",
+      assertNamesReadBack,
       true,
     ],
-    ["Nothing is named '--'", "assertNothingIsNamedDashDash", assertNothingIsNamedDashDash, true],
     [
       "Option arg separators are not an empty string",
       "assertOptionArgSeparatorsHaveCharacters",
@@ -712,12 +786,6 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       "Options with `requiresSeparator` take exactly one argument",
       "assertRequiresSeparatorTakesOneArg",
       assertRequiresSeparatorTakesOneArg,
-      true,
-    ],
-    [
-      "Options with `requiresSeparator` use a separator the parser accepts",
-      "assertRequiredSeparatorsAreUsable",
-      assertRequiredSeparatorsAreUsable,
       true,
     ],
     [

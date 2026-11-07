@@ -128,11 +128,9 @@ test("completion never throws on random specs", async () => {
 });
 
 const specChecks = [
-  Testing.assertLongOptionNamesDoNotStartWithSingleDash,
-  Testing.assertOptionNamesStartWithDashes,
+  Testing.assertNamesReadBack,
   Testing.assertOptionsHaveLocallyUniqueNames,
   Testing.assertSubcommandsHaveLocallyUniqueNames,
-  Testing.assertNothingIsNamedDashDash,
   Testing.assertPlusMinusOptionsTakeOneArg,
 ];
 

@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import { help, helpCommand } from "../src/help.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
+import { parse } from "../src/parse.js";
 import * as Testing from "../src/testing.js";
 
 test("testing: run testSpec on helpCommand", async () => {
@@ -851,21 +852,17 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
   expect(steps).toEqual([
     "Required arguments don't follow optional arguments",
     "Repeatable options that are numbers are integers greater than 1",
-    "Long option names don't start with a single dash",
-    "Option names all start with dashes",
     "Options have locally unique names",
     "Options don't shadow persistent options",
     "Different options on a subcommand and its parents have different names",
     "Subcommands have locally unique names",
-    "Options don't share a name with a subcommand",
-    "Nothing is named '--'",
+    "The parser reads every name as the option or subcommand it names",
     "Option arg separators are not an empty string",
     "Options named '-' or '+' take exactly one argument",
     "Names have no extra leading or trailing whitespace",
     "Everything has a description",
     "Each line in descriptions is less than or equal to 68 characters",
     "Options with `requiresSeparator` take exactly one argument",
-    "Options with `requiresSeparator` use a separator the parser accepts",
     "Common options are not defined on every subcommand",
     "References to other options by name are valid",
     "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
@@ -962,3 +959,72 @@ async function collectSteps(spec: Spec, config: Testing.TestOptions = {}): Promi
   });
   return steps;
 }
+
+test("testing: assertNamesReadBack says what the parser reads a name as", () => {
+  const check = Testing.assertNamesReadBack;
+  const fails = (spec: Spec) => {
+    try {
+      check(spec);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    throw new Error("Expected the check to fail");
+  };
+  check({ name: "test", options: [{ name: ["-v", "--verbose"] }, { name: "-", args: {} }] });
+  // A name with the separator in it is split there.
+  expect(fails({ name: "test", options: [{ name: "--a=b" }] })).toBe(
+    "Option `test --a=b` (index 0) has the name '--a=b', but the parser reads it as an argument, or an option that doesn't exist",
+  );
+  expect(fails({ name: "test", options: [{ name: "--a" }, { name: "--a=b" }] })).toMatch(
+    /has the name '--a=b', but the parser reads it as the option `--a`$/,
+  );
+  // A long name with one dash is a chain of short options.
+  expect(fails({ name: "test", options: [{ name: "-a" }, { name: "-b" }, { name: "-ab" }] })).toMatch(
+    /has the name '-ab', but the parser reads it as the options `-a`, `-b`$/,
+  );
+  expect(fails({ name: "test", options: [{ name: "build" }] })).toMatch(/reads it as an argument/);
+  expect(fails({ name: "test", options: [{ name: "--" }] })).toMatch(/reads it as the end of options, '--'$/);
+  // A subcommand wins over an option, in every command the option reaches.
+  expect(
+    fails({
+      name: "test",
+      options: [{ name: "--x", isPersistent: true }],
+      subcommands: [{ name: "sub", subcommands: [{ name: "--x" }] }],
+    }),
+  ).toMatch(
+    /^In `test sub`, option `test --x` \(index 0\) has the name '--x', but the parser reads it as the subcommand `test sub --x`$/,
+  );
+  expect(fails({ name: "test", subcommands: [{ name: "a" }, { name: ["b", "a"] }] })).toMatch(
+    /^Subcommand `test b\|a` \(index 1\) has the name 'a', but the parser reads it as the subcommand `test a`$/,
+  );
+});
+
+test("testing: assertNamesReadBack checks that a required separator splits the option", () => {
+  const check = Testing.assertNamesReadBack;
+  check({ name: "test", options: [{ name: "--o", args: {}, requiresSeparator: true }] });
+  check({
+    name: "test",
+    parserDirectives: { optionArgSeparators: ":" },
+    options: [{ name: "--o", args: {}, requiresSeparator: ":" }],
+  });
+  expect(() =>
+    check({
+      name: "test",
+      parserDirectives: { optionArgSeparators: ":" },
+      options: [{ name: "--o", args: {}, requiresSeparator: "=" }],
+    }),
+  ).toThrow(
+    "Option `test --o` (index 0) requires the separator '=', but the parser doesn't read '--o=value' as the option with a value",
+  );
+});
+
+test("testing: test rejects an option name the parser splits at a separator", async () => {
+  const spec: Spec = {
+    name: "test",
+    description: "Does things.",
+    action: () => {},
+    options: [{ name: "--a=b", description: "An option." }],
+  };
+  expect(() => parse(["--a=b"], spec)).toThrow();
+  await expect(Testing.test(spec)()).rejects.toThrow("has the name '--a=b'");
+});
