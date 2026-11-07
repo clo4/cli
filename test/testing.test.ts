@@ -700,6 +700,25 @@ test("testing: assertOptionNameReferencesExist", () => {
   ).toThrow();
 });
 
+test("testing: assertOptionNameReferencesExist checks a persistent option where it's used", () => {
+  const spec = (reference: "dependsOn" | "exclusiveOn"): Subcommand => ({
+    name: "test",
+    options: [{ name: "--a", isPersistent: true, [reference]: ["--b"] }, { name: "--b" }],
+    subcommands: [{ name: "sub" }],
+  });
+  expect(() => Testing.assertOptionNameReferencesExist(spec("dependsOn"))).toThrow(
+    `In \`test sub\`, option \`test --a\` (index 0) depends on an option named "--b", which doesn't exist in its scope`,
+  );
+  expect(() => Testing.assertOptionNameReferencesExist(spec("exclusiveOn"))).toThrow(
+    `In \`test sub\`, option \`test --a\` (index 0) is exclusive on an option named "--b", which doesn't exist in its scope`,
+  );
+  // The subcommand has its own '--b'.
+  Testing.assertOptionNameReferencesExist({
+    ...spec("dependsOn"),
+    subcommands: [{ name: "sub", options: [{ name: "--b" }] }],
+  });
+});
+
 test("testing: assertRequiredSeparatorsAreUsable", () => {
   const option = (requiresSeparator: true | string, isPersistent = false): Option => ({
     name: "--o",

@@ -591,24 +591,21 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
 
 /**
  * Asserts that references to other options by name actually refer to options
- * that exist in scope
+ * that exist in scope, at every command the option can be used in
  */
 export function assertOptionNameReferencesExist(spec: Subcommand): void {
-  forEachOptionArray(spec, (options, path) => {
-    const scope = OptionScope.at(path);
-    for (const [index, option] of makeArray(options).entries()) {
-      for (const name of makeArray(option.dependsOn)) {
-        assert(
-          scope.resolve(name) !== null,
-          `The option ${namedArrayToString(...path, option)} (index ${index}) depends on an option named ${repr(name)}, which doesn't exist in its scope`,
-        );
-      }
-      for (const name of makeArray(option.exclusiveOn)) {
-        assert(
-          scope.resolve(name) !== null,
-          `The option ${namedArrayToString(...path, option)} (index ${index}) is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
-        );
-      }
+  forEachOptionInScope(spec, (option, where, scope) => {
+    for (const name of makeArray(option.dependsOn)) {
+      assert(
+        scope.resolve(name) !== null,
+        `${where} depends on an option named ${repr(name)}, which doesn't exist in its scope`,
+      );
+    }
+    for (const name of makeArray(option.exclusiveOn)) {
+      assert(
+        scope.resolve(name) !== null,
+        `${where} is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
+      );
     }
   });
 }
