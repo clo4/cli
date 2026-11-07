@@ -1,4 +1,5 @@
 import type { CommandPath } from "./types.js";
+import type { Choice } from "./suggest.js";
 
 const repr = JSON.stringify as (str: string) => string;
 
@@ -9,7 +10,7 @@ export interface ErrorContext {
 /** What the user typed, and the names they could have meant. */
 export interface DidYouMean {
   input: string;
-  choices: readonly string[];
+  choices: readonly Choice[];
 }
 
 /**
@@ -30,7 +31,7 @@ export class ParseError extends Error {
 
 export class UnknownOption extends ParseError {
   readonly option: string;
-  constructor(option: string, validOptions: readonly string[], context: ErrorContext) {
+  constructor(option: string, validOptions: readonly Choice[], context: ErrorContext) {
     const msg = `${repr(option)} looks like a flag, but is unknown in this context`;
     super(context, msg, { input: option, choices: validOptions });
     this.option = option;

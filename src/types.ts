@@ -81,7 +81,8 @@ export interface ActionInit {
     /** Suggest the closest choice for an incorrect input. */
     didYouMean?: {
       input: string;
-      choices: readonly string[];
+      /** Names to suggest. The names in one array are one command or option. */
+      choices: readonly (string | readonly string[])[];
     };
 
     /** Alternative command path to render help for. */

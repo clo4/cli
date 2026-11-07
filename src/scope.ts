@@ -82,10 +82,10 @@ export class OptionScope {
     return { local: pick(this.local), persistent: pick(this.persistent) };
   }
 
-  /** Every name a user could have meant, for "did you mean" suggestions. */
-  suggestionNames(): string[] {
+  /** The live names of each option a user could have meant, for "did you mean" suggestions. */
+  suggestionNames(): string[][] {
     const { local, persistent } = this.visible();
-    return [...local, ...persistent].flatMap((visible) => visible.names);
+    return [...local, ...persistent].map((visible) => visible.names);
   }
 
   /** The options that must be used, local first. */

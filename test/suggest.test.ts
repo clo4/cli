@@ -38,3 +38,12 @@ test("suggest: nothing for unrelated or very short input", () => {
 test("suggest: the first of equally close choices wins", () => {
   expect(closestChoice("cat", ["bat", "cap"])).toBe("bat");
 });
+
+test("suggest: the names of one command or option are one choice", () => {
+  const remote = ["remote", "rem"];
+  expect(closestChoice("re", [remote, "build"])).toBe("remote");
+  expect(closestChoice("re", [remote, "rebase"])).toBeUndefined();
+  expect(closestChoice("--col", [["--color", "--colour"], "--verbose"])).toBe("--color");
+  expect(closestChoice("--clr", [["--color", "--colour"]])).toBe("--color");
+  expect(closestChoice("rmeote", [remote])).toBe("remote");
+});

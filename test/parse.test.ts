@@ -1207,7 +1207,7 @@ test("parse: an unknown option lists the valid names and the command it was foun
   // the options they refer to are defined. The parent's non-persistent option
   // isn't valid in the subcommand, and its `--g` is shadowed by the
   // subcommand's.
-  expect((error as UnknownOption).didYouMean?.choices).toEqual(["--x", "--g2", "--g"]);
+  expect((error as UnknownOption).didYouMean?.choices).toEqual([["--x"], ["--g2"], ["--g"]]);
   expect((error as UnknownOption).context.path).toEqual([spec, sub]);
 });
 
@@ -1217,7 +1217,7 @@ test("parse: an unknown option doesn't suggest hidden options", () => {
     options: [{ name: "--secret-mode", hidden: true }, { name: "--verbose" }],
   };
   const error = thrown(() => parse(["--secret-mod"], spec));
-  expect((error as UnknownOption).didYouMean?.choices).toEqual(["--verbose"]);
+  expect((error as UnknownOption).didYouMean?.choices).toEqual([["--verbose"]]);
 });
 
 test("parse: missing argument messages describe the expected count", () => {
@@ -1421,7 +1421,7 @@ test("parse: a command that requires a subcommand reports a stray argument as an
   const error = thrown(() => parse(["ad", "extra"], spec));
   expect(error).toBeInstanceOf(ParseError);
   expect((error as ParseError).message).toBe("Unknown command 'ad'");
-  expect((error as ParseError).didYouMean).toEqual({ input: "ad", choices: ["add"] });
+  expect((error as ParseError).didYouMean).toEqual({ input: "ad", choices: [["add"]] });
   expect(() => parse([""], spec)).toThrow("Expected a command, but the value was empty");
   // Its own action doesn't take the stray arguments either.
   expect(() => parse(["ad"], { ...spec, action: () => {} })).toThrow("Unknown command 'ad'");
@@ -1441,7 +1441,7 @@ test("parse: a command without room for arguments reports a mistyped subcommand"
   const spec: Spec = { name: "test", action: () => {}, subcommands: [{ name: "build" }] };
   const error = thrown(() => parse(["biuld"], spec));
   expect((error as ParseError).message).toBe("Unknown command 'biuld'");
-  expect((error as ParseError).didYouMean?.choices).toEqual(["build"]);
+  expect((error as ParseError).didYouMean?.choices).toEqual([["build"]]);
   // Once an argument is found, a later one is just too many.
   const withArg: Spec = { ...spec, args: {} };
   expect(() => parse(["a", "b"], withArg)).toThrow(TooManyArguments);

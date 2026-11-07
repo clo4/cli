@@ -58,53 +58,58 @@ function editDistance(a: string, b: string, limit: number): number {
 }
 
 /**
- * The choice the user most likely meant by `input`, or `undefined` if none is
+ * A name to suggest, or every name of one command or option. The names of one
+ * command or option count as one choice, so an alias can't make a match
+ * ambiguous.
+ */
+export type Choice = string | readonly string[];
+
+/** The first name of the only choice with a name that `matches`, if exactly one has one. */
+function onlyMatch(choices: readonly Choice[], matches: (name: string) => boolean): string | undefined {
+  let match: string | undefined;
+  for (const choice of choices) {
+    const name = (typeof choice === "string" ? [choice] : choice).find(matches);
+    if (name === undefined) continue;
+    if (match !== undefined) return undefined;
+    match = name;
+  }
+  return match;
+}
+
+/**
+ * The name the user most likely meant by `input`, or `undefined` if none is
  * close enough to be worth suggesting. In order:
  *
  * 1. The only choice that starts with the input (`--verb` for `--verbose`).
  * 2. The only choice that contains every character of the input in order, for
  *    inputs of 3 or more characters (`bld` for `build`).
- * 3. The choice with the fewest edits, allowing one edit per three characters
+ * 3. The name with the fewest edits, allowing one edit per three characters
  *    of the input. Leading dashes don't count toward the length or the edits.
  */
-export function closestChoice(input: string, choices: readonly string[]): string | undefined {
+export function closestChoice(input: string, choices: readonly Choice[]): string | undefined {
   const inputDashes = dashCount(input);
   const bare = input.slice(inputDashes);
 
   if (bare.length >= 2) {
-    let match: string | undefined;
-    let count = 0;
-    for (const choice of choices) {
-      if (choice.startsWith(input)) {
-        match = choice;
-        count++;
-      }
-    }
-    if (count === 1) return match;
+    const match = onlyMatch(choices, (name) => name.startsWith(input));
+    if (match !== undefined) return match;
   }
 
   if (bare.length >= 3) {
-    let match: string | undefined;
-    let count = 0;
-    for (const choice of choices) {
-      if (isAbbreviation(bare, choice.slice(dashCount(choice)))) {
-        match = choice;
-        count++;
-      }
-    }
-    if (count === 1) return match;
+    const match = onlyMatch(choices, (name) => isAbbreviation(bare, name.slice(dashCount(name))));
+    if (match !== undefined) return match;
   }
 
   let best: string | undefined;
   let limit = Math.floor(bare.length / 3);
-  for (const choice of choices) {
-    const other = choice.slice(dashCount(choice));
+  for (const name of choices.flat()) {
+    const other = name.slice(dashCount(name));
     // The length difference is a lower bound on the number of edits.
     if (Math.abs(other.length - bare.length) > limit) continue;
     const distance = editDistance(bare, other, limit);
     if (distance <= limit && (best === undefined || distance < limit)) {
-      best = choice;
-      // Later choices have to be strictly closer to replace this one.
+      best = name;
+      // Later names have to be strictly closer to replace this one.
       limit = distance;
       if (distance === 0) break;
     }

@@ -58,7 +58,7 @@ export function noSubcommandMatch(
       return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
     }
   }
-  const choices = visibleSubcommands(subcommands).flatMap((command) => asArray(command.name));
+  const choices = visibleSubcommands(subcommands).map((command) => asArray(command.name));
   return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
 }
 
