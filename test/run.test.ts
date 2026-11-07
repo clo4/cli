@@ -4,8 +4,25 @@ import { help, helpCommand, printError, run } from "../src/index.js";
 import type { ActionInit, Spec } from "../src/types.js";
 import { captureConsole } from "./helpers.js";
 
-test("run: return 1 with no action", async () => {
-  await expect(run({ name: "test" }, [])).resolves.toBe(1);
+test("run: a spec without an action prints its help", async () => {
+  const result = await captureConsole(() => run({ name: "test", description: "DESCRIPTION" }, []));
+  expect(result.code).toBe(0);
+  expect(result.stdout).toMatch(/^DESCRIPTION\n\nUsage:\n {2}test/);
+  expect(result.stderr).toBe("");
+});
+
+test("run: a subcommand without an action prints its own help instead of running its parent's action", async () => {
+  const spec: Spec = {
+    name: "test",
+    action() {
+      throw new Error("the root action should not run");
+    },
+    subcommands: [{ name: "sub", description: "SUB_DESCRIPTION" }],
+  };
+  const result = await captureConsole(() => run(spec, ["sub"]));
+  expect(result.code).toBe(0);
+  expect(result.stdout).toMatch(/^SUB_DESCRIPTION\n\nUsage:\n {2}test sub/);
+  expect(result.stderr).toBe("");
 });
 
 test("run: return action result", async () => {

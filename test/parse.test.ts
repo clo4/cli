@@ -170,11 +170,28 @@ test("parse: the deepest command's action is picked", () => {
   expect(parse(["1", "2"], spec).action).toBe(actions[2]);
 });
 
-test("parse: a command without an action picks its nearest ancestor's", () => {
-  const action: Action = () => {};
-  const spec: Spec = { name: "test", action, subcommands: [{ name: "1", subcommands: [{ name: "2" }] }] };
-  expect(parse(["1", "2"], spec).action).toBe(action);
-  expect(parse(["1", "2"], { ...spec, action: undefined }).action).toBeUndefined();
+test("parse: a command without an action picks usage, never an ancestor's action", () => {
+  const spec: Spec = {
+    name: "test",
+    action: () => {},
+    subcommands: [{ name: "1", subcommands: [{ name: "2" }] }],
+  };
+  expect(parse(["1"], spec).action).toBe(usage);
+  expect(parse(["1", "2"], spec).action).toBe(usage);
+  expect(parse([], { name: "test" }).action).toBe(usage);
+});
+
+test("parse: a command without an action still checks its arguments and options", () => {
+  const spec: Spec = {
+    name: "test",
+    args: {},
+    options: [{ name: "--token", isRequired: true }],
+  };
+  expect(() => parse([], spec)).toThrow(TooFewArguments);
+  expect(() => parse(["a"], spec)).toThrow(MissingRequiredOption);
+  expect(parse(["a", "--token"], spec).action).toBe(usage);
+  // Only a command that requires a subcommand skips them, when none is named.
+  expect(parse([], { ...spec, args: undefined, requiresSubcommand: true }).action).toBe(usage);
 });
 
 test("parse: action on option is preferred to spec action", () => {

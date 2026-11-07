@@ -62,10 +62,7 @@ export function noSubcommandMatch(
   return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
 }
 
-/**
- * The action of a command that requires a subcommand and has no action of its
- * own, when the command line names no subcommand: print the command's help.
- */
+/** The action of a command that has none of its own: print the command's help. */
 export const usage: Action = ({ help }) => {
   print(help());
   return 0;

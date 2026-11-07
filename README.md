@@ -37,6 +37,8 @@ Specs define `args`, `options`, `subcommands`, and `action` functions. Parsing a
 
 Option actions override command actions. That lets helpers like `--help` run even when the selected command is missing required positional arguments.
 
+A command without an action prints its help, so a command that only groups subcommands doesn't need one. Running `demo` above prints the root help.
+
 Use `@clo4/cli/testing` in package tests to validate structural constraints that TypeScript cannot express, such as duplicate names, names the parser reads as something else, bad required/optional argument order, invalid repeatable options, and invalid option references.
 
 ## Shell completion

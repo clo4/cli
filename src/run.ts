@@ -10,9 +10,10 @@ export { printError };
 /**
  * Parse argv and execute the selected action.
  *
- * The final command action runs unless a parsed option has an action. Option
- * actions take precedence so helpers like `--help` can run without satisfying
- * the selected command's required arguments.
+ * The selected command's action runs unless a parsed option has an action.
+ * Option actions take precedence so helpers like `--help` can run without
+ * satisfying the selected command's required arguments. A command without an
+ * action prints its help.
  */
 export async function run(spec: Spec, args: readonly string[] = defaultArgs()): Promise<number> {
   let result: ParseResult;
@@ -29,10 +30,6 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
   }
 
   const { action } = result;
-  if (!action) {
-    return 1;
-  }
-
   const options = result.options;
   const actionInit: ActionInit = {
     help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),

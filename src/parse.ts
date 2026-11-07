@@ -20,10 +20,10 @@ export interface ParseResult {
   options: Map<string, string[]>;
   path: CommandPath;
   /**
-   * The action to run: the last option action used, or else the action of the
-   * deepest command that has one.
+   * The action to run: the last option action used, or else the selected
+   * command's action. A command without an action prints its help.
    */
-  action: Action | undefined;
+  action: Action;
 }
 
 /** What the token after a command line can be, as the parser would read it. */
@@ -165,9 +165,7 @@ export function checkOptionRules(
  */
 class Scanner {
   readonly path: [Spec, ...Subcommand[]];
-  // The action of the deepest command that has one, and the last option
-  // action used.
-  private commandAction: Action | undefined = undefined;
+  // The last option action used.
   private optionAction: Action | undefined = undefined;
   readonly args: string[] = [];
   readonly options: Map<string, string[]> = new Map();
@@ -238,11 +236,6 @@ class Scanner {
     this.subcommands = command.subcommands;
     this.commandArgsMin = getMinArgs(command.args);
     this.commandArgsMax = getMaxArgs(command.args);
-    if (command.action) {
-      this.commandAction = command.action;
-    } else if (command.requiresSubcommand) {
-      this.commandAction = builtinUsageAction;
-    }
   }
 
   private findOption(name: string): Option | null {
@@ -536,7 +529,7 @@ class Scanner {
    * Throw if the finished command line is missing anything. Returns the action
    * to run.
    */
-  finish(): Action | undefined {
+  finish(): Action {
     // An option with an action, like --help, works however the rest of the
     // command line is wrong, as long as every token could be read. So does the
     // usage a command shows when no subcommand is named.
@@ -551,7 +544,7 @@ class Scanner {
     if (!skipsChecks) {
       checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
     }
-    return this.optionAction ?? this.commandAction;
+    return this.optionAction ?? command.action ?? builtinUsageAction;
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */

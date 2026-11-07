@@ -140,10 +140,16 @@ export interface Subcommand {
   /** Hide this command from help. */
   hidden?: true;
 
-  /** Require a subcommand; without one, print usage. */
+  /**
+   * Require a subcommand, so the command takes no arguments. Without a
+   * subcommand, the command's action runs, or its help prints if it has none.
+   */
   requiresSubcommand?: true;
 
-  /** Action to run when this command is selected. */
+  /**
+   * Action to run when this command is selected. A command without an action
+   * prints its help.
+   */
   action?: Action;
 
   /**
