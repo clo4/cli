@@ -11,7 +11,7 @@ import {
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
-import { OptionScope } from "./scope.js";
+import { OptionScope, optionKey } from "./scope.js";
 import { matchSubcommand, noSubcommandMatch, usage as builtinUsageAction } from "./subcommands.js";
 
 export interface ParseResult {
@@ -128,21 +128,6 @@ interface RepeatedUses {
   count: number;
 }
 
-const namesKeys = new WeakMap<Option, string>();
-
-/**
- * A key for the set of `option`'s names. Options with the same names, in any
- * order, get the same key.
- */
-function namesKey(option: Option): string {
-  let key = namesKeys.get(option);
-  if (key === undefined) {
-    key = typeof option.name === "string" ? option.name : [...option.name].sort().join("\0");
-    namesKeys.set(option, key);
-  }
-  return key;
-}
-
 /**
  * Throw if the options used break a `dependsOn` or `exclusiveOn` rule, or if
  * any of `required` is missing.
@@ -233,7 +218,7 @@ class Scanner {
   // action like --help allows it.
   private tooManyArgs: ParseError | null = null;
 
-  // The uses of each repeatable option, keyed by its names (see `namesKey`).
+  // The uses of each repeatable option, keyed by `optionKey`.
   // A subcommand's copy of a parent's option has the same names, so it
   // continues the parent's uses. An option with other names, even a subset,
   // has uses of its own.
@@ -309,7 +294,7 @@ class Scanner {
       // A repeatable option collects the values from every use. Without
       // arguments, each use adds an empty string, so the values count the uses.
       const maxRepeat = option.isRepeatable === true ? Infinity : option.isRepeatable;
-      const key = namesKey(option);
+      const key = optionKey(option);
       let uses = this.repeatedUses.get(key);
       if (!uses) {
         uses = { values: [], count: 0 };
@@ -583,7 +568,7 @@ class Scanner {
     const names = asArray(option.name);
     const options = this.options;
     if (typeof option.isRepeatable === "number") {
-      if ((this.repeatedUses.get(namesKey(option))?.count ?? 0) >= option.isRepeatable) return true;
+      if ((this.repeatedUses.get(optionKey(option))?.count ?? 0) >= option.isRepeatable) return true;
     }
     if (option.exclusiveOn?.some((name) => options.has(name))) return true;
     return this.seenOptions.some((seen) => seen.exclusiveOn?.some((name) => names.includes(name)));
@@ -591,7 +576,7 @@ class Scanner {
 
   /** The options the next token can use. See {@link NextToken.options}. */
   private usableOptions(): UsableOption[] {
-    const used = new Set(this.seenOptions.map(namesKey));
+    const used = new Set(this.seenOptions.map(optionKey));
     const { local, persistent } = this.scope.live();
     const usable: UsableOption[] = [];
     for (const { option, names } of [...local, ...persistent]) {
@@ -603,7 +588,7 @@ class Scanner {
         option,
         names: typeable,
         separator: this.scope.requiredSeparator(option),
-        used: used.has(namesKey(option)),
+        used: used.has(optionKey(option)),
       });
     }
     return usable;

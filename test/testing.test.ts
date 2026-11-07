@@ -475,6 +475,17 @@ test("testing: assertCommonOptionsArePersistent", () => {
       ],
     }),
   ).toThrow();
+  // Options with the same names in another order are the same option.
+  expect(() =>
+    Testing.assertCommonOptionsArePersistent({
+      name: "test",
+      options: [{ name: ["a", "b"] }],
+      subcommands: [
+        { name: "subcommand", options: [{ name: ["b", "a"] }] },
+        { name: "another", options: [{ name: ["a", "b"] }] },
+      ],
+    }),
+  ).toThrow();
   expect(() =>
     Testing.assertCommonOptionsArePersistent({
       name: "test",

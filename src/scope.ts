@@ -110,6 +110,25 @@ export class OptionScope {
   }
 }
 
+const optionKeys = new WeakMap<Option, string>();
+
+/**
+ * A key for the set of `option`'s names. Options with the same names, in any
+ * order, get the same key and are one option: the parser continues a
+ * repeatable option's uses across them, counts one as used when the other was,
+ * and stores their values under the same names, which is how they're read.
+ * Options that share only some names are different options, and each shared
+ * name refers to whichever one `resolve` picks.
+ */
+export function optionKey(option: Option): string {
+  let key = optionKeys.get(option);
+  if (key === undefined) {
+    key = typeof option.name === "string" ? option.name : [...option.name].sort().join("\0");
+    optionKeys.set(option, key);
+  }
+  return key;
+}
+
 function hasName(names: string | readonly string[], name: string): boolean {
   return typeof names === "string" ? names === name : names.includes(name);
 }

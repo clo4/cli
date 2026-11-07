@@ -5,8 +5,8 @@
  */
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
-import { assert, getMaxArgs, getMinArgs, isArray, makeArray } from "./util.js";
-import { OptionScope } from "./scope.js";
+import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
+import { OptionScope, optionKey } from "./scope.js";
 import { readToken } from "./parse.js";
 import type { TokenReading } from "./parse.js";
 
@@ -55,15 +55,6 @@ function joinNames(names: SingleOrArray<string>) {
   return makeArray(names)
     .sort((a, b) => a.length - b.length)
     .join("|");
-}
-
-function isSameName(a: string | readonly string[], b: string | readonly string[]) {
-  if (isArray(a) && isArray(b)) {
-    return a.every((item) => b.includes(item)) && b.every((item) => a.includes(item));
-  }
-  // This might compare a string to an array, but if that happens the correct
-  // result is `false` anyway, so this behaves correctly
-  return a === b;
 }
 
 /** Compares spec values by shape. Any two functions count as the same shape. */
@@ -213,7 +204,8 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
  * Asserts that a subcommand's option isn't a different option with exactly the
  * same names as one on a parent.
  *
- * Parsed values are looked up by name, so that parent's value would be
+ * The parser treats options with the same names, in any order, as one option,
+ * and parsed values are looked up by name, so that parent's value would be
  * unreadable. A shared name is fine when each option has a name of its own, and
  * when the options are identical, such as an option kept in a constant.
  *
@@ -230,7 +222,7 @@ export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): vo
       for (const parentOption of makeArray(parent.options)) {
         const isClash =
           !parentOption.isPersistent &&
-          isSameName(parentOption.name, option.name) &&
+          optionKey(parentOption) === optionKey(option) &&
           !isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 });
         assert(
           !isClash,
@@ -449,7 +441,7 @@ export function assertNamesReadBack(spec: Subcommand): void {
 }
 
 export function assertCommonOptionsArePersistent(spec: Subcommand): void {
-  const failures: [string | readonly string[], string][] = [];
+  const failures: [string, string][] = [];
   forEachSubcommand(spec, (subcommand, path) => {
     if (!subcommand.subcommands) {
       return;
@@ -458,12 +450,13 @@ export function assertCommonOptionsArePersistent(spec: Subcommand): void {
       const allChildSubcommands: Subcommand[] = [];
       forEachSubcommand(subcommand, (cmd) => allChildSubcommands.push(cmd));
 
+      const key = optionKey(option);
       const allShareOption = allChildSubcommands.every((cmd) =>
-        makeArray(cmd.options).some((o) => isSameName(option.name, o.name)),
+        makeArray(cmd.options).some((o) => optionKey(o) === key),
       );
 
-      if (allShareOption && !failures.some(([name]) => isSameName(name, option.name))) {
-        failures.push([option.name, namedArrayToString(...path, option)]);
+      if (allShareOption && !failures.some(([failed]) => failed === key)) {
+        failures.push([key, namedArrayToString(...path, option)]);
       }
     }
   });
