@@ -6,6 +6,7 @@
 
 import type { Arg, Option, SingleOrArray, Subcommand } from "./types.js";
 import { assert, isArray, makeArray } from "./util.js";
+import { directivesFor } from "./directives.js";
 import { getMaxArgs, getMinArgs } from "./parse.js";
 
 const repr = JSON.stringify;
@@ -523,13 +524,9 @@ export function assertOptionNameReferencesExist(spec: Subcommand): void {
  */
 export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void {
   forEachSubcommand(spec, (subcommand, path) => {
-    // Mirror the parser's default: prefix matching is OFF unless a command on
-    // the path turns it on. `scan` in parse.ts initializes the flag to `false` and
-    // only ever sets it `true`, so the ambiguity this guards against can only
-    // arise when some ancestor (or the command itself) opts in.
-    const matchesPrefix = path.some((cmd) => cmd.parserDirectives?.subcommandsMatchUniquePrefix === true);
-
-    if (!matchesPrefix) return;
+    // The path ends at this command, so this is the setting that decides how
+    // its own subcommands are matched.
+    if (!directivesFor(path).subcommandsMatchUniquePrefix) return;
 
     assert(
       !(subcommand.subcommands && subcommand.args),

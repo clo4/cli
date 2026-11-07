@@ -739,6 +739,21 @@ test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
   ).toThrow();
 });
 
+test("testing: assertPrefixMatchCommandsHaveNoArguments respects a subcommand turning prefix matching off", () => {
+  Testing.assertPrefixMatchCommandsHaveNoArguments({
+    name: "test",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      {
+        name: "a",
+        args: { name: "args" },
+        parserDirectives: { subcommandsMatchUniquePrefix: false },
+        subcommands: [{ name: "b" }],
+      },
+    ],
+  });
+});
+
 test("testing: testSpec runs all default steps with sentence names", async () => {
   const steps = await collectSteps(validSpec());
   expect(steps).toEqual([
