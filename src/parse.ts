@@ -262,6 +262,10 @@ class Scanner {
   private valuesMax = 0;
   private requiredSeparator: string | boolean = false;
 
+  // The first argument past the command's limit. It's only an error once the
+  // whole line is read, because an option action like --help allows it.
+  private tooManyArgs: ParseError | null = null;
+
   // How many times each repeatable option has been used, keyed by the array
   // its names share in `options`.
   readonly repeatCounts: Map<string[], number> = new Map();
@@ -423,7 +427,7 @@ class Scanner {
     // a subcommand)
     const path = this.path;
     if (this.strict && !path[path.length - 1].requiresSubcommand && this.args.length >= this.commandArgsMax) {
-      throw new TooManyArguments({ value, index }, this.ctx());
+      this.tooManyArgs ??= new TooManyArguments({ value, index }, this.ctx());
     }
     this.args.push(value);
   }
@@ -432,7 +436,10 @@ class Scanner {
   argSeparator(input: readonly string[], index: number): void {
     this.closeOption();
     if (this.strict && this.args.length >= this.commandArgsMax) {
-      throw new ParseError(this.ctx(), "Unexpected argument '--', did you mean to use an option instead?");
+      this.tooManyArgs ??= new ParseError(
+        this.ctx(),
+        "Unexpected argument '--', did you mean to use an option instead?",
+      );
     }
     this.argSeparatorIndex = this.args.length;
     for (index += 1; index < input.length; index++) {
@@ -550,15 +557,21 @@ class Scanner {
 
   /** Throw if the finished command line is missing anything. */
   finish(): void {
-    // An option with an action, like --help, works without the command's
-    // arguments or required options.
+    // An option with an action, like --help, works however the rest of the
+    // command line is wrong, as long as every token could be read.
     const hasOptionAction = this.optionActions.length > 0;
+    if (!hasOptionAction && this.tooManyArgs) throw this.tooManyArgs;
     if (!hasOptionAction && this.args.length < this.commandArgsMin) {
       throw new TooFewArguments(this.commandArgsMin, this.commandArgsMax, this.ctx());
     }
     this.endOption();
-    const required = hasOptionAction ? [] : [...this.localRequired, ...this.persistentRequired];
-    checkOptionRules(this.options, this.seenOptions, required, this.ctx());
+    if (hasOptionAction) return;
+    checkOptionRules(
+      this.options,
+      this.seenOptions,
+      [...this.localRequired, ...this.persistentRequired],
+      this.ctx(),
+    );
   }
 }
 

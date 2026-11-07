@@ -1439,3 +1439,22 @@ test("parse: requiresSeparator true rejects a short option's unseparated value",
   expect(parse(["-o=val"], spec).options).toEqual(map({ "-o": ["val"] }));
   expect(() => parse(["-oval"], spec)).toThrow("Missing separator, use '=' between -o and its value");
 });
+
+test("parse: an option action skips argument count and option relationship checks", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "--help", action: () => {} },
+      { name: "--a", dependsOn: ["--b"] },
+      { name: "--b" },
+      { name: "--c", exclusiveOn: ["--b"] },
+    ],
+  };
+  expect(parse(["a", "b", "--help"], spec).optionActions).toHaveLength(1);
+  expect(parse(["--help", "--a"], spec).optionActions).toHaveLength(1);
+  expect(parse(["--help", "--b", "--c"], spec).optionActions).toHaveLength(1);
+  // Without the action, each of these is still an error.
+  expect(() => parse(["a"], spec)).toThrow(TooManyArguments);
+  expect(() => parse(["--a"], spec)).toThrow("--a requires --b");
+  expect(() => parse(["--b", "--c"], spec)).toThrow("--c can't be used together with --b");
+});
