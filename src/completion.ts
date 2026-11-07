@@ -13,7 +13,8 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { makeArray, print, printError } from "./util.js";
+import { makeArray, print } from "./util.js";
+import { printUsageError } from "./help.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import type { Directives } from "./directives.js";
@@ -322,19 +323,15 @@ export const completion: Subcommand = {
     suggestions: SHELLS,
   },
   subcommands: [completeCommand],
-  action({ path: [spec], args: [shell], help }) {
+  action({ path, args: [shell] }) {
+    const spec = path[0] as Spec;
     if (shell === undefined) {
       print(`Supported shells: ${SHELLS.join(", ")}`);
       return 0;
     }
 
     if (!isShell(shell)) {
-      printError(
-        `Unsupported shell '${shell}'\n\n${help({
-          description: false,
-          didYouMean: { input: shell, choices: SHELLS as string[] },
-        })}`,
-      );
+      printUsageError(path, `Unsupported shell '${shell}'`, { input: shell, choices: SHELLS });
       return 1;
     }
 

@@ -6,11 +6,24 @@ export interface ErrorContext {
   path: CommandPath;
 }
 
+/** What the user typed, and the names they could have meant. */
+export interface DidYouMean {
+  input: string;
+  choices: readonly string[];
+}
+
+/**
+ * A command line the parser can't accept. `run` prints the message with the
+ * help for the command at `context.path`, and suggests the closest of
+ * `didYouMean.choices` if there is one.
+ */
 export class ParseError extends Error {
   readonly context: ErrorContext;
-  constructor(context: ErrorContext, ...args: ConstructorParameters<ErrorConstructor>) {
-    super(...args);
+  readonly didYouMean: DidYouMean | undefined;
+  constructor(context: ErrorContext, message: string, didYouMean?: DidYouMean) {
+    super(message);
     this.context = context;
+    this.didYouMean = didYouMean;
     this.name = this.constructor.name;
   }
 }
@@ -20,15 +33,13 @@ export class UnknownOption extends ParseError {
   readonly start: number;
   readonly end: number;
   readonly option: string;
-  readonly validOptions: string[];
   constructor(
     found: { option: string; validOptions: string[]; index: number; start: number; end: number },
     context: ErrorContext,
   ) {
     const msg = `${repr(found.option)} looks like a flag, but is unknown in this context`;
-    super(context, msg);
+    super(context, msg, { input: found.option, choices: found.validOptions });
     this.option = found.option;
-    this.validOptions = found.validOptions;
     this.index = found.index;
     this.start = found.start;
     this.end = found.end;

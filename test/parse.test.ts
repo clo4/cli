@@ -1207,7 +1207,7 @@ test("parse: an unknown option lists the valid names and the command it was foun
   // the options they refer to are defined. The parent's non-persistent option
   // isn't valid in the subcommand, and its `--g` is shadowed by the
   // subcommand's.
-  expect((error as UnknownOption).validOptions).toEqual(["--x", "--g2", "--g"]);
+  expect((error as UnknownOption).didYouMean?.choices).toEqual(["--x", "--g2", "--g"]);
   expect((error as UnknownOption).context.path).toEqual([spec, sub]);
 });
 
@@ -1217,7 +1217,7 @@ test("parse: an unknown option doesn't suggest hidden options", () => {
     options: [{ name: "--secret-mode", hidden: true }, { name: "--verbose" }],
   };
   const error = thrown(() => parse(["--secret-mod"], spec));
-  expect((error as UnknownOption).validOptions).toEqual(["--verbose"]);
+  expect((error as UnknownOption).didYouMean?.choices).toEqual(["--verbose"]);
 });
 
 test("parse: missing argument messages describe the expected count", () => {

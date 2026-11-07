@@ -1,6 +1,6 @@
 import type { ActionInit, Spec } from "./types.js";
-import { getHelp } from "./help.js";
-import { ParseError, UnknownOption } from "./errors.js";
+import { getHelp, printUsageError } from "./help.js";
+import { ParseError } from "./errors.js";
 import { parse } from "./parse.js";
 import { printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
@@ -20,17 +20,8 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
   try {
     result = parse(args, spec);
   } catch (error: unknown) {
-    if (error instanceof UnknownOption) {
-      const helpMessage = getHelp(error.context.path, {
-        description: false,
-        didYouMean: {
-          input: error.option,
-          choices: error.validOptions,
-        },
-      });
-      printError(`${error.message}\n\n${helpMessage}`);
-    } else if (error instanceof ParseError) {
-      printError(`${error.message}\n\n${getHelp(error.context.path, { description: false })}`);
+    if (error instanceof ParseError) {
+      printUsageError(error.context.path, error.message, error.didYouMean);
     } else {
       printError(`${error}`);
     }

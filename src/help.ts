@@ -4,6 +4,7 @@ import { closestChoice } from "./suggest.js";
 import { matchSubcommand, prefixMatches } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { VisibleOption } from "./scope.js";
+import type { DidYouMean } from "./errors.js";
 import { makeArray, makeArray1, print, printError } from "./util.js";
 
 function dedent(str: string) {
@@ -21,10 +22,7 @@ export interface HelpConfig {
   usage?: boolean;
 
   /** Ask if the user intended the input to be one of these choices. */
-  didYouMean?: {
-    input: string;
-    choices: readonly string[];
-  };
+  didYouMean?: DidYouMean;
 }
 
 /** Get the help message used by the built-in help option and command. */
@@ -44,6 +42,18 @@ export function getHelp(path: NonEmptyArray<Subcommand>, config: HelpConfig = {}
 }
 
 /**
+ * Print `message` as an error, then the usage and flags of the last command on
+ * `path`, suggesting the closest of `didYouMean.choices` if one is close.
+ */
+export function printUsageError(
+  path: NonEmptyArray<Subcommand>,
+  message: string,
+  didYouMean?: DidYouMean,
+): void {
+  printError(`${message}\n\n${getHelp(path, { description: false, didYouMean })}`);
+}
+
+/**
  * Action that prints usage for commands where a subcommand must be provided.
  */
 export const usage: Action = ({ path, args: [command], help }) => {
@@ -53,7 +63,7 @@ export const usage: Action = ({ path, args: [command], help }) => {
   }
 
   if (command === "") {
-    printError(`Expected a command, but the value was empty\n\n${help({ description: false })}`);
+    printUsageError(path, "Expected a command, but the value was empty");
     return 1;
   }
 
@@ -70,27 +80,15 @@ export const usage: Action = ({ path, args: [command], help }) => {
         )
       : [];
     if (possible.length > 0) {
-      printError(
-        `Ambiguous command '${command}', could be: ${possible.join(", ")}\n\n${help({
-          description: false,
-        })}`,
-      );
+      printUsageError(path, `Ambiguous command '${command}', could be: ${possible.join(", ")}`);
       return 1;
     }
 
-    printError(
-      `Unknown command '${command}'\n\n${help({
-        description: false,
-        didYouMean: {
-          input: command,
-          choices: visibleNames,
-        },
-      })}`,
-    );
+    printUsageError(path, `Unknown command '${command}'`, { input: command, choices: visibleNames });
     return 1;
   }
 
-  printError(`Unknown command '${command}'\n\n${help({ description: false })}`);
+  printUsageError(path, `Unknown command '${command}'`);
 
   return 1;
 };
@@ -114,12 +112,7 @@ export const helpCommand: Subcommand = {
     const parent = path[path.length - 2];
 
     if (!parent.subcommands) {
-      printError(
-        `No subcommands, try using 'help' with nothing after it\n\n${help({
-          description: false,
-          path: helpRoot,
-        })}`,
-      );
+      printUsageError(helpRoot, "No subcommands, try using 'help' with nothing after it");
       return 1;
     }
 
@@ -128,26 +121,10 @@ export const helpCommand: Subcommand = {
     const command = matchSubcommand(parent.subcommands, commandName, matchPrefix);
     if (!command) {
       const subcommands = parent.subcommands.filter((cmd) => !cmd.hidden).flatMap((cmd) => cmd.name);
-
-      if (subcommands.length > 0) {
-        printError(
-          `There is no subcommand named '${commandName}'\n\n${help({
-            path: helpRoot,
-            didYouMean: {
-              input: commandName,
-              choices: subcommands,
-            },
-          })}`,
-        );
-        return 1;
-      }
-
-      printError(
-        `There is no subcommand named '${commandName}'\n\n${help({
-          description: false,
-          path: helpRoot,
-        })}`,
-      );
+      printUsageError(helpRoot, `There is no subcommand named '${commandName}'`, {
+        input: commandName,
+        choices: subcommands,
+      });
       return 1;
     }
 
