@@ -25,7 +25,9 @@ export function defaultDirectives(): Directives {
  */
 export function applyDirectives(directives: Directives, command: Spec | Subcommand): void {
   const configured = command.parserDirectives;
-  if (!configured) return;
+  if (!configured) {
+    return;
+  }
   if (configured.optionArgSeparators) {
     directives.optionArgSeparators = asArray(configured.optionArgSeparators);
   }

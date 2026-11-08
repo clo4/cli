@@ -22,8 +22,11 @@ export async function captureConsole(
   // The library writes to the file descriptors directly; actions use console.
   const originalWrite = output.write;
   output.write = (fd, text) => {
-    if (fd === 1) stdout += text;
-    else stderr += text;
+    if (fd === 1) {
+      stdout += text;
+    } else {
+      stderr += text;
+    }
   };
   try {
     const code = await fn();

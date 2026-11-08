@@ -25,7 +25,9 @@ import type { AnyNextToken } from "./fuzz/snapshot.js";
 const ref = process.env.FUZZ_AGAINST;
 const dir = ref ? mkdtempSync(join(tmpdir(), "clo4-cli-fuzz-")) : "";
 afterAll(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true });
+  if (dir) {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () => {
@@ -53,9 +55,13 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
       sameAction,
       OPTION_NAMES,
     );
-    if (diff) return `parse: ${diff}`;
+    if (diff) {
+      return `parse: ${diff}`;
+    }
     // Versions before readNext only have `parse` to compare.
-    if (!theirs.readNext) return null;
+    if (!theirs.readNext) {
+      return null;
+    }
     const next = nextDifference(readNext(spec, input, partial), theirs.readNext(spec, input, partial));
     return next && `readNext: ${next}`;
   };
@@ -65,7 +71,9 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
     const spec = gen.spec();
     const input = gen.input(spec);
     const partial = gen.input(spec)[0] ?? "";
-    if (differs(spec, input, partial) === null) continue;
+    if (differs(spec, input, partial) === null) {
+      continue;
+    }
     const small = shrink(spec, input, (s, i) => differs(s, i, partial) !== null);
     expect.fail(
       report(

@@ -6,7 +6,9 @@ export function isArray<T>(o: T | readonly T[]): o is readonly T[] {
 
 /** Convert the value, if any, to an array with 0 or more elements */
 export function makeArray<T>(thing: T | readonly T[] | undefined): T[] {
-  if (thing === undefined) return [];
+  if (thing === undefined) {
+    return [];
+  }
   if (isArray(thing)) {
     return thing.slice();
   }
@@ -19,8 +21,12 @@ export function makeArray<T>(thing: T | readonly T[] | undefined): T[] {
  * the hot path to avoid slicing read-only spec metadata.
  */
 export function asArray<T>(thing: T | readonly T[] | undefined): readonly T[] {
-  if (thing === undefined) return [];
-  if (isArray(thing)) return thing;
+  if (thing === undefined) {
+    return [];
+  }
+  if (isArray(thing)) {
+    return thing;
+  }
   return [thing];
 }
 
@@ -111,7 +117,9 @@ export function printError(...strings: unknown[]): void {
 export function addDefaults(values: string[], args: readonly Arg[], from = 0): void {
   for (let i = from; i < args.length; i++) {
     const value = args[i].default;
-    if (value === undefined) return;
+    if (value === undefined) {
+      return;
+    }
     values.push(value);
   }
 }
@@ -125,8 +133,12 @@ export function addDefaults(values: string[], args: readonly Arg[], from = 0): v
 export function getMinArgs(
   args: { isOptional?: boolean } | readonly { isOptional?: boolean }[] | undefined,
 ): number {
-  if (args === undefined) return 0;
-  if (!isArray(args)) return args.isOptional ? 0 : 1;
+  if (args === undefined) {
+    return 0;
+  }
+  if (!isArray(args)) {
+    return args.isOptional ? 0 : 1;
+  }
   let count = 0;
   for (let i = 0; i < args.length; i++) {
     if (args[i].isOptional) {
@@ -141,8 +153,12 @@ export function getMinArgs(
 export function getMaxArgs(
   args: { isVariadic?: boolean } | readonly { isVariadic?: boolean }[] | undefined,
 ): number {
-  if (args === undefined) return 0;
-  if (!isArray(args)) return args.isVariadic ? Infinity : 1;
+  if (args === undefined) {
+    return 0;
+  }
+  if (!isArray(args)) {
+    return args.isVariadic ? Infinity : 1;
+  }
   // Loop over the array backwards because variadic arguments are
   // more likely to be at the end of the array. They don't _need_
   // to be, but it's more idiomatic.

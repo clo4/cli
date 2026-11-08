@@ -101,7 +101,9 @@ export type TokenReading =
 /** The first of `separators` that `text` starts with, or "" if none. */
 function leadingSeparator(text: string, separators: readonly string[]): string {
   for (const sep of separators) {
-    if (text.startsWith(sep)) return sep;
+    if (text.startsWith(sep)) {
+      return sep;
+    }
   }
   return "";
 }
@@ -117,7 +119,9 @@ function firstSeparator(token: string, separators: readonly string[]): { index: 
   let index = -1;
   for (const candidate of separators) {
     const at = token.indexOf(candidate);
-    if (at === -1) continue;
+    if (at === -1) {
+      continue;
+    }
     if (index === -1 || at < index || (at === index && candidate.length > sep.length)) {
       sep = candidate;
       index = at;
@@ -143,7 +147,9 @@ function checkOptionRules(
   context: ErrorContext,
 ): void {
   for (const option of seenOptions) {
-    if (!option.dependsOn) continue;
+    if (!option.dependsOn) {
+      continue;
+    }
     for (const name of option.dependsOn) {
       if (!options.has(name)) {
         throw new ParseError(
@@ -154,7 +160,9 @@ function checkOptionRules(
     }
   }
   for (const option of seenOptions) {
-    if (!option.exclusiveOn) continue;
+    if (!option.exclusiveOn) {
+      continue;
+    }
     for (const name of option.exclusiveOn) {
       if (options.has(name)) {
         throw new ParseError(
@@ -166,7 +174,9 @@ function checkOptionRules(
   }
   for (const option of required) {
     for (const name of asArray(option.name)) {
-      if (!options.has(name)) throw new MissingRequiredOption(name, context);
+      if (!options.has(name)) {
+        throw new MissingRequiredOption(name, context);
+      }
     }
   }
 }
@@ -296,7 +306,9 @@ class Scanner {
     // Options that require a separator only take attached values.
     this.separateValueMax = option.requiresSeparator ? 0 : getMaxArgs(option.args);
     this.seenOptions.push(option);
-    if (option.action) this.optionAction = option.action;
+    if (option.action) {
+      this.optionAction = option.action;
+    }
     const names = asArray(option.name);
     const options = this.options;
 
@@ -316,7 +328,9 @@ class Scanner {
       }
       uses.count += 1;
       // Another option may have taken one of the names since the last use.
-      for (const other of names) options.set(other, uses.values);
+      for (const other of names) {
+        options.set(other, uses.values);
+      }
       if (!option.args) {
         uses.values.push("");
         return;
@@ -326,7 +340,9 @@ class Scanner {
       // The last use of an option wins, so a user can override a flag that a
       // shell alias already sets.
       optionValues = [];
-      for (const other of names) options.set(other, optionValues);
+      for (const other of names) {
+        options.set(other, optionValues);
+      }
     }
 
     this.valuesMin = this.valueMin;
@@ -346,7 +362,9 @@ class Scanner {
   private addValue(value: string, separator: string): boolean {
     this.valueCount += 1;
     if (!this.values) {
-      if (this.strict) throw new InvalidOptionArg(this.openOptionName, this.ctx());
+      if (this.strict) {
+        throw new InvalidOptionArg(this.openOptionName, this.ctx());
+      }
       return false;
     }
     const requiredSeparator = this.requiredSeparator;
@@ -428,8 +446,12 @@ class Scanner {
    * priority over a subcommand.
    */
   private get canMatchSubcommand(): boolean {
-    if (this.hasFoundArg) return false;
-    if (!this.subcommands && this.scope.inheritedSubcommands.length === 0) return false;
+    if (this.hasFoundArg) {
+      return false;
+    }
+    if (!this.subcommands && this.scope.inheritedSubcommands.length === 0) {
+      return false;
+    }
     return !(this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity));
   }
 
@@ -438,7 +460,9 @@ class Scanner {
    * none. Null if the next token can't be a subcommand at all.
    */
   private subcommandFor(token: string): SubcommandMatch | null {
-    if (!this.canMatchSubcommand) return null;
+    if (!this.canMatchSubcommand) {
+      return null;
+    }
     // A short optional value could be a prefix of a subcommand's name, so only
     // an exact match can end an option that still has room.
     return matchSubcommand(
@@ -482,12 +506,16 @@ class Scanner {
           this.addValue(token, "");
           return;
         }
-        if (this.strict) throw this.unknownOption(optionName);
+        if (this.strict) {
+          throw this.unknownOption(optionName);
+        }
         continue;
       }
 
       this.useOption(option, optionName);
-      if (char === token.length - 1) return;
+      if (char === token.length - 1) {
+        return;
+      }
 
       const sep = leadingSeparator(token.slice(char + 1), this.directives.optionArgSeparators);
       // An option without args still takes a separated value, so that `-v=1`
@@ -519,14 +547,18 @@ class Scanner {
     // POSIX-noncompliant option means that there's nothing "option-like". Any
     // token can be an option if it matches an option name, and if it's not an
     // option then it's just a regular argument.
-    if (this.directives.flagsArePosixNoncompliant) return false;
+    if (this.directives.flagsArePosixNoncompliant) {
+      return false;
+    }
     if (this.hasRoomForValue) {
       this.addValue(token, "");
       return true;
     }
     // The option is unknown and looks like a POSIX-compliant option, so
     // it's an unknown option instead of an arg.
-    if (this.strict) throw this.unknownOption(optionName);
+    if (this.strict) {
+      throw this.unknownOption(optionName);
+    }
     return true;
   }
 
@@ -565,7 +597,9 @@ class Scanner {
     const command = this.path[this.path.length - 1];
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionAction !== undefined || showsUsage;
-    if (!skipsChecks && this.tooManyArgs) throw this.tooManyArgs;
+    if (!skipsChecks && this.tooManyArgs) {
+      throw this.tooManyArgs;
+    }
     if (!skipsChecks && this.args.length < this.commandArgsMin) {
       throw new TooFewArguments(this.commandArgsMin, this.commandArgsMax, this.ctx());
     }
@@ -584,12 +618,16 @@ class Scanner {
 
   /** See {@link ParseResult.defaults}. */
   defaults(name: string): string[] | undefined {
-    if (this.options.has(name)) return undefined;
+    if (this.options.has(name)) {
+      return undefined;
+    }
     const args = asArray(this.scope.resolve(name)?.args);
     // An option whose first argument is optional, like `--inspect[=port]`,
     // means something different when it's left out than when it's bare, so
     // its defaults are only for the bare option.
-    if (args.length === 0 || args[0].isOptional) return undefined;
+    if (args.length === 0 || args[0].isOptional) {
+      return undefined;
+    }
     const values: string[] = [];
     addDefaults(values, args);
     return values.length > 0 ? values : undefined;
@@ -600,9 +638,13 @@ class Scanner {
     const names = asArray(option.name);
     const options = this.options;
     if (typeof option.isRepeatable === "number") {
-      if ((this.repeatedUses.get(optionKey(option))?.count ?? 0) >= option.isRepeatable) return true;
+      if ((this.repeatedUses.get(optionKey(option))?.count ?? 0) >= option.isRepeatable) {
+        return true;
+      }
     }
-    if (option.exclusiveOn?.some((name) => options.has(name))) return true;
+    if (option.exclusiveOn?.some((name) => options.has(name))) {
+      return true;
+    }
     return this.seenOptions.some((seen) => seen.exclusiveOn?.some((name) => names.includes(name)));
   }
 
@@ -612,10 +654,14 @@ class Scanner {
     const { local, persistent } = this.scope.live();
     const usable: UsableOption[] = [];
     for (const { option, names } of [...local, ...persistent]) {
-      if (this.conflicts(option)) continue;
+      if (this.conflicts(option)) {
+        continue;
+      }
       // The parser reads a name that a subcommand matches as that subcommand.
       const typeable = names.filter((name) => !this.subcommandFor(name)?.command);
-      if (typeable.length === 0) continue;
+      if (typeable.length === 0) {
+        continue;
+      }
       usable.push({ option, forms: this.scope.forms(option, typeable), used: used.has(optionKey(option)) });
     }
     return usable;
@@ -649,20 +695,30 @@ class Scanner {
   /** Read the token at `index`, the next one, and say what it was read as. */
   readAndClassify(input: readonly string[], index: number): TokenReading {
     // Every token after `--` is an argument.
-    if (this.argSeparatorIndex !== -1) return { kind: "argument" };
+    if (this.argSeparatorIndex !== -1) {
+      return { kind: "argument" };
+    }
     const depth = this.path.length;
     const seen = this.seenOptions.length;
     const args = this.args.length;
     const values = this.valueCount;
-    if (this.readAt(input, index)) return { kind: "separator" };
-    if (this.path.length > depth) return { kind: "subcommand", command: this.path[depth] as Subcommand };
+    if (this.readAt(input, index)) {
+      return { kind: "separator" };
+    }
+    if (this.path.length > depth) {
+      return { kind: "subcommand", command: this.path[depth] as Subcommand };
+    }
     if (this.seenOptions.length > seen) {
       const found = this.attachedAt(index);
       const attached = found && { option: found.option, start: found.start };
       return { kind: "options", options: this.seenOptions.slice(seen), attached };
     }
-    if (this.args.length > args) return { kind: "argument" };
-    if (this.valueCount > values) return { kind: "value", option: this.openOption! };
+    if (this.args.length > args) {
+      return { kind: "argument" };
+    }
+    if (this.valueCount > values) {
+      return { kind: "value", option: this.openOption! };
+    }
     return { kind: "unknown" };
   }
 
@@ -679,7 +735,9 @@ class Scanner {
   /** Read every token of `input`. */
   read(input: readonly string[]): void {
     for (let index = 0; index < input.length; index++) {
-      if (this.readAt(input, index)) return;
+      if (this.readAt(input, index)) {
+        return;
+      }
     }
   }
 
@@ -717,7 +775,9 @@ class Scanner {
         return false;
       }
       if (flagsArePosixNoncompliant || (token.length > 2 && isDoubleDash)) {
-        if (this.longOption(token, index)) return false;
+        if (this.longOption(token, index)) {
+          return false;
+        }
       }
     }
 
@@ -728,7 +788,9 @@ class Scanner {
 
 /** The argument at `index`, reusing a final variadic argument. */
 function argAt(args: readonly Arg[], index: number): Arg | undefined {
-  if (index < args.length) return args[index];
+  if (index < args.length) {
+    return args[index];
+  }
   const last = args[args.length - 1];
   return last?.isVariadic ? last : undefined;
 }

@@ -10,7 +10,9 @@
 /** How many `-` or `+` characters `name` starts with. */
 function dashCount(name: string): number {
   let i = 0;
-  while (i < name.length && (name[i] === "-" || name[i] === "+")) i++;
+  while (i < name.length && (name[i] === "-" || name[i] === "+")) {
+    i++;
+  }
   return i;
 }
 
@@ -18,7 +20,9 @@ function dashCount(name: string): number {
 function isAbbreviation(short: string, long: string): boolean {
   let i = 0;
   for (let j = 0; j < long.length && i < short.length; j++) {
-    if (long[j] === short[i]) i++;
+    if (long[j] === short[i]) {
+      i++;
+    }
   }
   return i === short.length;
 }
@@ -33,7 +37,9 @@ function editDistance(a: string, b: string, limit: number): number {
   let before = new Uint32Array(b.length + 1);
   let previous = new Uint32Array(b.length + 1);
   let current = new Uint32Array(b.length + 1);
-  for (let j = 0; j <= b.length; j++) previous[j] = j;
+  for (let j = 0; j <= b.length; j++) {
+    previous[j] = j;
+  }
 
   for (let i = 1; i <= a.length; i++) {
     current[0] = i;
@@ -45,10 +51,14 @@ function editDistance(a: string, b: string, limit: number): number {
         d = Math.min(d, before[j - 2] + 1);
       }
       current[j] = d;
-      if (d < rowMin) rowMin = d;
+      if (d < rowMin) {
+        rowMin = d;
+      }
     }
     // Every later row is at least this row's minimum.
-    if (rowMin > limit) return limit + 1;
+    if (rowMin > limit) {
+      return limit + 1;
+    }
     const recycled = before;
     before = previous;
     previous = current;
@@ -69,8 +79,12 @@ function onlyMatch(choices: readonly Choice[], matches: (name: string) => boolea
   let match: string | undefined;
   for (const choice of choices) {
     const name = (typeof choice === "string" ? [choice] : choice).find(matches);
-    if (name === undefined) continue;
-    if (match !== undefined) return undefined;
+    if (name === undefined) {
+      continue;
+    }
+    if (match !== undefined) {
+      return undefined;
+    }
     match = name;
   }
   return match;
@@ -92,12 +106,16 @@ export function closestChoice(input: string, choices: readonly Choice[]): string
 
   if (bare.length >= 2) {
     const match = onlyMatch(choices, (name) => name.startsWith(input));
-    if (match !== undefined) return match;
+    if (match !== undefined) {
+      return match;
+    }
   }
 
   if (bare.length >= 3) {
     const match = onlyMatch(choices, (name) => isAbbreviation(bare, name.slice(dashCount(name))));
-    if (match !== undefined) return match;
+    if (match !== undefined) {
+      return match;
+    }
   }
 
   let best: string | undefined;
@@ -105,13 +123,17 @@ export function closestChoice(input: string, choices: readonly Choice[]): string
   for (const name of choices.flat()) {
     const other = name.slice(dashCount(name));
     // The length difference is a lower bound on the number of edits.
-    if (Math.abs(other.length - bare.length) > limit) continue;
+    if (Math.abs(other.length - bare.length) > limit) {
+      continue;
+    }
     const distance = editDistance(bare, other, limit);
     if (distance <= limit && (best === undefined || distance < limit)) {
       best = name;
       // Later names have to be strictly closer to replace this one.
       limit = distance;
-      if (distance === 0) break;
+      if (distance === 0) {
+        break;
+      }
     }
   }
   return best;

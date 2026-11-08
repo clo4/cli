@@ -61,10 +61,18 @@ function joinNames(names: SingleOrArray<string>) {
 
 /** Compares spec values by shape. Any two functions count as the same shape. */
 function isSameStructure(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a === "function" && typeof b === "function") return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (a === b) {
+    return true;
+  }
+  if (typeof a === "function" && typeof b === "function") {
+    return true;
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) !== Array.isArray(b)) {
+    return false;
+  }
   const left = a as Record<string, unknown>;
   const right = b as Record<string, unknown>;
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
@@ -80,7 +88,9 @@ function namedArrayToString(...parts: { name: SingleOrArray<string> }[]) {
 function describeCommand(path: readonly Subcommand[]): string {
   const command = path[path.length - 1];
   const parent = path[path.length - 2];
-  if (!parent) return `Command ${namedArrayToString(command)}`;
+  if (!parent) {
+    return `Command ${namedArrayToString(command)}`;
+  }
   const index = makeArray(parent.subcommands).indexOf(command);
   return `Subcommand ${namedArrayToString(...path)} (index ${index})`;
 }
@@ -128,7 +138,9 @@ function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
       fn({ option, path, scope, isDefinedHere: definedIn === path, where });
     }
     const next = [...inherited, ...own.filter(({ option }) => option.isPersistent)];
-    for (const subcommand of makeArray(command.subcommands)) visit([...path, subcommand], next);
+    for (const subcommand of makeArray(command.subcommands)) {
+      visit([...path, subcommand], next);
+    }
   };
   visit([spec], []);
 }
@@ -168,14 +180,18 @@ export function assertDefaultsCanBeUsed(spec: Subcommand): void {
     }
   });
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere) return;
+    if (!isDefinedHere) {
+      return;
+    }
     let firstWithout: number | null = null;
     for (const [index, arg] of makeArray(option.args).entries()) {
       if (arg.default === undefined) {
         firstWithout ??= index;
         continue;
       }
-      if (arg.isOptional) continue;
+      if (arg.isOptional) {
+        continue;
+      }
       const name = `${where}, argument ${arg.name || index} has a default, but`;
       assert(!option.isRequired, `${name} the option is required, so the default is never used`);
       assert(
@@ -189,7 +205,9 @@ export function assertDefaultsCanBeUsed(spec: Subcommand): void {
 /** Asserts that `isRepeatable` is only assigned a positive integer */
 export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): void {
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere || typeof option.isRepeatable !== "number") return;
+    if (!isDefinedHere || typeof option.isRepeatable !== "number") {
+      return;
+    }
     assert(
       Number.isSafeInteger(option.isRepeatable),
       `${where} has its \`isRepeatable\` value set to a number that is not an integer`,
@@ -224,7 +242,9 @@ export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
 /** Asserts that options don't shadow a persistent option */
 export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): void {
   forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
-    if (!isDefinedHere) return;
+    if (!isDefinedHere) {
+      return;
+    }
     // The persistent options this command inherits from its parents.
     const inherited = OptionScope.at(path.slice(0, -1)).persistent;
     for (const name of makeArray(option.name)) {
@@ -255,13 +275,17 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
  */
 export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): void {
   forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
-    if (!isDefinedHere) return;
+    if (!isDefinedHere) {
+      return;
+    }
     const names = makeArray(option.name);
     // A parent's non-persistent options aren't in this command's scope, so
     // they're found on the parents themselves.
     for (const parent of path.slice(0, -1)) {
       for (const parentOption of makeArray(parent.options)) {
-        if (parentOption.isPersistent) continue;
+        if (parentOption.isPersistent) {
+          continue;
+        }
         const parentNames = makeArray(parentOption.name);
         const other = namedArrayToString(parent, parentOption);
         if (optionKey(parentOption) === optionKey(option)) {
@@ -330,7 +354,9 @@ export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
  */
 export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere) return;
+    if (!isDefinedHere) {
+      return;
+    }
     for (const name of makeArray(option.name)) {
       assert(name === name.trim(), `${where} has a name with extra whitespace`);
     }
@@ -358,7 +384,9 @@ export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
 export function assertEverythingHasDescription(spec: Subcommand): void {
   assert(spec.description, `Spec has no description`);
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (isDefinedHere) assert(option.description, `${where} has no description`);
+    if (isDefinedHere) {
+      assert(option.description, `${where} has no description`);
+    }
   });
   forEachSubcommand(spec, (command, path) => {
     assert(command.description, `${describeCommand(path)} has no description`);
@@ -376,7 +404,9 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
     );
   }
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere || !option.description) return;
+    if (!isDefinedHere || !option.description) {
+      return;
+    }
     assert(
       option.description.split("\n").every((line) => line.length <= 68),
       `${where} has a description line over 68 characters`,
@@ -458,7 +488,9 @@ function placeholderValue(path: readonly Subcommand[], scope: OptionScope): stri
   ];
   for (const value of "0123456789abcdefghijklmnopqrstuvwxyz") {
     const starts = [value, `-${value}`, `+${value}`];
-    if (!names.some((name) => starts.some((start) => name.startsWith(start)))) return value;
+    if (!names.some((name) => starts.some((start) => name.startsWith(start)))) {
+      return value;
+    }
   }
   return "0";
 }
@@ -472,7 +504,9 @@ function writeForm(option: Option, form: OptionForm, value: string): string[] {
   const max = getMaxArgs(option.args);
   const count = Number.isFinite(max) ? max : getMinArgs(option.args) + 1;
   const values: string[] = Array.from({ length: count }, () => value);
-  if (form.join === null) return [form.name, ...values];
+  if (form.join === null) {
+    return [form.name, ...values];
+  }
   return [form.name + form.join + values[0], ...values.slice(1)];
 }
 
@@ -488,7 +522,9 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
     // A name that another option shadows is that option's to check.
     const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
     for (const form of scope.forms(option, names)) {
-      if (!include(option, form.name)) continue;
+      if (!include(option, form.name)) {
+        continue;
+      }
       // A name joined to its value with nothing between isn't a token by itself.
       if (form.join !== "") {
         const reading = readToken(root, before, form.name);
@@ -532,7 +568,9 @@ export function assertNamesReadBack(spec: Subcommand): void {
     for (const subcommand of makeArray(command.subcommands)) {
       for (const name of makeArray(subcommand.name)) {
         const reading = readToken(root, before, name);
-        if (reading.kind === "subcommand" && reading.command === subcommand) continue;
+        if (reading.kind === "subcommand" && reading.command === subcommand) {
+          continue;
+        }
         assert(
           false,
           `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
@@ -599,7 +637,9 @@ export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void
   forEachSubcommand(spec, (subcommand, path) => {
     // The path ends at this command, so this is the setting that decides how
     // its own subcommands are matched.
-    if (!OptionScope.at(path).directives.subcommandsMatchUniquePrefix) return;
+    if (!OptionScope.at(path).directives.subcommandsMatchUniquePrefix) {
+      return;
+    }
 
     assert(
       !(subcommand.subcommands && subcommand.args),
@@ -777,7 +817,9 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   ];
   return async (t) => {
     for (const [sentence, functionName, check, enabled] of checks) {
-      if (!enabled) continue;
+      if (!enabled) {
+        continue;
+      }
       await runStep(t, namingStyle === "function" ? functionName : sentence, () => check(spec));
     }
   };

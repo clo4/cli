@@ -13,7 +13,9 @@ const ONLY = process.env.FUZZ_CASE === undefined ? undefined : Number(process.en
 
 /** The case numbers to run. With `every`, only every nth case runs, unless FUZZ_CASE picks one. */
 export function caseNumbers(every = 1): number[] {
-  if (ONLY !== undefined) return [ONLY];
+  if (ONLY !== undefined) {
+    return [ONLY];
+  }
   return Array.from({ length: Math.ceil(CASES / every) }, (_, i) => i * every);
 }
 

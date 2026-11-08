@@ -7,7 +7,9 @@ import type { DidYouMean } from "./errors.js";
 import { addDefaults, asArray, getMaxArgs, makeArray, makeArray1, print, printError } from "./util.js";
 
 function dedent(str: string) {
-  if (str[0] !== "\n") return str;
+  if (str[0] !== "\n") {
+    return str;
+  }
   const lines = str.split("\n").slice(1, -1);
   const margin = lines[0].length - lines[0].trimStart().length;
   return lines.map((line) => line.slice(margin)).join("\n");
@@ -75,7 +77,9 @@ export const helpCommand: Subcommand = {
 
     for (const name of args) {
       const command = helpPath[helpPath.length - 1];
-      if (!command.subcommands) break;
+      if (!command.subcommands) {
+        break;
+      }
       // Match the name the way the parser would have matched it in place of `help`.
       const scope = OptionScope.at(helpPath);
       const match = matchSubcommand(
@@ -86,12 +90,16 @@ export const helpCommand: Subcommand = {
         scope.inheritedSubcommands,
       );
       // With a persistent help command, `cli help a help` is `cli a help`.
-      if (match.command === self && !command.subcommands.includes(self)) break;
+      if (match.command === self && !command.subcommands.includes(self)) {
+        break;
+      }
       if (match.command) {
         helpPath.push(match.command);
         continue;
       }
-      if (!command.requiresSubcommand && getMaxArgs(command.args) > 0) break;
+      if (!command.requiresSubcommand && getMaxArgs(command.args) > 0) {
+        break;
+      }
       const { message, didYouMean } = match.reason();
       printUsageError(helpPath, message, didYouMean);
       return 1;
@@ -164,7 +172,9 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const usage = (() => {
     const parts = [getSubcommandPathString(commands)];
     for (const visible of [...optionObjects, ...persistentOptionObjects]) {
-      if (visible.option.isRequired) parts.push(show(visible));
+      if (visible.option.isRequired) {
+        parts.push(show(visible));
+      }
     }
     if (options.length || persistentOptions.length) {
       parts.push("[flags]");
@@ -212,9 +222,13 @@ function withDefaults(
   defaults: readonly string[],
   defaultDesc: string,
 ): string {
-  if (defaults.length === 0) return description ?? defaultDesc;
+  if (defaults.length === 0) {
+    return description ?? defaultDesc;
+  }
   const shown = `(default: ${defaults.join(" ")})`;
-  if (description === undefined) return shown;
+  if (description === undefined) {
+    return shown;
+  }
   const lastLine = description.slice(description.lastIndexOf("\n") + 1);
   return `${description}${lastLine.length + 1 + shown.length <= 68 ? " " : "\n"}${shown}`;
 }
@@ -320,8 +334,12 @@ export function optionToString(option: Option, forms: readonly OptionForm[]): st
 
 /** The text after an option's name that shows its arguments, joined to the name by `join`. */
 function argumentsAfterName(args: Arg[], join: string | null): string {
-  if (args.length === 0) return "";
-  if (join === null) return ` ${summarizeArguments(args)}`;
+  if (args.length === 0) {
+    return "";
+  }
+  if (join === null) {
+    return ` ${summarizeArguments(args)}`;
+  }
   const [first, ...rest] = args;
   const name = first.name || "argument";
   const joined =

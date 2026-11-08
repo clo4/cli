@@ -29,22 +29,27 @@ function expectedDirectives(path: readonly (Spec | Subcommand)[]): Directives {
   };
   for (const command of path) {
     const configured = command.parserDirectives ?? {};
-    if (configured.optionArgSeparators)
+    if (configured.optionArgSeparators) {
       expected.optionArgSeparators = asArray(configured.optionArgSeparators);
+    }
     for (const key of [
       "flagsArePosixNoncompliant",
       "optionsMustPrecedeArguments",
       "subcommandsMatchUniquePrefix",
     ] as const) {
       const value = configured[key];
-      if (typeof value === "boolean") expected[key] = value;
+      if (typeof value === "boolean") {
+        expected[key] = value;
+      }
     }
   }
   return expected;
 }
 
 function invalidPath(path: readonly (Spec | Subcommand)[], spec: Spec): string | null {
-  if (path[0] !== spec) return "path doesn't start at the spec";
+  if (path[0] !== spec) {
+    return "path doesn't start at the spec";
+  }
   for (let i = 1; i < path.length; i++) {
     if (!path[i - 1].subcommands?.includes(path[i] as Subcommand)) {
       return `path[${i}] isn't a subcommand of path[${i - 1}]`;
@@ -58,8 +63,14 @@ function usedNames(spec: Spec, input: readonly string[]): Set<string> {
   const names = new Set<string>();
   for (let i = 0; i < input.length; i++) {
     const reading = readToken(spec, input.slice(0, i), input[i]);
-    if (reading.kind !== "options") continue;
-    for (const option of reading.options) for (const name of asArray(option.name)) names.add(name);
+    if (reading.kind !== "options") {
+      continue;
+    }
+    for (const option of reading.options) {
+      for (const name of asArray(option.name)) {
+        names.add(name);
+      }
+    }
   }
   return names;
 }
@@ -75,11 +86,15 @@ function violation(spec: Spec, input: string[]): string | null {
 
   const path = next.path as readonly (Spec | Subcommand)[];
   const badPath = invalidPath(path, spec);
-  if (badPath) return badPath;
+  if (badPath) {
+    return badPath;
+  }
 
   const directives = JSON.stringify(next.directives);
   const expected = JSON.stringify(expectedDirectives(path));
-  if (directives !== expected) return `directives are ${directives}, expected ${expected}`;
+  if (directives !== expected) {
+    return `directives are ${directives}, expected ${expected}`;
+  }
 
   const strict = attempt(parse, input, spec);
   if (strict.ok) {
@@ -88,10 +103,14 @@ function violation(spec: Spec, input: string[]): string | null {
     let from = 0;
     for (const arg of result.args) {
       const at = input.indexOf(arg, from);
-      if (at === -1) return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
+      if (at === -1) {
+        return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
+      }
       from = at + 1;
     }
-    if (result.argSeparatorIndex > result.args.length) return "argSeparatorIndex is past the arguments";
+    if (result.argSeparatorIndex > result.args.length) {
+      return "argSeparatorIndex is past the arguments";
+    }
 
     // The lenient read used for completion agrees with the parse.
     if (result.path.length !== path.length || result.path.some((command, i) => command !== path[i])) {
@@ -106,9 +125,13 @@ function violation(spec: Spec, input: string[]): string | null {
   }
 
   const error = strict.error;
-  if (!(error instanceof ParseError)) return `parse threw ${error.name}: ${error.message}`;
+  if (!(error instanceof ParseError)) {
+    return `parse threw ${error.name}: ${error.message}`;
+  }
   const errorPath = invalidPath(error.context.path as readonly (Spec | Subcommand)[], spec);
-  if (errorPath) return `error ${errorPath}`;
+  if (errorPath) {
+    return `error ${errorPath}`;
+  }
   return null;
 }
 
@@ -117,7 +140,9 @@ test("readNext and parse keep their invariants on random specs", () => {
     const gen = generator(caseSeed(n));
     const spec = gen.spec();
     const input = gen.input(spec);
-    if (violation(spec, input) === null) continue;
+    if (violation(spec, input) === null) {
+      continue;
+    }
     const small = shrink(spec, input, (s, i) => violation(s, i) !== null);
     expect.fail(report(n, small.spec, small.input, violation(small.spec, small.input) ?? ""));
   }
@@ -125,10 +150,18 @@ test("readNext and parse keep their invariants on random specs", () => {
 
 /** A copy of `value` with every `default` removed. Actions stay the same functions. */
 function withoutDefaults<T>(value: T): T {
-  if (Array.isArray(value)) return value.map(withoutDefaults) as T;
-  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map(withoutDefaults) as T;
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
   const copy: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value)) if (key !== "default") copy[key] = withoutDefaults(item);
+  for (const [key, item] of Object.entries(value)) {
+    if (key !== "default") {
+      copy[key] = withoutDefaults(item);
+    }
+  }
   return copy as T;
 }
 
@@ -136,7 +169,9 @@ function withoutDefaults<T>(value: T): T {
 function leadingDefaults(args: Spec["args"], from: number): string[] {
   const values: string[] = [];
   const list = asArray(args);
-  for (let i = from; i < list.length && list[i].default !== undefined; i++) values.push(list[i].default!);
+  for (let i = from; i < list.length && list[i].default !== undefined; i++) {
+    values.push(list[i].default!);
+  }
   return values;
 }
 
@@ -149,7 +184,9 @@ function optionNamed(path: readonly (Spec | Subcommand)[], name: string): Option
   const named = (option: Option) => asArray(option.name).includes(name);
   const own = path[path.length - 1].options ?? [];
   const local = own.filter((option) => !option.isPersistent && named(option));
-  if (local.length > 0) return local[local.length - 1];
+  if (local.length > 0) {
+    return local[local.length - 1];
+  }
   const persistent = path.flatMap((command) =>
     (command.options ?? []).filter((o) => o.isPersistent && named(o)),
   );
@@ -168,25 +205,36 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
   const plain = attempt(parse, input, withoutDefaults(spec));
   const withDefaults = attempt(parse, input, spec);
   if (!plain.ok || !withDefaults.ok) {
-    if (plain.ok !== withDefaults.ok) return "defaults change whether the line parses";
+    if (plain.ok !== withDefaults.ok) {
+      return "defaults change whether the line parses";
+    }
     const [a, b] = [plain, withDefaults].map((outcome) => (outcome.ok ? "" : outcome.error.message));
     return a === b ? null : `defaults change the error: ${a} vs ${b}`;
   }
   const typed = plain.result;
   const result = withDefaults.result;
   const names = (path: CommandPathLike) => JSON.stringify(path.map((command) => command.name));
-  if (names(typed.path) !== names(result.path)) return "defaults change the command";
-  if (typed.argSeparatorIndex !== result.argSeparatorIndex) return "defaults change argSeparatorIndex";
+  if (names(typed.path) !== names(result.path)) {
+    return "defaults change the command";
+  }
+  if (typed.argSeparatorIndex !== result.argSeparatorIndex) {
+    return "defaults change argSeparatorIndex";
+  }
   const keys = (map: Map<string, string[]>) => JSON.stringify([...map.keys()]);
-  if (keys(typed.options) !== keys(result.options)) return "defaults change which options were used";
+  if (keys(typed.options) !== keys(result.options)) {
+    return "defaults change which options were used";
+  }
   for (const [name, typedValues] of typed.options) {
     const extra = addedValues(typedValues, result.options.get(name)!);
-    if (!extra) return `the values of ${name} don't keep the typed ones in order`;
+    if (!extra) {
+      return `the values of ${name} don't keep the typed ones in order`;
+    }
     const owners = optionsNamed(spec, name);
     const allowed = new Set(owners.flatMap((option) => asArray(option.args).map((arg) => arg.default)));
     const wrong = extra.find((value) => !allowed.has(value));
-    if (wrong !== undefined)
+    if (wrong !== undefined) {
       return `${name} has the value ${JSON.stringify(wrong)}, which isn't typed or a default`;
+    }
     // With one option of that name, used once, the values are exactly the
     // typed ones and the defaults of the arguments after them.
     const [only] = owners;
@@ -207,7 +255,9 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
     return `args are ${JSON.stringify(result.args)}, expected ${JSON.stringify(expected)}`;
   }
 
-  if (!result.defaults) return "parse has no defaults";
+  if (!result.defaults) {
+    return "parse has no defaults";
+  }
   for (const name of OPTION_NAMES) {
     const got = result.defaults(name);
     const option = result.options.has(name) ? undefined : optionNamed(path, name);
@@ -229,8 +279,11 @@ function addedValues(typed: readonly string[], values: readonly string[]): strin
   const extra: string[] = [];
   let next = 0;
   for (const value of values) {
-    if (next < typed.length && value === typed[next]) next++;
-    else extra.push(value);
+    if (next < typed.length && value === typed[next]) {
+      next++;
+    } else {
+      extra.push(value);
+    }
   }
   return next === typed.length ? extra : null;
 }
@@ -239,8 +292,14 @@ function addedValues(typed: readonly string[], values: readonly string[]): strin
 function optionsNamed(spec: Subcommand, name: string): Option[] {
   const found: Option[] = [];
   const visit = (command: Subcommand) => {
-    for (const option of command.options ?? []) if (asArray(option.name).includes(name)) found.push(option);
-    for (const sub of command.subcommands ?? []) visit(sub);
+    for (const option of command.options ?? []) {
+      if (asArray(option.name).includes(name)) {
+        found.push(option);
+      }
+    }
+    for (const sub of command.subcommands ?? []) {
+      visit(sub);
+    }
   };
   visit(spec);
   return found;
@@ -253,7 +312,9 @@ test("defaults only add to what the user typed", () => {
     const gen = generator(caseSeed(n), { defaults: true });
     const spec = gen.spec();
     const input = gen.input(spec);
-    if (defaultsViolation(spec, input) === null) continue;
+    if (defaultsViolation(spec, input) === null) {
+      continue;
+    }
     const small = shrink(spec, input, (s, i) => defaultsViolation(s, i) !== null);
     expect.fail(report(n, small.spec, small.input, defaultsViolation(small.spec, small.input) ?? ""));
   }
@@ -284,7 +345,9 @@ const specChecks = [
 async function offeredButMisread(spec: Spec, before: string[]): Promise<string | null> {
   // The parser can't read every option of a spec that the spec checker rejects.
   try {
-    for (const check of specChecks) check(spec);
+    for (const check of specChecks) {
+      check(spec);
+    }
   } catch {
     return null;
   }
@@ -292,7 +355,9 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   const next = readNext(spec, before, "");
   for (const sub of next.subcommands) {
     for (const name of asArray(sub.name)) {
-      if (!offered.has(name)) continue;
+      if (!offered.has(name)) {
+        continue;
+      }
       const reading = readToken(spec, before, name);
       if (reading.kind !== "subcommand" || reading.command !== sub) {
         return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
@@ -302,7 +367,9 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   for (const { option, forms } of next.options) {
     for (const { name, join } of forms) {
       const token = name + (join ?? "");
-      if (!offered.has(token)) continue;
+      if (!offered.has(token)) {
+        continue;
+      }
       const reading = readToken(spec, before, token);
       if (reading.kind !== "options" || reading.options.length !== 1 || reading.options[0] !== option) {
         return `option ${JSON.stringify(token)} is offered, but isn't read as that option`;
@@ -317,7 +384,9 @@ test("completion only offers options and subcommands the parser reads as such", 
     const gen = generator(caseSeed(n));
     const spec = gen.spec();
     const input = gen.input(spec);
-    if ((await offeredButMisread(spec, input)) === null) continue;
+    if ((await offeredButMisread(spec, input)) === null) {
+      continue;
+    }
     expect.fail(report(n, spec, input, (await offeredButMisread(spec, input)) ?? ""));
   }
 });

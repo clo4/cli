@@ -54,7 +54,9 @@ function psQuote(value: string): string {
  * with a quote in it is written as a double-quoted string instead.
  */
 function nuQuote(value: string): string {
-  if (!value.includes("'")) return `'${value}'`;
+  if (!value.includes("'")) {
+    return `'${value}'`;
+  }
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
@@ -90,9 +92,13 @@ async function enumeratePaths(partial: string, template: Template): Promise<Cand
   }
   const candidates: Candidate[] = [];
   for (const entry of entries as { name: string; isDirectory(): boolean }[]) {
-    if (!entry.name.startsWith(base)) continue;
+    if (!entry.name.startsWith(base)) {
+      continue;
+    }
     const isDir = entry.isDirectory();
-    if (foldersOnly && !isDir) continue;
+    if (foldersOnly && !isDir) {
+      continue;
+    }
     candidates.push({ value: `${dir}${entry.name}${isDir ? separator : ""}` });
   }
   return candidates;
@@ -111,7 +117,9 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
   }
 
   for (const generator of makeArray(arg.generators)) {
-    if (!generator.custom) continue;
+    if (!generator.custom) {
+      continue;
+    }
     const produced = await generator.custom([...tokens, partial]);
     for (const suggestion of produced) {
       candidates.push(
@@ -185,7 +193,9 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
     // While an option can take another value, a word that isn't an option or
     // subcommand is its value instead of an argument.
     const arg = next.value ? next.value.arg : next.arg;
-    if (arg) candidates.push(...(await argValues(arg, tokens, req.partial)));
+    if (arg) {
+      candidates.push(...(await argValues(arg, tokens, req.partial)));
+    }
     for (const sub of visibleSubcommands(next.subcommands)) {
       const description = firstLine(sub.description);
       for (const token of makeArray(sub.name)) {
@@ -205,11 +215,15 @@ function optionCandidates(next: NextToken): Candidate[] {
   const optional: Candidate[] = [];
 
   for (const { option, forms, used } of next.options) {
-    if (option.hidden) continue;
+    if (option.hidden) {
+      continue;
+    }
     // The parser lets a later use of an option override an earlier one, but
     // that's rarely what someone wants, so an option that isn't repeatable is
     // offered once.
-    if (used && !option.isRepeatable) continue;
+    if (used && !option.isRepeatable) {
+      continue;
+    }
 
     let description = firstLine(option.description);
     if (option.dependsOn) {
@@ -226,7 +240,9 @@ function optionCandidates(next: NextToken): Candidate[] {
     // offered.
     const bucket = option.isRequired ? required : optional;
     for (const { name, join } of forms) {
-      if (join === "") continue;
+      if (join === "") {
+        continue;
+      }
       bucket.push({ value: name + (join ?? ""), description });
     }
   }
@@ -415,7 +431,9 @@ const completeCommand: Subcommand = {
     const lines = candidates.map((candidate) =>
       candidate.description ? `${candidate.value}\t${candidate.description}` : candidate.value,
     );
-    if (lines.length > 0) print(lines.join("\n"));
+    if (lines.length > 0) {
+      print(lines.join("\n"));
+    }
     return 0;
   },
 };

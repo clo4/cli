@@ -5,7 +5,9 @@
   "categories": {
     "correctness": "error"
   },
-  "rules": {},
+  "rules": {
+    "curly": "error"
+  },
   "env": {
     "builtin": true
   }

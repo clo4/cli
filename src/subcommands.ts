@@ -24,14 +24,20 @@ export function matchSubcommand(
   inherited: readonly Subcommand[] = [],
 ): SubcommandMatch {
   for (const candidate of subcommands) {
-    if (hasName(candidate, token)) return { command: candidate };
+    if (hasName(candidate, token)) {
+      return { command: candidate };
+    }
   }
   for (const candidate of inherited) {
-    if (hasName(candidate, token)) return { command: candidate };
+    if (hasName(candidate, token)) {
+      return { command: candidate };
+    }
   }
   const allowPrefix = directives.subcommandsMatchUniquePrefix && !exactOnly;
   const matches = allowPrefix ? prefixMatches(subcommands, token) : [];
-  if (matches.length === 1) return { command: matches[0] };
+  if (matches.length === 1) {
+    return { command: matches[0] };
+  }
   return new NoSubcommand(withInherited(subcommands, inherited), token, matches);
 }
 
@@ -43,7 +49,9 @@ export function withInherited(
   subcommands: readonly Subcommand[],
   inherited: readonly Subcommand[],
 ): readonly Subcommand[] {
-  if (inherited.length === 0) return subcommands;
+  if (inherited.length === 0) {
+    return subcommands;
+  }
   const all = [...subcommands];
   for (const candidate of inherited) {
     if (!asArray(candidate.name).some((name) => all.some((earlier) => hasName(earlier, name)))) {
@@ -60,7 +68,9 @@ function hasName(command: Subcommand, token: string): boolean {
 
 /** The visible commands that `token` is a prefix of a name of, each listed once. */
 function prefixMatches(subcommands: readonly Subcommand[], token: string): Subcommand[] {
-  if (token === "") return [];
+  if (token === "") {
+    return [];
+  }
   return subcommands.filter(
     (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(token)),
   );
@@ -86,7 +96,9 @@ export class NoSubcommand {
   /** Why the token names none of the subcommands, as an error message and suggestions. */
   reason(): { message: string; didYouMean?: DidYouMean } {
     const token = this.token;
-    if (token === "") return { message: "Expected a command, but the value was empty" };
+    if (token === "") {
+      return { message: "Expected a command, but the value was empty" };
+    }
     if (this.prefixOf.length > 0) {
       const possible = this.prefixOf.flatMap((command) =>
         asArray(command.name).filter((name) => name.startsWith(token)),

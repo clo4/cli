@@ -932,7 +932,9 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
     { name: "test", options: [sep(true), sep("=")] },
     { name: "test", parserDirectives: { optionArgSeparators: [":", "="] }, options: [sep(":")] },
   ];
-  for (const spec of passes) check(spec);
+  for (const spec of passes) {
+    check(spec);
+  }
 
   const fails: [Subcommand, string | RegExp][] = [
     [
@@ -984,5 +986,7 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
       /^In `test sub`, option `test --o` \(index 0\) is written '--o=<argument>'/,
     ],
   ];
-  for (const [spec, message] of fails) expect(() => check(spec)).toThrow(message);
+  for (const [spec, message] of fails) {
+    expect(() => check(spec)).toThrow(message);
+  }
 });

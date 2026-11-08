@@ -62,7 +62,9 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
  * "[object Object]".
  */
 function describeThrown(value: unknown): string {
-  if (value instanceof Error) return value.message;
+  if (value instanceof Error) {
+    return value.message;
+  }
   if (typeof value === "object" && value !== null) {
     try {
       return JSON.stringify(value);

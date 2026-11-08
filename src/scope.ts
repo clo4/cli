@@ -49,7 +49,9 @@ export class OptionScope {
   /** The scope at the last command on `path`. */
   static at(path: readonly (Spec | Subcommand)[]): OptionScope {
     const scope = new OptionScope();
-    for (const command of path) scope.enter(command);
+    for (const command of path) {
+      scope.enter(command);
+    }
     return scope;
   }
 
@@ -58,7 +60,9 @@ export class OptionScope {
     const parentSubcommands = this.command?.subcommands;
     if (parentSubcommands) {
       const persistent = parentSubcommands.filter((subcommand) => subcommand.isPersistent);
-      if (persistent.length > 0) this.inheritedSubcommands.unshift(...persistent);
+      if (persistent.length > 0) {
+        this.inheritedSubcommands.unshift(...persistent);
+      }
     }
     this.command = command;
     this.local.length = 0;
@@ -74,10 +78,14 @@ export class OptionScope {
   resolve(name: string): Option | null {
     const { local, persistent } = this;
     for (let i = local.length - 1; i >= 0; i--) {
-      if (hasName(local[i].name, name)) return local[i];
+      if (hasName(local[i].name, name)) {
+        return local[i];
+      }
     }
     for (let i = persistent.length - 1; i >= 0; i--) {
-      if (hasName(persistent[i].name, name)) return persistent[i];
+      if (hasName(persistent[i].name, name)) {
+        return persistent[i];
+      }
     }
     return null;
   }
@@ -93,14 +101,18 @@ export class OptionScope {
     const owner = new Map<string, Option>();
     for (const options of [this.persistent, this.local]) {
       for (const option of options) {
-        for (const name of asArray(option.name)) owner.set(name, option);
+        for (const name of asArray(option.name)) {
+          owner.set(name, option);
+        }
       }
     }
     const pick = (options: readonly Option[]) => {
       const picked: VisibleOption[] = [];
       for (const option of options) {
         const names = asArray(option.name).filter((name) => owner.get(name) === option);
-        if (names.length > 0) picked.push({ option, names });
+        if (names.length > 0) {
+          picked.push({ option, names });
+        }
       }
       return picked;
     };
@@ -132,8 +144,12 @@ export class OptionScope {
    */
   forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
     const join = (name: string): string | null => {
-      if (getMaxArgs(option.args) === 0) return null;
-      if (option.requiresSeparator) return this.requiredSeparator(option);
+      if (getMaxArgs(option.args) === 0) {
+        return null;
+      }
+      if (option.requiresSeparator) {
+        return this.requiredSeparator(option);
+      }
       const glued = !this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+");
       return glued ? "" : null;
     };
@@ -146,7 +162,9 @@ export class OptionScope {
    */
   requiredSeparator(option: Option): string | null {
     const required = option.requiresSeparator;
-    if (typeof required === "string") return required;
+    if (typeof required === "string") {
+      return required;
+    }
     return required ? (this.directives.optionArgSeparators[0] ?? "=") : null;
   }
 }

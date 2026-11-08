@@ -562,7 +562,9 @@ function createProgress(total: number): Progress {
 
   return {
     tick() {
-      if (!isTty) return;
+      if (!isTty) {
+        return;
+      }
       current += 1;
       if (current % reportEvery === 0 || current === total) {
         render();

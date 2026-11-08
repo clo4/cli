@@ -43,20 +43,24 @@ export function difference(
   sameAction: (x: Action, y: Action) => boolean = Object.is,
   optionNames: readonly string[] = [],
 ): string | null {
-  if (a.ok !== b.ok)
+  if (a.ok !== b.ok) {
     return a.ok ? `only the second threw: ${describe(b)}` : `only the first threw: ${describe(a)}`;
+  }
   if (!a.ok || !b.ok) {
     const x = a.ok ? null : errorFields(a.error);
     const y = b.ok ? null : errorFields(b.error);
-    if (JSON.stringify(x) !== JSON.stringify(y))
+    if (JSON.stringify(x) !== JSON.stringify(y)) {
       return `errors differ: ${JSON.stringify(x)} vs ${JSON.stringify(y)}`;
+    }
     const pathA = (a.ok ? null : (a.error.context as { path: unknown[] } | undefined))?.path ?? [];
     const pathB = (b.ok ? null : (b.error.context as { path: unknown[] } | undefined))?.path ?? [];
     return sameItems(pathA, pathB) ? null : "error paths differ";
   }
   const x = a.result;
   const y = b.result;
-  if (!sameItems(x.path, y.path)) return "path differs";
+  if (!sameItems(x.path, y.path)) {
+    return "path differs";
+  }
   const [actionA, actionB] = [pickedAction(x), pickedAction(y)];
   if (actionA !== actionB && !(actionA && actionB && sameAction(actionA, actionB))) {
     return "action differs";
@@ -64,14 +68,20 @@ export function difference(
   if (JSON.stringify(x.args) !== JSON.stringify(y.args)) {
     return `args differ: ${JSON.stringify(x.args)} vs ${JSON.stringify(y.args)}`;
   }
-  if (x.argSeparatorIndex !== y.argSeparatorIndex) return "argSeparatorIndex differs";
+  if (x.argSeparatorIndex !== y.argSeparatorIndex) {
+    return "argSeparatorIndex differs";
+  }
   const optionsA = JSON.stringify(optionEntries(x.options));
   const optionsB = JSON.stringify(optionEntries(y.options));
-  if (optionsA !== optionsB) return `options differ: ${optionsA} vs ${optionsB}`;
+  if (optionsA !== optionsB) {
+    return `options differ: ${optionsA} vs ${optionsB}`;
+  }
   if (x.defaults && y.defaults) {
     for (const name of optionNames) {
       const [defaultsA, defaultsB] = [JSON.stringify(x.defaults(name)), JSON.stringify(y.defaults(name))];
-      if (defaultsA !== defaultsB) return `defaults of ${name} differ: ${defaultsA} vs ${defaultsB}`;
+      if (defaultsA !== defaultsB) {
+        return `defaults of ${name} differ: ${defaultsA} vs ${defaultsB}`;
+      }
     }
   }
   return null;
@@ -100,15 +110,20 @@ type AnyUsableOption = Omit<NextToken["options"][number], "forms"> & {
 
 /** The names that read as a usable option, from either version. */
 function namesOf(usable: AnyUsableOption): string[] {
-  if (!usable.forms) return [...(usable.names ?? [])];
+  if (!usable.forms) {
+    return [...(usable.names ?? [])];
+  }
   return usable.forms.map((form) => form.name);
 }
 
 /** How each name is written, if both versions say so the same way. */
 function sameForms(a: AnyUsableOption, b: AnyUsableOption): boolean {
-  if (a.forms && b.forms)
+  if (a.forms && b.forms) {
     return sameItems(a.forms, b.forms, (x, y) => x.name === y.name && x.join === y.join);
-  if (a.forms || b.forms) return true;
+  }
+  if (a.forms || b.forms) {
+    return true;
+  }
   return a.separator === b.separator;
 }
 
@@ -118,12 +133,22 @@ function sameForms(a: AnyUsableOption, b: AnyUsableOption): boolean {
  * their names are written only when both versions say it the same way.
  */
 export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null {
-  if (!sameItems(x.path, y.path)) return "path differs";
+  if (!sameItems(x.path, y.path)) {
+    return "path differs";
+  }
   const directives = (next: AnyNextToken) => JSON.stringify(next.directives ?? next.scope?.directives);
-  if (directives(x) !== directives(y)) return "directives differ";
-  if (x.optionsAllowed !== y.optionsAllowed) return "optionsAllowed differs";
-  if (!sameItems(x.subcommands, y.subcommands)) return "subcommands differ";
-  if (x.arg !== y.arg) return "arg differs";
+  if (directives(x) !== directives(y)) {
+    return "directives differ";
+  }
+  if (x.optionsAllowed !== y.optionsAllowed) {
+    return "optionsAllowed differs";
+  }
+  if (!sameItems(x.subcommands, y.subcommands)) {
+    return "subcommands differ";
+  }
+  if (x.arg !== y.arg) {
+    return "arg differs";
+  }
   const [valueA, valueB] = [x.value, y.value];
   if (
     valueA?.option !== valueB?.option ||
@@ -134,10 +159,14 @@ export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null 
   }
   const [attachedA, attachedB] = [x.attached, y.attached];
   for (const key of ["option", "arg", "prefix", "value"] as const) {
-    if (attachedA?.[key] !== attachedB?.[key]) return `attached ${key} differs`;
+    if (attachedA?.[key] !== attachedB?.[key]) {
+      return `attached ${key} differs`;
+    }
   }
   if (x.options && y.options) {
-    if (x.options.length !== y.options.length) return "options differ";
+    if (x.options.length !== y.options.length) {
+      return "options differ";
+    }
     for (let i = 0; i < x.options.length; i++) {
       const [a, b] = [x.options[i], y.options[i]];
       if (
@@ -155,7 +184,9 @@ export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null 
 
 /** The action `run` would run for `result`, picked the way that version of `run` picks it. */
 function pickedAction(result: AnyParseResult): Action | undefined {
-  if (!result.actions) return result.action;
+  if (!result.actions) {
+    return result.action;
+  }
   return result.optionActions?.at(-1) ?? result.actions.at(-1);
 }
 
@@ -180,7 +211,9 @@ function optionEntries(options: Map<string, string[]>): [string, number, string[
   const groups: string[][] = [];
   return [...options].map(([name, values]) => {
     let group = groups.indexOf(values);
-    if (group === -1) group = groups.push(values) - 1;
+    if (group === -1) {
+      group = groups.push(values) - 1;
+    }
     return [name, group, [...values]];
   });
 }
