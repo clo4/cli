@@ -1284,6 +1284,14 @@ test("parse: an unknown option lists the valid names and the command it was foun
   expect((error as UnknownOption).context.path).toEqual([spec, sub]);
 });
 
+test("parse: an option missing values before a subcommand reports the command it was used in", () => {
+  const sub: Subcommand = { name: "sub" };
+  const spec: Spec = { name: "test", options: [{ name: "--pair", args: [{}, {}] }], subcommands: [sub] };
+  const error = thrown(() => parse(["--pair=a", "sub"], spec));
+  expect(error).toBeInstanceOf(TooFewOptionArguments);
+  expect((error as TooFewOptionArguments).context.path).toEqual([spec]);
+});
+
 test("parse: an unknown option doesn't suggest hidden options", () => {
   const spec: Spec = {
     name: "test",

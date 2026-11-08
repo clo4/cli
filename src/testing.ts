@@ -9,7 +9,7 @@ import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
 import { CommandScope, optionKey } from "./scope.js";
 import type { OptionForm } from "./scope.js";
 import { optionToString } from "./help.js";
-import { readToken } from "./parse.js";
+import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
 
 const repr = JSON.stringify;
@@ -552,8 +552,12 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
           `${written}, but '${form.join}' isn't one of the option arg separators there (${scope.directives.optionArgSeparators.map((separator) => `'${separator}'`).join(", ") || "none"}). Add it to \`parserDirectives.optionArgSeparators\`.`,
         );
       }
+      const reader = tokenReader(root);
+      for (const token of before) {
+        reader.read(token);
+      }
+      const first = reader.read(tokens[0]);
       if (form.join !== null) {
-        const first = readToken(root, before, tokens[0]);
         const joined = first.kind === "options" && first.attached?.option === option;
         assert(
           readsAs(first, option) && joined,
@@ -561,7 +565,7 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
         );
       }
       for (let index = 1; index < tokens.length; index++) {
-        const reading = readToken(root, [...before, ...tokens.slice(0, index)], tokens[index]);
+        const reading = reader.read(tokens[index]);
         assert(
           reading.kind === "value" && reading.option === option,
           `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeReading(reading, path)}`,

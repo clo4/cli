@@ -10,7 +10,7 @@ import { expect, test } from "vitest";
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
-import { parse, readNext, readToken } from "../src/parse.js";
+import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
@@ -61,8 +61,9 @@ function invalidPath(path: readonly (Spec | Subcommand)[], spec: Spec): string |
 /** The names of every option the lenient read uses, token by token. */
 function usedNames(spec: Spec, input: readonly string[]): Set<string> {
   const names = new Set<string>();
-  for (let i = 0; i < input.length; i++) {
-    const reading = readToken(spec, input.slice(0, i), input[i]);
+  const reader = tokenReader(spec);
+  for (const token of input) {
+    const reading = reader.read(token);
     if (reading.kind !== "options") {
       continue;
     }
