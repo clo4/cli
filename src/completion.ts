@@ -139,16 +139,18 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
 
 /** Decide which kinds of candidate the word being completed can use. */
 function wantedCandidates(next: NextToken, req: CompletionRequest) {
-  const posixNoncompliant = next.directives.flagsArePosixNoncompliant;
-  // After `--`, or once options must stop, a dashed word is an argument.
-  const partialIsOption =
-    next.optionsAllowed && !posixNoncompliant && (req.partial.startsWith("-") || req.partial.startsWith("+"));
-  // When gating, a dashed word completes options only; everything else completes
-  // commands/positionals. Posix-noncompliant options have no dash, so they're
-  // exempt and always offered alongside the other candidates.
+  // Posix-noncompliant options have no dash to gate on, so they're always
+  // offered alongside the other candidates.
+  if (!req.gateOptions || next.directives.flagsArePosixNoncompliant) {
+    return { wantValues: true, wantOptions: true };
+  }
+  // When gating, a word the parser reads as an option completes options only,
+  // and options are offered once the word starts one of their names.
+  const partial = req.partial;
   return {
-    wantValues: !(req.gateOptions && partialIsOption),
-    wantOptions: !req.gateOptions || partialIsOption || posixNoncompliant,
+    wantValues: !next.partialIsOption,
+    wantOptions:
+      partial !== "" && next.options.some(({ forms }) => forms.some(({ name }) => name.startsWith(partial))),
   };
 }
 

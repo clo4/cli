@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 
 import { completeRuntime, completion, getCompletion } from "../src/completion.js";
 import { run } from "../src/index.js";
+import { parse } from "../src/parse.js";
 import type { Spec } from "../src/types.js";
 import { captureConsole, expectIncludes, expectNotIncludes } from "./helpers.js";
 
@@ -211,9 +212,14 @@ test("runtime: a variadic option without suggestions still offers options", asyn
 
 test("runtime: gateOptions applies after a variadic option's first value", async () => {
   expect(values(await resolve(openOptionSpec, ["--tags", "a"], "", true))).toEqual(["T1"]);
-  const dashed = values(await resolve(openOptionSpec, ["--tags", "a"], "-", true));
-  expect(dashed).toContain("--watch");
-  expect(dashed).not.toContain("T1");
+  // The parser reads `-` and `--w` here as values of --tags, so they complete
+  // values too.
+  for (const partial of ["-", "--w"]) {
+    const dashed = values(await resolve(openOptionSpec, ["--tags", "a"], partial, true));
+    expect(dashed).toContain("--watch");
+    expect(dashed).toContain("T1");
+  }
+  expect(values(await resolve(openOptionSpec, ["--tags", "a"], "--watch", true))).not.toContain("T1");
 });
 
 test("runtime: a required option value is offered alone", async () => {
@@ -424,6 +430,20 @@ test("runtime: gateOptions hides options until the token starts with a dash", as
   const dashed = values(await resolve(fixture, ["build"], "-", true));
   expect(dashed).toContain("--out");
   expect(dashed).toContain("--help");
+});
+
+test("runtime: gateOptions offers values for a dashed word the parser reads as one", async () => {
+  const spec: Spec = {
+    name: "t",
+    args: { name: "x", suggestions: ["-", "a"] },
+    options: [{ name: "--o" }],
+  };
+  expect(parse(["-"], spec).args).toEqual(["-"]);
+  const v = values(await resolve(spec, [], "-", true));
+  expect(v).toContain("-");
+  expect(v).toContain("--o");
+  // A word the parser reads as an option still completes options only.
+  expect(values(await resolve(spec, [], "--o", true))).toEqual(["--o"]);
 });
 
 test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate on)", async () => {

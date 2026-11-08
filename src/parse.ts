@@ -61,6 +61,12 @@ export interface NextToken {
    * attached. `prefix` is everything before the value.
    */
   attached: { option: Option; arg: Arg; prefix: string; value: string } | null;
+  /**
+   * Whether the parser reads the partial token as an option, known or
+   * unknown, or as `--`. If it doesn't, the token is a value, argument or
+   * subcommand.
+   */
+  partialIsOption: boolean;
 }
 
 /**
@@ -592,7 +598,7 @@ class Scanner {
   }
 
   /** What the next token can be. See {@link readNext}. */
-  next(): Omit<NextToken, "attached"> {
+  next(): Omit<NextToken, "attached" | "partialIsOption"> {
     const open = this.openOption && this.hasRoomForValue ? this.openOption : null;
     const command = this.scope.command;
     // Every token after `--` is an argument.
@@ -718,18 +724,21 @@ function argAt(args: readonly Arg[], index: number): Arg | undefined {
 
 /**
  * Work out what the token after `before` can be, and how the parser reads
- * `partial` if it's an option with a value attached. Reads leniently, so a
- * line that's wrong at the moment still has an answer. Completion is built on
- * this.
+ * `partial`: whether it's an option, and if so, whether it has a value
+ * attached. Reads leniently, so a line that's wrong at the moment still has
+ * an answer. Completion is built on this.
  */
 export function readNext(spec: Spec, before: readonly string[], partial: string): NextToken {
   const s = new Scanner(spec, false);
   s.read(before);
   const next = s.next();
   let attached: NextToken["attached"] = null;
+  let partialIsOption = false;
   if (partial !== "" && next.optionsAllowed) {
     // Read the line again with the partial token, so `next` stays as it was.
     const reading = readToken(spec, before, partial);
+    partialIsOption =
+      reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
     const found = reading.kind === "options" ? reading.attached : null;
     const arg = found && asArray(found.option.args)[0];
     if (found && arg) {
@@ -741,7 +750,7 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
       };
     }
   }
-  return { ...next, attached };
+  return { ...next, attached, partialIsOption };
 }
 
 /**
