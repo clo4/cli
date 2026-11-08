@@ -16,41 +16,66 @@ const repr = JSON.stringify;
 
 // TODO: one decorators are stable (ts 4.9?), use decorators this file
 
-/**
- * Run a function once for each `args` property in the spec (recursive)
- *
- * This will convert single args to an array with one item.
- */
-function forEachArgArray(
-  spec: Subcommand,
-  fn: (args: Arg[], path: Subcommand[]) => void,
-  path: Subcommand[] = [],
-): void {
-  path = path.concat(spec);
-  fn(makeArray(spec.args), path);
-  for (const option of makeArray(spec.options)) {
-    fn(makeArray(option.args), path);
+/** An option, the path to the command that defines it, and its index there. */
+interface Definition {
+  option: Option;
+  definedIn: Subcommand[];
+  index: number;
+}
+
+/** One command in the spec, with what's in effect there. */
+class CommandVisit {
+  private built: CommandScope | null = null;
+
+  constructor(
+    /** The commands from the root to this one. */
+    readonly path: Subcommand[],
+    /** This command's options, in definition order. */
+    readonly own: Definition[],
+    /** The persistent options of the commands above, root first. */
+    readonly inherited: Definition[],
+  ) {}
+
+  /** The last command on the path. */
+  get command(): Subcommand {
+    return this.path[this.path.length - 1];
   }
-  for (const subcommand of makeArray(spec.subcommands)) {
-    forEachArgArray(subcommand, fn, path);
+
+  /** The options, subcommands and directives in effect here, built on first use. */
+  get scope(): CommandScope {
+    return (this.built ??= CommandScope.at(this.path));
   }
 }
 
 /**
- * Run a function once for each `subcommands` property in the spec (recursive)
- *
- * This will also run the function for the root spec itself.
+ * Run a function once for each command in the spec, parents before their
+ * subcommands, starting with `spec`. Each visit's path and scope start at
+ * `spec`.
  */
-function forEachSubcommand(
-  spec: Subcommand,
-  fn: (spec: Subcommand, path: Subcommand[]) => void,
-  path: Subcommand[] = [],
-): void {
-  path = path.concat(spec);
-  fn(spec, path);
-  for (const subcommand of makeArray(spec.subcommands)) {
-    forEachSubcommand(subcommand, fn, path);
-  }
+function forEachCommand(spec: Subcommand, fn: (visit: CommandVisit) => void): void {
+  const visit = (path: Subcommand[], inherited: Definition[]) => {
+    const command = path[path.length - 1];
+    const own = makeArray(command.options).map((option, index) => ({ option, definedIn: path, index }));
+    fn(new CommandVisit(path, own, inherited));
+    const next = [...inherited, ...own.filter(({ option }) => option.isPersistent)];
+    for (const subcommand of makeArray(command.subcommands)) {
+      visit([...path, subcommand], next);
+    }
+  };
+  visit([spec], []);
+}
+
+/**
+ * Run a function once for each `args` property in the spec: each command's,
+ * then its options'. This will convert single args to an array with one item.
+ */
+function forEachArgArray(spec: Subcommand, fn: (args: Arg[], path: Subcommand[]) => void): void {
+  forEachCommand(spec, ({ command, path }) => {
+    fn(makeArray(command.args), path);
+    for (const option of makeArray(command.options)) {
+      fn(makeArray(option.args), path);
+    }
+  });
 }
 
 function joinNames(names: SingleOrArray<string>) {
@@ -126,23 +151,12 @@ interface OptionUse {
  * option the way the parser does at each command.
  */
 function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
-  // An option, the path to the command that defines it, and its index there.
-  type Definition = { option: Option; definedIn: Subcommand[]; index: number };
-  // `inherited` holds the persistent options from the commands above.
-  const visit = (path: Subcommand[], inherited: Definition[]) => {
-    const command = path[path.length - 1];
-    const scope = CommandScope.at(path);
-    const own = makeArray(command.options).map((option, index) => ({ option, definedIn: path, index }));
+  forEachCommand(spec, ({ path, own, inherited, scope }) => {
     for (const { option, definedIn, index } of [...own, ...inherited]) {
       const where = describeOption(definedIn, index, path);
       fn({ option, path, scope, isDefinedHere: definedIn === path, where });
     }
-    const next = [...inherited, ...own.filter(({ option }) => option.isPersistent)];
-    for (const subcommand of makeArray(command.subcommands)) {
-      visit([...path, subcommand], next);
-    }
-  };
-  visit([spec], []);
+  });
 }
 
 /** Asserts that required arguments do not come after an optional argument */
@@ -171,7 +185,7 @@ export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcom
  * too, and the option can't be required.
  */
 export function assertDefaultsCanBeUsed(spec: Subcommand): void {
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     for (const [index, arg] of makeArray(command.args).entries()) {
       assert(
         arg.default === undefined || arg.isOptional,
@@ -225,9 +239,9 @@ export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): vo
 
 /** Asserts that options have unique names in their scope */
 export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
-  forEachSubcommand(spec, (spec, path) => {
+  forEachCommand(spec, ({ path, own }) => {
     const optionNames = new Set<string>();
-    for (const [index, option] of makeArray(spec.options).entries()) {
+    for (const { option, index } of own) {
       for (const name of makeArray(option.name)) {
         assert(
           !optionNames.has(name),
@@ -241,17 +255,14 @@ export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
 
 /** Asserts that options don't shadow a persistent option */
 export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): void {
-  forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
-    if (!isDefinedHere) {
-      return;
-    }
-    // The persistent options this command inherits from its parents.
-    const inherited = CommandScope.at(path.slice(0, -1)).persistent;
-    for (const name of makeArray(option.name)) {
-      assert(
-        !inherited.some((persistent) => makeArray(persistent.name).includes(name)),
-        `${where} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
-      );
+  forEachCommand(spec, ({ path, own, inherited }) => {
+    for (const { option, index } of own) {
+      for (const name of makeArray(option.name)) {
+        assert(
+          !inherited.some((persistent) => makeArray(persistent.option.name).includes(name)),
+          `${describeOption(path, index)} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
+        );
+      }
     }
   });
 }
@@ -310,9 +321,9 @@ export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): vo
 
 /** Asserts that subcommands don't share a name with a sibling subcommand */
 export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void {
-  forEachSubcommand(spec, (spec, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     const names = new Set<string>();
-    for (const [index, subcommand] of makeArray(spec.subcommands).entries()) {
+    for (const [index, subcommand] of makeArray(command.subcommands).entries()) {
       for (const name of makeArray(subcommand.name)) {
         assert(
           !names.has(name),
@@ -328,7 +339,7 @@ export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void 
  * Asserts that no option arg separator is an empty string
  */
 export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void {
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     const separators = makeArray(command.parserDirectives?.optionArgSeparators);
     for (const [sepIndex, separator] of separators.entries()) {
       assert(
@@ -361,7 +372,7 @@ export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
       assert(name === name.trim(), `${where} has a name with extra whitespace`);
     }
   });
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     for (const name of makeArray(command.name)) {
       assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
     }
@@ -388,7 +399,7 @@ export function assertEverythingHasDescription(spec: Subcommand): void {
       assert(option.description, `${where} has no description`);
     }
   });
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     assert(command.description, `${describeCommand(path)} has no description`);
   });
 }
@@ -412,7 +423,7 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
       `${where} has a description line over 68 characters`,
     );
   });
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     if (command.description) {
       assert(
         command.description.split("\n").every((line) => line.length <= 68),
@@ -569,7 +580,7 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
  */
 export function assertNamesReadBack(spec: Subcommand): void {
   const root = spec as Spec;
-  forEachSubcommand(spec, (command, path) => {
+  forEachCommand(spec, ({ command, path }) => {
     const before = tokensTo(path);
     for (const subcommand of makeArray(command.subcommands)) {
       for (const name of makeArray(subcommand.name)) {
@@ -589,20 +600,19 @@ export function assertNamesReadBack(spec: Subcommand): void {
 
 export function assertCommonOptionsArePersistent(spec: Subcommand): void {
   const failures: [string, string][] = [];
-  forEachSubcommand(spec, (subcommand, path) => {
-    if (!subcommand.subcommands) {
+  forEachCommand(spec, ({ command, path }) => {
+    if (!command.subcommands) {
       return;
     }
-    for (const option of makeArray(subcommand.options)) {
-      const allChildSubcommands: Subcommand[] = [];
-      forEachSubcommand(subcommand, (cmd) => allChildSubcommands.push(cmd));
-
+    // This command's options that every command below it defines too.
+    let common = makeArray(command.options);
+    forEachCommand(command, ({ command: below }) => {
+      const keys = makeArray(below.options).map(optionKey);
+      common = common.filter((option) => keys.includes(optionKey(option)));
+    });
+    for (const option of common) {
       const key = optionKey(option);
-      const allShareOption = allChildSubcommands.every((cmd) =>
-        makeArray(cmd.options).some((o) => optionKey(o) === key),
-      );
-
-      if (allShareOption && !failures.some(([failed]) => failed === key)) {
+      if (!failures.some(([failed]) => failed === key)) {
         failures.push([key, namedArrayToString(...path, option)]);
       }
     }
@@ -640,15 +650,15 @@ export function assertOptionNameReferencesExist(spec: Subcommand): void {
  * Asserts that commands that will match subcommands by prefix do not take arguments
  */
 export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void {
-  forEachSubcommand(spec, (subcommand, path) => {
-    // The path ends at this command, so this is the setting that decides how
+  forEachCommand(spec, ({ command, path, scope }) => {
+    // The scope is at this command, so this is the setting that decides how
     // its own subcommands are matched.
-    if (!CommandScope.at(path).directives.subcommandsMatchUniquePrefix) {
+    if (!scope.directives.subcommandsMatchUniquePrefix) {
       return;
     }
 
     assert(
-      !(subcommand.subcommands && subcommand.args),
+      !(command.subcommands && command.args),
       `The command ${namedArrayToString(
         ...path,
       )} has at least one argument and subcommand, but matches subcommands based on unique prefixes. To fix this, use \`parserDirectives: { subcommandsMatchUniquePrefix: false }\``,
