@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { cpus, tmpdir } from "node:os";
+import { availableParallelism, cpus, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -23,6 +23,7 @@ type Status = number | string;
 interface BenchOptions {
   samples: number;
   warmup: number;
+  concurrency: number;
   csvOut: string | undefined;
 }
 
@@ -69,7 +70,6 @@ class BenchmarkInterrupted extends Error {
 const benchDir = fileURLToPath(new URL("..", import.meta.url));
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const timingEntry = join(benchDir, "_timing.mjs");
-const timingFile = join(tmpdir(), `clo4-cli-bench-${process.pid}.txt`);
 const baselineScenario = "process startup";
 
 /** Differences smaller than this are reported as too small to matter. */
@@ -158,6 +158,11 @@ process.exitCode = await CLI.run({
       args: { name: "count" },
     },
     {
+      name: "--concurrency",
+      description: "Concurrent processes: a positive integer or auto (default: 1).",
+      args: { name: "count" },
+    },
+    {
       name: "--csv-out",
       description: "Write a header and a single data row of medians to this file.",
       args: { name: "file" },
@@ -172,11 +177,12 @@ function readOptions({ options }: CLI.ActionInit): BenchOptions {
   return {
     samples: readPositiveIntOption(options.get("--samples"), "--samples", 50),
     warmup: readPositiveIntOption(options.get("--warmup"), "--warmup", 3),
+    concurrency: readConcurrency(options.get("--concurrency")),
     csvOut: options.get("--csv-out"),
   };
 }
 
-async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<number> {
+async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptions): Promise<number> {
   if (!existsSync(new URL("../../dist/index.js", import.meta.url))) {
     console.error("Build @clo4/cli before benchmarking: pnpm build");
     return 1;
@@ -207,7 +213,7 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     const results = new Map<string, Bucket>();
 
     try {
-      const failures = await checkOutputs(measuredLibraries, interrupt);
+      const failures = await checkOutputs(measuredLibraries, interrupt, concurrency, bundleDir);
       if (failures.length > 0) {
         console.error("These adapters printed the wrong output, so the benchmark didn't run:");
         for (const failure of failures) {
@@ -219,6 +225,10 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
       console.log(`CLI startup benchmark (${samples} samples, ${warmup} warmup rounds)`);
       console.log(`cwd: ${packageRoot}`);
       console.log(`cpu: ${cpus()[0]?.model ?? "unknown"}, node ${process.version}`);
+      console.log(`concurrency: ${concurrency} (${availableParallelism()} available logical CPUs)`);
+      if (concurrency > 1) {
+        console.log("Concurrent processes share CPU resources; compare with runs at the same concurrency.");
+      }
       console.log("Each adapter is bundled with its library before timing, and bundling isn't timed.");
       console.log("Every round runs each library and scenario once, in a new random order.");
       console.log(
@@ -230,13 +240,18 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
 
       const progress = createProgress((warmup + samples) * jobs.length);
       for (let i = 0; i < warmup + samples; i += 1) {
-        for (const job of shuffled(jobs)) {
-          const result = await runOnce(job.bundle, job.args, interrupt);
+        await forEachConcurrent(shuffled(jobs), concurrency, async (job, slot) => {
+          const result = await runOnce(
+            job.bundle,
+            job.args,
+            interrupt,
+            join(bundleDir, `timing-${slot}.txt`),
+          );
           progress.tick();
           if (i >= warmup) {
             recordResult(bucketFor(results, job.library, job.scenario), result);
           }
-        }
+        });
       }
       progress.finish();
     } catch (error) {
@@ -267,11 +282,10 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     printComparison(results, measuredLibraries);
 
     if (csvOut !== undefined) {
-      writeFileSync(csvOut, buildCsv(results, measuredLibraries, samples));
+      writeFileSync(csvOut, buildCsv(results, measuredLibraries, samples, concurrency));
       console.log(`\nWrote CSV row to ${csvOut}`);
     }
   } finally {
-    rmSync(timingFile, { force: true });
     rmSync(bundleDir, { recursive: true, force: true });
   }
 
@@ -282,13 +296,14 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
  * Build a two-line CSV (header and one data row) of this run's medians. The
  * columns follow the static scenario and adapter lists, so rows from different
  * runs line up in a history file. The history file only accepts new columns at
- * the end, and the per-library columns come last, so adding a library keeps
- * the earlier columns in place. Adding a scenario doesn't.
+ * the end. When adding a library or scenario, preserve the existing column
+ * order and append its columns after the concurrency metadata.
  */
 function buildCsv(
   results: Map<string, Bucket>,
   measuredLibraries: readonly Library[],
   samples: number,
+  concurrency: number,
 ): string {
   const header = ["timestamp_utc", "commit", "node_version", "cpu", "samples"];
   const row = [
@@ -317,6 +332,10 @@ function buildCsv(
     header.push(`geomean_${slug(library)}`);
     row.push(cell(geometricMean(scenarios.map(([scenario]) => median(library, scenario)))));
   }
+
+  // Append metadata so the existing CI history remains compatible.
+  header.push("concurrency");
+  row.push(String(concurrency));
 
   return `${header.join(",")}\n${row.join(",")}\n`;
 }
@@ -349,14 +368,20 @@ async function bundleAdapters(outDir: string): Promise<Library[]> {
 async function checkOutputs(
   measuredLibraries: readonly Library[],
   interrupt: InterruptController,
+  concurrency: number,
+  timingDir: string,
 ): Promise<string[]> {
   const failures: string[] = [];
-  for (const [library, bundle] of measuredLibraries) {
-    for (const [scenario, args, expected] of scenarios) {
-      if (expected === undefined) {
-        continue;
-      }
-      const result = await runOnce(bundle, args, interrupt);
+  const checks = measuredLibraries.flatMap(([library, bundle]) =>
+    scenarios.flatMap(([scenario, args, expected]) =>
+      expected === undefined ? [] : [{ library, bundle, scenario, args, expected }],
+    ),
+  );
+  await forEachConcurrent(
+    checks,
+    concurrency,
+    async ({ library, bundle, scenario, args, expected }, slot) => {
+      const result = await runOnce(bundle, args, interrupt, join(timingDir, `timing-${slot}.txt`));
       if (result.status !== expected.status) {
         failures.push(`${library}, ${scenario}: exited ${result.status}, expected ${expected.status}`);
       } else if (expected.stdout !== undefined && result.stdout !== expected.stdout) {
@@ -364,9 +389,36 @@ async function checkOutputs(
           `${library}, ${scenario}: printed ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(expected.stdout)}`,
         );
       }
+    },
+  );
+  return failures;
+}
+
+/** Drain active processes before propagating an error and cleaning up their files. */
+async function forEachConcurrent<T>(
+  items: readonly T[],
+  concurrency: number,
+  action: (item: T, slot: number) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  let stopped = false;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async (_, slot) => {
+    try {
+      while (!stopped && next < items.length) {
+        const item = items[next++];
+        await action(item, slot);
+      }
+    } catch (error) {
+      stopped = true;
+      throw error;
+    }
+  });
+  const settled = await Promise.allSettled(workers);
+  for (const result of settled) {
+    if (result.status === "rejected") {
+      throw result.reason;
     }
   }
-  return failures;
 }
 
 /**
@@ -378,6 +430,7 @@ async function runOnce(
   bundle: string,
   args: readonly string[],
   interrupt: InterruptController,
+  timingFile: string,
 ): Promise<RunResult> {
   interrupt.throwIfInterrupted();
   rmSync(timingFile, { force: true });
@@ -617,7 +670,19 @@ function readPositiveIntOption(raw: string | undefined, name: string, fallback: 
   if (!/^[1-9]\d*$/.test(raw)) {
     throw new Error(`${name} must be a positive integer`);
   }
-  return Number.parseInt(raw, 10);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(`${name} must be a safe positive integer`);
+  }
+  return value;
+}
+
+function readConcurrency(raw: string | undefined): number {
+  const available = availableParallelism();
+  if (raw === "auto") {
+    return available;
+  }
+  return Math.min(available, readPositiveIntOption(raw, "--concurrency", 1));
 }
 
 function formatRow(cells: readonly string[]): string {
@@ -632,11 +697,13 @@ function formatComparisonRow(cells: readonly string[]): string {
 
 function createInterruptController(): InterruptController {
   let signal: BenchSignal | undefined;
-  let currentChild: ChildProcess | undefined;
+  const children = new Set<ChildProcess>();
 
   const onSignal = (nextSignal: BenchSignal) => {
     signal ??= nextSignal;
-    currentChild?.kill(nextSignal);
+    for (const child of children) {
+      child.kill(nextSignal);
+    }
   };
 
   process.on("SIGINT", onSignal);
@@ -647,15 +714,13 @@ function createInterruptController(): InterruptController {
       return signal;
     },
     track(child) {
-      currentChild = child;
+      children.add(child);
       if (signal !== undefined) {
         child.kill(signal);
       }
     },
     clear(child) {
-      if (currentChild === child) {
-        currentChild = undefined;
-      }
+      children.delete(child);
     },
     throwIfInterrupted() {
       if (signal !== undefined) {
