@@ -1,110 +1,1012 @@
-# @clo4/cli
+# clo4's CLI SDK
 
-Fully declarative CLI framework, lean footprint, fast, good API for completions.
+`@clo4/cli` is a TypeScript library for building command-line tools. Commands are plain objects that describe accepted arguments and options. Each command can have an action: a function that receives the parsed input.
+
+Parsing, help and completion need to follow the same argument and option rules. The library reads those rules from the command definitions, with application logic in the action functions.
+
+Startup time matters for commands that exit quickly and for shell completion, which starts the CLI on each request.
+
+```bash
+npm install @clo4/cli
+```
+
+## Contents
+
+[Example](#example) · [Getting started](#getting-started) · [Help and completion](#help-and-completion) · [Testing](#testing-your-spec) · [Parser settings](#parser-settings) · [Performance](#performance) · [API](#api-and-compatibility) · [License](#license)
+
+## Example
+
+This example defines `demo build`, with an input directory, an output option and a watch flag. The action prints the selected paths and whether watch mode was requested.
+
+Save this as `demo.ts` in a project with `"type": "module"` in its `package.json`. Run the examples with Node.js 24 or later using its [built-in TypeScript support](https://nodejs.org/api/typescript.html#type-stripping):
 
 ```ts
 import * as CLI from "@clo4/cli";
 
 const spec: CLI.Spec = {
   name: "demo",
-  description: "Compile a project.",
+  description: "A small build tool.",
   options: [CLI.help],
   subcommands: [
     {
       name: "build",
       description: "Build a project.",
-      args: { name: "input" },
+      args: {
+        name: "input",
+        description: "Source directory.",
+        isOptional: true,
+        default: ".",
+        template: "folders",
+      },
       options: [
-        { name: "--watch", description: "Watch for changes." },
+        {
+          name: ["-w", "--watch"],
+          description: "Watch for changes.",
+        },
         {
           name: ["-o", "--output"],
-          args: { name: "dir" },
-          isRequired: true,
-          description: "Write output to this directory.",
+          description: "Output directory.",
+          args: {
+            name: "dir",
+            default: "dist",
+            template: "folders",
+          },
         },
       ],
       action({ args: [input], options }) {
         console.log(`${input} -> ${options.get("--output")}`);
+        if (options.has("--watch")) {
+          console.log("Watch mode enabled.");
+        }
       },
     },
+    CLI.helpCommand,
+    CLI.completion,
   ],
 };
 
 process.exitCode = await CLI.run(spec);
 ```
 
-Specs define `args`, `options`, `subcommands`, and `action` functions. Parsing and validating values stay in your code, it's not the job of the library.
+`build` defaults to `.` for input and `dist` for output:
 
-Option actions override command actions. That lets helpers like `--help` run even when the selected command is missing required positional arguments.
+```console
+$ node demo.ts build
+. -> dist
+$ node demo.ts build src -o public --watch
+src -> public
+Watch mode enabled.
+```
 
-A command without an action prints its help, so a command that only groups subcommands doesn't need one. Running `demo` above prints the root help.
+In the remaining command examples, `demo` stands for `node demo.ts`.
 
-Use `@clo4/cli/testing` in package tests to validate structural constraints that TypeScript cannot express, such as duplicate names, names the parser reads as something else, bad required/optional argument order, invalid repeatable options, and invalid option references.
+Adding `CLI.help` to the root command's `options` makes `-h` and `--help` available on all its subcommands. The generated help lists the command's arguments and options:
 
-## Shell completion
+```console
+$ demo build --help
+Build a project.
 
-Add `CLI.completion` to a spec's `subcommands` to give the CLI a `completion <shell>` command that prints a completion script:
+Usage:
+  demo build [flags] [input]
+
+Arguments:
+  input  Source directory. (default: .)
+
+Flags:
+  -w, --watch         Watch for changes.
+  -o, --output <dir>  Output directory. (default: dist)
+
+Global flags:
+  -h, --help          Print a help message
+```
+
+Running `demo` without a subcommand displays the CLI's help text, including the available commands and global options. This is the default behavior for a command without an `action`.
+
+`demo help build` displays help for the `build` subcommand. `demo completion <shell>` prints a completion script for the specified shell.
+
+<details>
+<summary>Command-line errors</summary>
+<br>
+
+When parsing fails, `CLI.run` writes an error message and usage to stderr and returns exit code 1. The example assigns that result to `process.exitCode`. For misspelled commands or options, the output may suggest a matching name:
+
+```console
+$ demo bild
+Error: Unknown command 'bild'
+
+    Did you mean 'build'?
+
+Usage:
+  demo [flags]
+
+Commands:
+  build       Build a project.
+  help        Print a help message
+  completion  Print a shell completion script
+
+Global flags:
+  -h, --help  Print a help message
+```
+
+<hr>
+</details>
+
+[↑ Contents](#contents) · [Getting started →](#getting-started)
+
+## Getting started
+
+A **spec** is a plain object describing your CLI. The top-level (root) command has type `CLI.Spec`. Entries in a command's `subcommands` array have type `CLI.Subcommand`.
+
+For a command line like `demo build src --output dist --watch`:
+
+- `build` selects the command to run.
+- `args` describes positional arguments: here, `src` is the input directory.
+- `options` describes named inputs: `--output` takes the value `dist`, and `--watch` is a flag with no value.
+- The `build` command's `action` receives these parsed arguments and options and runs after parsing succeeds.
+
+In the spec, `args` and `options` define what a command accepts. Inside an action, `args` is an array of positional values, and `options` has methods to read the named inputs. `CLI.run` reads the command line, validates argument counts and option rules, and calls the selected action.
+
+The flag example below is a complete `demo.ts`. Subsequent examples replace its `build` definition. As in the opening example, `demo` stands for `node demo.ts` in command examples.
+
+### Flags
+
+A flag is an option that takes no value. Add it to the command's `options` array, then use `options.has()` in the action to check whether it was given.
 
 ```ts
+import * as CLI from "@clo4/cli";
+
+const build: CLI.Subcommand = {
+  name: "build",
+  options: [
+    {
+      name: "--debug",
+    },
+  ],
+  action({ options }) {
+    console.log(options.has("--debug"));
+  },
+};
+
 const spec: CLI.Spec = {
   name: "demo",
-  options: [CLI.help],
-  subcommands: [CLI.completion /* ... */],
+  subcommands: [build],
+};
+
+process.exitCode = await CLI.run(spec);
+```
+
+```console
+$ demo build --debug
+true
+$ demo build
+false
+```
+
+<br>
+
+### Names
+
+An option's `name` accepts a string or an array of aliases. This replacement for `build` accepts both `-v` and `--verbose`; keep the import, root spec and `CLI.run` call from the preceding example:
+
+```ts
+const build: CLI.Subcommand = {
+  name: "build",
+  options: [
+    {
+      name: ["-v", "--verbose"],
+    },
+  ],
+  action({ options }) {
+    console.log(options.has("--verbose"));
+  },
 };
 ```
 
+```console
+$ demo build -v
+true
+$ demo build --verbose
+true
+```
+
+Include the prefix in each name, such as `-v` or `--verbose`. Names are case-sensitive. Both aliases work when reading an option: `options.has("-v")` and `options.has("--verbose")` return the same result.
+
+Short flags can be grouped: `-abc` is equivalent to `-a -b -c` when all three are flags. An option's `description` appears beside its names in help.
+
+<br>
+
+### Option arguments
+
+An option's `args` describes the value it accepts. Here, `file` labels that value in help. The action reads the supplied value with `options.get()`:
+
+```ts
+const build: CLI.Subcommand = {
+  name: "build",
+  options: [
+    {
+      name: ["-o", "--output"],
+      args: {
+        name: "file",
+      },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--output"));
+  },
+};
+```
+
+```console
+$ demo build -o out.js
+out.js
+$ demo build
+undefined
+```
+
+The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. Supplying `--output` without a value is an error. Setting `isRequired: true` on the option also makes omitting the option an error.
+
+<br>
+
+### Positional arguments
+
+A command's `args` describes positional arguments: values supplied without an option name. It accepts one argument definition or an array. Arguments are required by default; `isOptional: true` allows an argument to be omitted. The action receives their values in order:
+
+```ts
+const build: CLI.Subcommand = {
+  name: "build",
+  args: [
+    {
+      name: "source",
+    },
+    {
+      name: "destination",
+      isOptional: true,
+    },
+  ],
+  action({ args: [source, destination] }) {
+    console.log(source, destination);
+  },
+};
+```
+
+```console
+$ demo build src dist
+src dist
+$ demo build src
+src undefined
+```
+
+Required arguments must come before optional arguments. Help shows this example as `<source> [destination]`.
+
+The `--` separator makes all remaining words positional arguments, including words that match options or subcommands. For example, `demo build -- --help` passes `"--help"` as the source.
+
+<br>
+
+### Defaults
+
+The remaining examples in Getting started show fields inside `build`. Replace its existing `args`, `options` and `action` with the fields shown. Examples that change the root spec identify it explicitly.
+
+Defaults are set on argument definitions. The opening example gives its optional `input` argument the default `"."`. For an option with a required value, the default applies when the option is omitted:
+
+```ts
+options: [
+  {
+    name: "--port",
+    args: {
+      name: "port",
+      default: "8080",
+    },
+  },
+],
+action({ options }) {
+  console.log(options.get("--port"));
+},
+```
+
+```console
+$ demo build
+8080
+$ demo build --port 3000
+3000
+```
+
+<details>
+<summary>Defaults for optional option values</summary>
+<br>
+
+When `--port` is omitted, `options.get("--port")` returns `"8080"`. The option still counts as absent: `options.has("--port")` is `false` and `options.count("--port")` is `0`. Supplying `--port` without a value is an error.
+
+With `isOptional: true` on an option argument, the option can be supplied without a value. Its default then supplies the missing value. When the option is omitted entirely, `options.get()` returns `undefined`:
+
+```ts
+options: [
+  {
+    name: "--inspect",
+    args: {
+      name: "port",
+      isOptional: true,
+      default: "9229",
+    },
+  },
+],
+action({ options }) {
+  console.log(options.get("--inspect"));
+},
+```
+
+```console
+$ demo build --inspect
+9229
+$ demo build --inspect=9000
+9000
+$ demo build
+undefined
+```
+
+Defaults are strings and appear in help automatically. A positional argument with a default must be optional. Defaults for an omitted option don't satisfy required options or dependencies. [Spec validation](#testing-your-spec) catches defaults the parser cannot use.
+
+<hr>
+</details>
+
+<br>
+
+### Variadic arguments
+
+A variadic argument accepts one or more values. Set `isVariadic: true` on the last argument; its values appear in the same array as the other positional arguments.
+
+```ts
+args: {
+  name: "files",
+  isVariadic: true,
+},
+action({ args }) {
+  console.log(args.join(", "));
+},
+```
+
+```console
+$ demo build index.ts utils.ts
+index.ts, utils.ts
+```
+
+An argument can be both optional and variadic to accept zero or more values. Option arguments support the same fields, including `isOptional` and `isVariadic`.
+
+<br>
+
+### Repeated options
+
+Setting `isRepeatable: true` on an option allows it to be supplied any number of times. `options.all()` returns the collected values in order.
+
+```ts
+options: [
+  {
+    name: "--tag",
+    args: {
+      name: "tag",
+    },
+    isRepeatable: true,
+  },
+],
+action({ options }) {
+  console.log(JSON.stringify(options.all("--tag") ?? []));
+},
+```
+
+```console
+$ demo build --tag dev --tag latest
+["dev","latest"]
+$ demo build
+[]
+```
+
+Setting `isRepeatable` to an integer greater than 1 limits how many times the option can be supplied. For example, `isRepeatable: 2` allows at most two `--tag` options:
+
+```ts
+options: [
+  {
+    name: "--tag",
+    description: "Add a tag.",
+    args: {
+      name: "tag",
+    },
+    isRepeatable: 2,
+  },
+],
+action({ options }) {
+  console.log(JSON.stringify(options.all("--tag") ?? []));
+},
+```
+
+```console
+$ demo build --tag dev --tag latest
+["dev","latest"]
+$ demo build --tag dev --tag latest --tag extra
+Error: Too many repetitions
+
+Usage:
+  demo build [flags]
+
+Flags:
+  --tag <tag>  Add a tag.
+```
+
+Without `isRepeatable`, repeating an option replaces its previous values.
+
+For options with arguments, `options.count(name)` counts collected values. For repeatable flags without arguments, it counts occurrences of the flag.
+
+<table><tbody><tr><td>💡</td><td>
+<!-- <tip> -->
+Use a repeatable <code>-v</code> flag to let users increase logging detail: <code>-v</code> for diagnostics, <code>-vv</code> for debug output, and <code>-vvv</code> for tracing. Use <code>options.count("-v")</code> to select the logging level in your action.
+<!-- </tip> -->
+</td></tr></tbody></table><br>
+
+### Subcommands
+
+Each subcommand has its own name, arguments, options and action. Its definition goes in the parent command's `subcommands` array. This example adds `clean` to the root spec, with `c` as an alias:
+
+```ts
+subcommands: [
+  {
+    name: ["clean", "c"],
+    description: "Remove build output.",
+    action() {
+      console.log("Cleaning up.");
+    },
+  },
+],
+```
+
+```console
+$ demo clean
+Cleaning up.
+$ demo c
+Cleaning up.
+```
+
+A command without an action prints its help. Set `hidden: true` to leave a command or option out of help and completion; typing its exact name still works.
+
+Setting `requiresSubcommand: true` on a command prevents it from accepting positional arguments. When no subcommand is supplied, the command's action runs if defined; otherwise, it displays help.
+
+<br>
+
+### Global options
+
+An option normally belongs to the command that defines it. With `isPersistent: true`, descendant commands inherit it. Here, `--verbose` is defined on the root spec and is also available to `build`:
+
+```ts
+options: [
+  {
+    name: "--verbose",
+    isPersistent: true,
+  },
+],
+subcommands: [
+  {
+    name: "build",
+    action({ options }) {
+      console.log(options.has("--verbose"));
+    },
+  },
+],
+```
+
+```console
+$ demo --verbose build
+true
+$ demo build --verbose
+true
+```
+
+Help lists persistent options under “Global flags”. When `CLI.help` is added to the root spec, every descendant command inherits `--help`.
+
+<br>
+
+### Option relationships
+
+`dependsOn` lists options that must also be supplied. `exclusiveOn` lists options that cannot be used together.
+
+```ts
+options: [
+  {
+    name: "--json",
+    exclusiveOn: ["--quiet"],
+  },
+  {
+    name: "--quiet",
+  },
+  {
+    name: "--sign",
+    dependsOn: ["--output"],
+  },
+  {
+    name: "--output",
+    args: {
+      name: "file",
+    },
+  },
+],
+```
+
+`--json --quiet` fails in either order. `--sign` fails unless the user also supplies `--output`. Names in these lists include their prefixes. Defaults don't count as supplied options.
+
+<br>
+
+### Actions & errors
+
+Actions receive argument values as strings. Conversion and validation happen inside the action. If it throws an `Error`, `CLI.run` prints its message to stderr and returns exit code 1.
+
+```ts
+options: [
+  {
+    name: "--port",
+    args: {
+      name: "port",
+      default: "8080",
+    },
+  },
+],
+action({ options }) {
+  const port = Number(options.get("--port"));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Port must be an integer between 1 and 65535");
+  }
+  console.log(`Port: ${port}`);
+},
+```
+
+```console
+$ demo build --port 3000
+Port: 3000
+$ demo build --port nope
+Error: Port must be an integer between 1 and 65535
+```
+
+An action can return a number to set the exit code, or return nothing for success (0). Async actions are awaited. `CLI.run` resolves to the exit code, limited to the range 0–255. Assign the awaited result to `process.exitCode` as in the opening example.
+
+<details>
+<summary>Option actions and additional action parameters</summary>
+<br>
+
+An option can have an action, too. This runs **instead of** the command's action:
+
+```ts
+options: [
+  {
+    name: "--version",
+    action: () => console.log("1.0.0"),
+  },
+],
+```
+
+When several supplied options have actions, the last one is selected. It bypasses checks for positional argument counts, required options and option relationships. This allows `--help` to display usage without supplying required inputs. Unknown options and malformed option values still produce parsing errors.
+
+Actions also receive:
+
+- `path`: the command objects from the root spec to the selected command.
+- `argSeparatorIndex`: the index in `args` where values after `--` begin, or `-1` if `--` was not supplied.
+- `help(config?)`: a function that returns help text for the selected command.
+
+`options.options` exposes the underlying `Map<string, string[]>`. Supplied options have entries for every alias; omitted options have no entry, including those with defaults.
+
+To report an error without throwing, call `CLI.printError("message")` and return 1.
+
+The action's `help()` function accepts `description: false` to omit the command description and `usage: false` to omit the usage line. `didYouMean: { input, choices }` adds a spelling suggestion. To render help for another command, pass its array of command objects as `path`.
+
+`CLI.run` reads `process.argv.slice(2)` by default. Pass a second argument to supply the command line directly, for example `CLI.run(spec, ["build", "src"])`. It never calls `process.exit`.
+
+<hr>
+</details>
+
+[← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
+
+## Help and completion
+
+`CLI.help` is a help option; `CLI.helpCommand` and `CLI.completion` are subcommands. Add them to the root spec's `options` and `subcommands` arrays:
+
+```ts
+options: [CLI.help],
+subcommands: [CLI.helpCommand, CLI.completion, /* your commands */],
+```
+
+Running `demo --help` displays help for the top-level command. Both `demo build --help` and `demo help build` display help for the `build` subcommand. For nested subcommands, include the full command path: `demo help remote add`.
+
+The built-ins are plain objects. To customise one, copy it with object spread: `{ ...CLI.help, description: "Show help" }`. Setting `isPersistent: true` on `CLI.helpCommand` makes it available within descendant commands, so `demo build help` displays help for `build`.
+
+Persistent subcommands match exact names and are omitted from descendant help. If a descendant defines a subcommand with the same name, that local definition takes precedence.
+
+To pass an inherited command's name as the first positional argument, put `--` before it. For example, `demo build -- help` passes `"help"` as the input directory.
+
+<br>
+
+### Completion suggestions
+
+An argument's `suggestions` field supplies values offered by shell completion. It works on both positional and option arguments:
+
+```ts
+options: [
+  {
+    name: "--mode",
+    args: {
+      name: "mode",
+      suggestions: ["debug", "release"],
+    },
+  },
+],
+```
+
+Suggestions don't restrict accepted values. Validate allowed values in the action if the option must accept only a fixed set.
+
+On an argument, `template: "filepaths"` completes files and directories; `template: "folders"` completes directories only.
+
+Dynamic suggestions come from `generators.custom`. Here, `listTargets(tokens)` is an application function that returns the currently available targets:
+
+```ts
+options: [
+  {
+    name: "--target",
+    args: {
+      name: "target",
+      generators: {
+        custom: async (tokens) => listTargets(tokens),
+      },
+    },
+  },
+],
+```
+
+Static suggestions and generator results can be strings or `{ name, description }` objects. A generator receives the words after the program name, ending with the partial value being completed. For `--target=prod`, its last token is `"prod"`. An argument can have multiple generators by supplying an array.
+
+Each completion request starts a new CLI process. The completion resolver follows the parser's rules for option scope, conflicts and repeat limits. Put application initialisation inside actions to avoid running it on completion requests.
+
+<details>
+<summary>Install shell completion</summary>
+<br>
+
+`demo completion` lists the supported shells. Use `demo completion <shell>` to print a script, replacing `demo` with your installed command's name.
+
+**Bash:** save the script and source it from `~/.bashrc`.
+
 ```sh
-demo completion bash > /etc/bash_completion.d/demo
-demo completion zsh  > "${fpath[1]}/_demo"
+demo completion bash > ~/.demo-completion.bash
+# Add to ~/.bashrc: source ~/.demo-completion.bash
+```
+
+**Zsh:** save into a directory on `fpath`, before `compinit` runs.
+
+```zsh
+mkdir -p ~/.zsh/completions
+demo completion zsh > ~/.zsh/completions/_demo
+# Add to ~/.zshrc before compinit: fpath=(~/.zsh/completions $fpath)
+```
+
+If needed, enable [Zsh's completion system](https://zsh.sourceforge.io/Doc/Release/Completion-System.html#Initialization) with `autoload -Uz compinit; compinit` after setting `fpath`.
+
+**Fish:** save into its completion directory.
+
+```fish
+mkdir -p ~/.config/fish/completions
 demo completion fish > ~/.config/fish/completions/demo.fish
 ```
 
+**PowerShell:** append to [your profile](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles), creating it if needed.
+
 ```powershell
+if (!(Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force }
 demo completion powershell >> $PROFILE
 ```
+
+**Nushell:** save into a [user autoload directory](https://www.nushell.sh/book/configuration.html#configuration-overview).
 
 ```nu
 mkdir ($nu.user-autoload-dirs | first)
 demo completion nushell | save -f ($nu.user-autoload-dirs | first | path join demo.nu)
 ```
 
-Completion describes the whole CLI from the root spec regardless of where the subcommand is placed. Hidden options and subcommands are excluded; persistent options are offered on the descendants that inherit them.
+Start a new shell after installing.
 
-### How completion works
+<hr>
+</details>
 
-`completion <shell>` prints a short script. On every Tab, the script runs `<cli> completion complete -- <commandline>`, and the CLI answers using its own parser. Completions therefore follow every parser option and relationship rule (`exclusiveOn`, `isRepeatable`, `dependsOn`, and so on). Each Tab starts the CLI once, so keep its startup fast.
+[← Getting started](#getting-started) · [↑ Contents](#contents) · [Testing your spec →](#testing-your-spec)
 
-The bash, fish, PowerShell and Nushell scripts pass `--gate-options`, so options are only offered once the word starts with `-`, which is the convention in those shells. The zsh script leaves it out and offers options as usual.
+## Testing your spec
 
-PowerShell and Nushell show every candidate a command returns, so their scripts keep the ones that start with the word being completed, ignoring case, and quote any that contain spaces or other special characters. Nushell has one completer for all external commands, so its script passes other commands to the completer that was set before it.
+`testSpec` validates the structure of a spec, including names, argument order, defaults and option references. These checks catch mistakes that TypeScript's types cannot express.
 
-### Argument suggestions
-
-Arguments can declare completion metadata. These are only used for completions, not parsing.
+Export your spec from a module that does not call `CLI.run`, such as `src/spec.ts`, so importing it in a test does not run the CLI. A Vitest test can import the spec and validate it:
 
 ```ts
-{
-  // dynamic completions: file/folder paths
-  name: "--config",
-  args: { name: "file", template: "filepaths" },
-}
+import { test } from "vitest";
+import { testSpec } from "@clo4/cli/testing";
+import { spec } from "../src/spec.ts";
 
-{
-  // static completions
-  name: "--mode",
-  args: { name: "mode", suggestions: ["debug", "release"] },
-}
-
-{
-  // fully dynamic completions using your own code
-  name: "--target",
-  args: {
-    name: "target",
-    generators: { custom: (tokens) => listTargets() },
-  },
-}
+test("CLI spec is valid", () => testSpec(spec)());
 ```
 
-- `template` (`"filepaths"` / `"folders"`) completes paths.
-- `suggestions` is a static list (strings or `{ name, description }`).
-- `generators.custom(tokens)` returns dynamic suggestions. It runs inside the CLI when the shell asks for completions.
+`testSpec(spec)` returns an async function that runs the checks and throws on failure. Return its promise from your test callback, as above, or await it inside an async test.
+
+The examples above leave out some descriptions to keep them short. By default, validation checks that every command and option has a description and that description lines fit within 68 characters.
+
+<details>
+<summary>Validation options</summary>
+<br>
+
+The second argument configures validation. `allowNoDescription: true` disables the check for missing command and option descriptions:
+
+```ts
+await testSpec(spec, {
+  allowNoDescription: true,
+})();
+```
+
+Three other options disable individual checks:
+
+- `allowLongDescriptionLines`: descriptions can have lines over 68 characters.
+- `allowShadowingPersistentOptions`: a subcommand can replace an inherited option.
+- `allowMatchingSubcommandPrefixAndArgs`: a command can combine positional arguments with subcommands matched by prefix.
+
+All four default to `false`. `namingStyle: "function"` uses assertion names in step-based test output.
+
+The testing entry point also exports `test` as an alias of `testSpec`, the individual assertions, and their [types and options](src/testing.ts).
+
+<hr>
+</details>
+
+[← Help and completion](#help-and-completion) · [↑ Contents](#contents) · [Parser settings →](#parser-settings)
+
+## Parser settings
+
+A command's `parserDirectives` field controls how the parser reads its command line. By default, options can appear before or after positional arguments, subcommands match exact names or aliases, and attached option values use `=`.
+
+A setting applies to the command that defines it and is inherited by its descendants. A subcommand can override a boolean setting with `false`, or provide its own `optionArgSeparators`.
+
+Each example below defines a separate root `spec`. Keep the `import * as CLI from "@clo4/cli"` and `process.exitCode = await CLI.run(spec)` from the opening example.
+
+### Options before arguments
+
+Normally, `demo node --verbose` reads `--verbose` as an option and `node` as a positional argument. For a wrapper around another program, you may want every word after `node` passed through instead.
+
+With `optionsMustPrecedeArguments: true`, the first positional argument ends option parsing:
+
+```ts
+const spec: CLI.Spec = {
+  name: "demo",
+  parserDirectives: {
+    optionsMustPrecedeArguments: true,
+  },
+  args: {
+    name: "command",
+    isVariadic: true,
+  },
+  options: [
+    {
+      name: "--verbose",
+    },
+  ],
+  action({ args, options }) {
+    console.log(`verbose: ${options.has("--verbose")}`);
+    console.log(JSON.stringify(args));
+  },
+};
+```
+
+```console
+$ demo --verbose node --trace-warnings
+verbose: true
+["node","--trace-warnings"]
+$ demo node --verbose
+verbose: false
+["node","--verbose"]
+```
+
+With the directive, `demo node --verbose` treats `--verbose` as a positional value. With default settings, that command would print `verbose: true` and `["node"]`. To end option parsing for a single invocation, use `--`, for example `demo -- node --verbose`.
+
+<br>
+
+### Abbreviated subcommands
+
+Subcommands normally require an exact name or alias. `subcommandsMatchUniquePrefix: true` also accepts a prefix when it identifies just one subcommand:
+
+```ts
+const spec: CLI.Spec = {
+  name: "demo",
+  parserDirectives: {
+    subcommandsMatchUniquePrefix: true,
+  },
+  subcommands: [
+    {
+      name: "install",
+      action: () => console.log("Installing."),
+    },
+    {
+      name: "info",
+      action: () => console.log("Project information."),
+    },
+  ],
+};
+```
+
+```console
+$ demo ins
+Installing.
+$ demo inf
+Project information.
+```
+
+Without the directive, `ins` and `inf` are unknown commands. `demo in` still fails because both names begin with `in`: `Ambiguous command 'in', could be: install, info`.
+
+Hidden and inherited subcommands still require exact names.
+
+When a command accepts both positional arguments and abbreviated subcommands, a word could be interpreted as either. Spec validation rejects this combination by default.
+
+<br>
+
+### Option value separators
+
+By default, `--port=3000` attaches a value with `=`, and `--port 3000` supplies it as the next word. `optionArgSeparators` changes which separators are accepted for attached values.
+
+This spec adds `:` while keeping `=`:
+
+```ts
+const spec: CLI.Spec = {
+  name: "demo",
+  parserDirectives: {
+    optionArgSeparators: [":", "="],
+  },
+  options: [
+    {
+      name: ["-p", "--port"],
+      args: {
+        name: "port",
+      },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--port"));
+  },
+};
+```
+
+```console
+$ demo --port:3000
+3000
+$ demo --port=4000
+4000
+$ demo --port 5000
+5000
+```
+
+Without the directive, `--port:3000` is an unknown option. `optionArgSeparators: ":"` accepts only `:` as a separator. `[]` disables separators; short attached values such as `-p3000` still work.
+
+<details>
+<summary>Requiring a separator</summary>
+<br>
+
+Setting `requiresSeparator: true` on an option requires its value to be attached using an enabled separator. This spec uses the default separator, `=`. It accepts `--port=3000` and rejects `--port 3000`:
+
+```ts
+const spec: CLI.Spec = {
+  name: "demo",
+  options: [
+    {
+      name: "--port",
+      args: {
+        name: "port",
+      },
+      requiresSeparator: true,
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--port"));
+  },
+};
+```
+
+A string requires that particular separator: `requiresSeparator: ":"` accepts `--port:3000` and rejects `--port=3000`. The separator must also be enabled in `parserDirectives.optionArgSeparators`.
+
+<hr>
+</details>
+
+<br>
+
+### Literal option names
+
+Normally, `-abc` is read as chained short options: `-a -b -c`. With `flagsArePosixNoncompliant: true`, names are read literally, so you can define an option such as `-name`:
+
+```ts
+const spec: CLI.Spec = {
+  name: "demo",
+  parserDirectives: {
+    flagsArePosixNoncompliant: true,
+  },
+  args: {
+    name: "paths",
+    isOptional: true,
+    isVariadic: true,
+  },
+  options: [
+    {
+      name: "-name",
+      args: {
+        name: "pattern",
+      },
+    },
+  ],
+  action({ args, options }) {
+    console.log(`pattern: ${options.get("-name")}`);
+    console.log(JSON.stringify(args));
+  },
+};
+```
+
+```console
+$ demo src -name '*.ts'
+pattern: *.ts
+["src"]
+$ demo -unknown
+pattern: undefined
+["-unknown"]
+```
+
+This setting also treats unrecognised option-like words as positional arguments. Without it, `-unknown` produces an option error. The command must still declare enough positional arguments to accept these values.
+
+<table><tbody><tr><td>💡</td><td>
+<!-- <tip> -->
+Quote glob patterns when you want the CLI to receive the pattern itself. In <code>demo src -name '*.ts'</code>, the quotes prevent the shell from expanding <code>*.ts</code> into matching filenames before the CLI receives it.
+<!-- </tip> -->
+</td></tr></tbody></table>
+
+[← Testing your spec](#testing-your-spec) · [↑ Contents](#contents) · [Performance →](#performance)
+
+## Performance
+
+The [benchmarks](bench/run.ts) compare command execution and startup overhead with other CLI libraries and Node's built-in `parseArgs`. Run them with `pnpm bench`; [CI also records results](.github/workflows/cli-bench.yml).
+
+<details>
+<summary>Performance comparison</summary>
+<br>
+
+Each value is relative to `@clo4/cli` in the same run: `2.5x` means the library took 2.5 times as long for the measured work. Lower is better. Each column is a separate run on the listed hardware or CI.
+
+| Library                                 | CI                 | AMD Ryzen 9 9950X3D | Apple M3 Pro       |
+| --------------------------------------- | ------------------ | ------------------- | ------------------ |
+| `node:util` parseArgs, hand-written CLI | Roughly equivalent | Roughly equivalent  | Roughly equivalent |
+| sade                                    | Roughly equivalent | Roughly equivalent  | Roughly equivalent |
+| Cac                                     | 1.1x               | Roughly equivalent  | 1.2x               |
+| citty                                   | 1.4x               | 1.4x                | 1.4x               |
+| brocli                                  | 2.5x               | 3.0x                | 1.6x               |
+| Cliffy                                  | 2.8x               | 2.7x                | 2.4x               |
+| Stricli                                 | 3.0x               | 2.8x                | 1.9x               |
+| gunshi                                  | 3.1x               | 2.3x                | 2.0x               |
+| Commander                               | 3.7x               | 4.5x                | 2.6x               |
+| clerc                                   | 3.8x               | 4.3x                | 2.7x               |
+| cmd-ts                                  | 4.4x               | 5.0x                | 3.1x               |
+| Clipanion                               | 4.6x               | 5.3x                | 3.4x               |
+| Optique                                 | 11.9x              | 12.2x               | 11.1x              |
+| oclif                                   | 13.8x              | 14.8x               | 12.7x              |
+| Effect                                  | 15.6x              | 16.3x               | 14.4x              |
+| Yargs                                   | 16.0x              | 16.1x               | 15.6x              |
+
+The benchmark runs seven tasks, including help output, nested commands and argument errors. Timing starts before the bundled CLI is loaded and ends when the process exits. Node's own startup time is excluded.
+
+For each library, the score is the geometric mean of its seven task medians, minus the cost of loading an empty bundle. The table compares those scores. “Roughly equivalent” means the difference was below 0.25 ms, or the 95% bootstrap interval for the difference included zero.
+
+</details>
+
+[← Parser settings](#parser-settings) · [↑ Contents](#contents) · [API and compatibility →](#api-and-compatibility)
+
+## API and compatibility
+
+The package uses ECMAScript modules (ESM), includes TypeScript declarations and has no runtime dependencies. Its named runtime exports are `run`, `printError`, `help`, `helpCommand` and `completion`. The default export is an object containing those same five values.
+
+Public types include `Spec`, `Subcommand`, `Option`, `Arg` and `ActionInit`. The [type definitions](src/types.ts) document each field; the [entry point](src/index.ts) lists all exports.
+
+The runtime API follows semantic versioning. The testing module may introduce stricter validation rules in minor or patch releases to catch incorrect or undefined behavior.
+
+[← Performance](#performance) · [↑ Contents](#contents) · [License →](#license)
+
+## License
+
+[MIT](LICENSE)
+
+[← API and compatibility](#api-and-compatibility) · [↑ Contents](#contents)
