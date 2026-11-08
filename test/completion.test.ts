@@ -446,6 +446,19 @@ test("runtime: gateOptions offers values for a dashed word the parser reads as o
   expect(values(await resolve(spec, [], "--o", true))).toEqual(["--o"]);
 });
 
+test("runtime: gateOptions offers a dashed subcommand once the word starts its name", async () => {
+  const spec: Spec = {
+    name: "x",
+    args: { name: "file", isOptional: true, suggestions: ["--arg-value"] },
+    options: [{ name: "-f" }],
+    subcommands: [{ name: "--version" }, { name: "--hidden", hidden: true }],
+  };
+  expect(values(await resolve(spec, [], "--v", true))).toEqual(["--version"]);
+  // The parser reads the full name as the subcommand, so values aren't held back.
+  expect(values(await resolve(spec, [], "--version", true))).toContain("--version");
+  expect(values(await resolve(spec, [], "--h", true))).toEqual([]);
+});
+
 test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate on)", async () => {
   const spec: Spec = {
     name: "x",

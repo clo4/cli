@@ -142,15 +142,18 @@ function wantedCandidates(next: NextToken, req: CompletionRequest) {
   // Posix-noncompliant options have no dash to gate on, so they're always
   // offered alongside the other candidates.
   if (!req.gateOptions || next.directives.flagsArePosixNoncompliant) {
-    return { wantValues: true, wantOptions: true };
+    return { wantValues: true, wantOptions: true, wantSubcommand: () => true };
   }
-  // When gating, a word the parser reads as an option completes options only,
-  // and options are offered once the word starts one of their names.
+  // When gating, a word the parser reads as an option completes no values.
+  // Options, and subcommands named like them, are offered once the word starts
+  // one of their names.
   const partial = req.partial;
+  const wantValues = !next.partialIsOption;
+  const starts = (name: string) => partial !== "" && name.startsWith(partial);
   return {
-    wantValues: !next.partialIsOption,
-    wantOptions:
-      partial !== "" && next.options.some(({ forms }) => forms.some(({ name }) => name.startsWith(partial))),
+    wantValues,
+    wantOptions: next.options.some(({ forms }) => forms.some(({ name }) => starts(name))),
+    wantSubcommand: (name: string) => wantValues || starts(name),
   };
 }
 
@@ -190,7 +193,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   }
 
   const candidates: Candidate[] = [];
-  const { wantValues, wantOptions } = wantedCandidates(next, req);
+  const { wantValues, wantOptions, wantSubcommand } = wantedCandidates(next, req);
   if (wantValues) {
     // While an option can take another value, a word that isn't an option or
     // subcommand is its value instead of an argument.
@@ -198,9 +201,11 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
     if (arg) {
       candidates.push(...(await argValues(arg, tokens, req.partial)));
     }
-    for (const sub of visibleSubcommands(next.subcommands)) {
-      const description = firstLine(sub.description);
-      for (const token of makeArray(sub.name)) {
+  }
+  for (const sub of visibleSubcommands(next.subcommands)) {
+    const description = firstLine(sub.description);
+    for (const token of makeArray(sub.name)) {
+      if (wantSubcommand(token)) {
         candidates.push({ value: token, description });
       }
     }
