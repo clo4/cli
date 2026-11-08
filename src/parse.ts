@@ -210,15 +210,16 @@ class Scanner implements TokenReader {
   private valueArgs: readonly Arg[] = [];
 
   /**
-   * The first token that can't be read the way it's written, like an unknown
-   * option or a value an option doesn't take. {@link parse} stops there.
+   * Makes the error for the first token that can't be read the way it's
+   * written, like an unknown option or a value an option doesn't take.
+   * {@link parse} stops there.
    */
-  problem: ParseError | null = null;
+  problem: (() => ParseError) | null = null;
 
   // The first argument past the command's limit, or a subcommand that didn't
   // match. It's only an error once the whole line is read, because an option
   // action like --help allows it.
-  private tooManyArgs: ParseError | null = null;
+  private tooManyArgs: (() => ParseError) | null = null;
 
   // The uses of each repeatable option, keyed by `optionKey`.
   // A subcommand's copy of a parent's option has the same names, so it
@@ -232,7 +233,7 @@ class Scanner implements TokenReader {
   }
 
   // A copy of the path, since reading carries on after a problem and can
-  // enter a subcommand.
+  // enter a subcommand before the error is made.
   private ctx(): ErrorContext {
     return { path: [...this.path] };
   }
@@ -246,8 +247,31 @@ class Scanner implements TokenReader {
     return this.scope.resolve(name);
   }
 
-  private unknownOption(option: string): UnknownOption {
-    return new UnknownOption(option, this.scope.suggestionNames(), this.ctx());
+  /**
+   * Keep the problem `make` describes if it's the first. The error is only
+   * made if {@link parse} throws it, since a lenient read never needs it and
+   * an error is slow to make. So `make` can't read anything later tokens change.
+   */
+  private fail(make: (ctx: ErrorContext) => ParseError): void {
+    if (!this.problem) {
+      const ctx = this.ctx();
+      this.problem = () => make(ctx);
+    }
+  }
+
+  /** Keep the first argument the command has no room for, like {@link fail}. */
+  private failArgs(make: (ctx: ErrorContext) => ParseError): void {
+    if (!this.tooManyArgs) {
+      const ctx = this.ctx();
+      this.tooManyArgs = () => make(ctx);
+    }
+  }
+
+  private unknownOption(option: string): void {
+    if (!this.problem) {
+      const names = this.scope.suggestionNames();
+      this.fail((ctx) => new UnknownOption(option, names, ctx));
+    }
   }
 
   // Every token except an option's value, or an unknown option, ends the
@@ -258,12 +282,8 @@ class Scanner implements TokenReader {
     if (values) {
       const given = values.length - this.valuesStart;
       if (given < this.valuesMin) {
-        this.problem ??= new TooFewOptionArguments(
-          this.openOptionName,
-          this.valuesMin,
-          this.valuesMax,
-          this.ctx(),
-        );
+        const { openOptionName, valuesMin, valuesMax } = this;
+        this.fail((ctx) => new TooFewOptionArguments(openOptionName, valuesMin, valuesMax, ctx));
       } else {
         addDefaults(values, this.valueArgs, given);
       }
@@ -304,7 +324,7 @@ class Scanner implements TokenReader {
         this.repeatedUses.set(key, uses);
       }
       if (uses.count >= repeatLimit(option)) {
-        this.problem ??= new ParseError(this.ctx(), "Too many repetitions");
+        this.fail((ctx) => new ParseError(ctx, "Too many repetitions"));
       }
       uses.count += 1;
       // Another option may have taken one of the names since the last use.
@@ -338,12 +358,13 @@ class Scanner implements TokenReader {
   private addValue(value: string, separator: string): boolean {
     this.valueCount += 1;
     if (!this.values) {
-      this.problem ??= new InvalidOptionArg(this.openOptionName, this.ctx());
+      const name = this.openOptionName;
+      this.fail((ctx) => new InvalidOptionArg(name, ctx));
       return false;
     }
     const problem = this.scope.separatorProblem(this.openOption!, this.openOptionName, separator);
     if (problem) {
-      this.problem ??= new ParseError(this.ctx(), problem);
+      this.fail((ctx) => new ParseError(ctx, problem));
     }
     this.values.push(value);
     return problem === null;
@@ -382,7 +403,7 @@ class Scanner implements TokenReader {
   private addArg(value: string): TokenReading {
     this.endOption();
     if (this.argsAreFull) {
-      this.tooManyArgs ??= new TooManyArguments(value, this.ctx());
+      this.failArgs((ctx) => new TooManyArguments(value, ctx));
     }
     this.args.push(value);
     return { kind: "argument" };
@@ -395,9 +416,8 @@ class Scanner implements TokenReader {
     // any argument after it.
     const command = this.scope.command;
     if (this.argsAreFull && !command.requiresSubcommand) {
-      this.tooManyArgs ??= new ParseError(
-        this.ctx(),
-        "Unexpected argument '--', did you mean to use an option instead?",
+      this.failArgs(
+        (ctx) => new ParseError(ctx, "Unexpected argument '--', did you mean to use an option instead?"),
       );
     }
     this.argSeparatorIndex = this.args.length;
@@ -465,7 +485,7 @@ class Scanner implements TokenReader {
         if (char === 1 && this.hasRoomForValue) {
           return this.value(token);
         }
-        this.problem ??= this.unknownOption(optionName);
+        this.unknownOption(optionName);
         continue;
       }
 
@@ -515,7 +535,7 @@ class Scanner implements TokenReader {
     }
     // The option is unknown and looks like a POSIX-compliant option, so
     // it's an unknown option instead of an arg.
-    this.problem ??= this.unknownOption(optionName);
+    this.unknownOption(optionName);
     return { kind: "unknown" };
   }
 
@@ -531,11 +551,13 @@ class Scanner implements TokenReader {
     }
     // Where a subcommand could be, a token the command has no room for is a
     // subcommand that didn't match.
-    if (!this.tooManyArgs && unmatched && this.argsAreFull) {
+    if (unmatched && this.argsAreFull) {
       const command = this.scope.command;
       if (command.subcommands?.length || command.requiresSubcommand) {
-        const { message, didYouMean } = unmatched.reason();
-        this.tooManyArgs = new ParseError(this.ctx(), message, didYouMean);
+        this.failArgs((ctx) => {
+          const { message, didYouMean } = unmatched.reason();
+          return new ParseError(ctx, message, didYouMean);
+        });
       }
     }
     this.hasFoundArg = true;
@@ -554,14 +576,14 @@ class Scanner implements TokenReader {
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionAction !== undefined || showsUsage;
     if (!skipsChecks && this.tooManyArgs) {
-      throw this.tooManyArgs;
+      throw this.tooManyArgs();
     }
     if (!skipsChecks && this.args.length < this.scope.argsMin) {
       throw new TooFewArguments(this.scope.argsMin, this.scope.argsMax, this.ctx());
     }
     this.endOption();
     if (this.problem) {
-      throw this.problem;
+      throw this.problem();
     }
     if (!skipsChecks) {
       checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
@@ -773,7 +795,7 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
   for (const token of input) {
     s.read(token);
     if (s.problem) {
-      throw s.problem;
+      throw s.problem();
     }
   }
   return s.finish();
