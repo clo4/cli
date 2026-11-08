@@ -835,7 +835,16 @@ test("testing: assertNamesReadBack checks that a required separator splits the o
       options: [{ name: "--o", args: {}, requiresSeparator: "=" }],
     }),
   ).toThrow(
-    "Option `test --o` (index 0) is written '--o=<argument>', but the parser reads '--o=0' as an option that doesn't exist",
+    "Option `test --o` (index 0) is written '--o=<argument>', but '=' isn't one of the option arg separators there (':'). Add it to `parserDirectives.optionArgSeparators`.",
+  );
+  expect(() =>
+    check({
+      name: "test",
+      parserDirectives: { optionArgSeparators: [] },
+      options: [{ name: "--o", args: {}, requiresSeparator: true }],
+    }),
+  ).toThrow(
+    "Option `test --o` (index 0) is written '--o=<argument>', but '=' isn't one of the option arg separators there (none). Add it to `parserDirectives.optionArgSeparators`.",
   );
 });
 

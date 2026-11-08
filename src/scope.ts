@@ -229,6 +229,14 @@ export class CommandScope {
     return [...this.local, ...this.persistent].filter((option) => option.isRequired);
   }
 
+  /*
+   * How an option is written with its value, and how the parser splits a
+   * token into an option name and a value. Both use the option arg separators
+   * in effect, so what help shows and completion offers is what the parser
+   * reads, as long as every separator an option requires is one of them. The
+   * spec checker reports one that isn't.
+   */
+
   /**
    * How each of `names` is written with `option`'s value here. Help shows
    * these, completion offers them, and the spec checker reads each one back
@@ -258,6 +266,57 @@ export class CommandScope {
       return required;
     }
     return required ? (this.directives.optionArgSeparators[0] ?? "=") : null;
+  }
+
+  /** Whether the parser splits an option from its value at `separator` here. */
+  readsSeparator(separator: string): boolean {
+    return this.directives.optionArgSeparators.includes(separator);
+  }
+
+  /** The separator that `text` starts with, or "" if none. Used after a short option. */
+  leadingSeparator(text: string): string {
+    for (const separator of this.directives.optionArgSeparators) {
+      if (text.startsWith(separator)) {
+        return separator;
+      }
+    }
+    return "";
+  }
+
+  /**
+   * The separator that appears first in `token`, so the value after it can
+   * contain the other separators. When two separators start at the same place,
+   * the longer one wins. Null if there's none, or if the one found is empty.
+   */
+  firstSeparator(token: string): { index: number; separator: string } | null {
+    let found = "";
+    let index = -1;
+    for (const candidate of this.directives.optionArgSeparators) {
+      const at = token.indexOf(candidate);
+      if (at === -1) {
+        continue;
+      }
+      if (index === -1 || at < index || (at === index && candidate.length > found.length)) {
+        found = candidate;
+        index = at;
+      }
+    }
+    return found ? { index, separator: found } : null;
+  }
+
+  /**
+   * Why `option`, used as `name`, can't take a value given after `separator`,
+   * or null if it can. A separate token has the separator "".
+   */
+  separatorProblem(option: Option, name: string, separator: string): string | null {
+    const required = option.requiresSeparator;
+    if (typeof required === "string" && separator !== required) {
+      return `Incorrect separator, use '${required}' instead of '${separator}'`;
+    }
+    if (required === true && separator === "") {
+      return `Missing separator, use '${this.requiredSeparator(option)}' between ${name} and its value`;
+    }
+    return null;
   }
 }
 

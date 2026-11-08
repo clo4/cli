@@ -535,6 +535,12 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
       }
       const tokens = writeForm(option, form, value);
       const written = `${where} is written '${optionToString(option, [form])}'`;
+      if (form.join) {
+        assert(
+          scope.readsSeparator(form.join),
+          `${written}, but '${form.join}' isn't one of the option arg separators there (${scope.directives.optionArgSeparators.map((separator) => `'${separator}'`).join(", ") || "none"}). Add it to \`parserDirectives.optionArgSeparators\`.`,
+        );
+      }
       if (form.join !== null) {
         const first = readToken(root, before, tokens[0]);
         const joined = first.kind === "options" && first.attached?.option === option;

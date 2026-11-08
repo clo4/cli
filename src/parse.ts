@@ -98,38 +98,6 @@ export type TokenReading =
   /** An option that doesn't exist. */
   | { kind: "unknown" };
 
-/** The first of `separators` that `text` starts with, or "" if none. */
-function leadingSeparator(text: string, separators: readonly string[]): string {
-  for (const sep of separators) {
-    if (text.startsWith(sep)) {
-      return sep;
-    }
-  }
-  return "";
-}
-
-/**
- * Find the separator that appears first in `token`, so the value after it can
- * contain the other separators. When two separators start at the same place,
- * the longer one wins. Returns null if there's no separator, or if the one
- * found is empty.
- */
-function firstSeparator(token: string, separators: readonly string[]): { index: number; sep: string } | null {
-  let sep = "";
-  let index = -1;
-  for (const candidate of separators) {
-    const at = token.indexOf(candidate);
-    if (at === -1) {
-      continue;
-    }
-    if (index === -1 || at < index || (at === index && candidate.length > sep.length)) {
-      sep = candidate;
-      index = at;
-    }
-  }
-  return sep ? { index, sep } : null;
-}
-
 /** The values a repeatable option has collected, and how many times it's been used. */
 interface RepeatedUses {
   values: string[];
@@ -223,7 +191,6 @@ class Scanner {
   private valuesMin = 0;
   private valuesMax = 0;
   private valueArgs: readonly Arg[] = [];
-  private requiredSeparator: string | boolean = false;
 
   // The first argument past the command's limit, or a subcommand that didn't
   // match. It's only an error once the whole line is read, because an option
@@ -336,7 +303,6 @@ class Scanner {
 
     this.valuesMin = this.valueMin;
     this.valuesMax = getMaxArgs(option.args);
-    this.requiredSeparator = option.requiresSeparator ?? false;
     if (this.valuesMax > 0) {
       this.values = optionValues;
       this.valuesStart = optionValues.length;
@@ -356,29 +322,12 @@ class Scanner {
       }
       return false;
     }
-    const requiredSeparator = this.requiredSeparator;
-    let accepted = true;
-    if (typeof requiredSeparator === "string" && separator !== requiredSeparator) {
-      if (this.strict) {
-        throw new ParseError(
-          this.ctx(),
-          `Incorrect separator, use '${requiredSeparator}' instead of '${separator}'`,
-        );
-      }
-      accepted = false;
-    }
-    if (requiredSeparator === true && separator === "") {
-      if (this.strict) {
-        const suggested = this.scope.requiredSeparator(this.openOption!);
-        throw new ParseError(
-          this.ctx(),
-          `Missing separator, use '${suggested}' between ${this.openOptionName} and its value`,
-        );
-      }
-      accepted = false;
+    const problem = this.scope.separatorProblem(this.openOption!, this.openOptionName, separator);
+    if (problem && this.strict) {
+      throw new ParseError(this.ctx(), problem);
     }
     this.values.push(value);
-    return accepted;
+    return problem === null;
   }
 
   /**
@@ -497,7 +446,7 @@ class Scanner {
         return;
       }
 
-      const sep = leadingSeparator(token.slice(char + 1), this.directives.optionArgSeparators);
+      const sep = this.scope.leadingSeparator(token.slice(char + 1));
       // An option without args still takes a separated value, so that `-v=1`
       // fails like `--verbose=1`, unless the next character is an option.
       if (option.args || (sep && !this.findOption(leadingChar + token[char + 1]))) {
@@ -513,14 +462,14 @@ class Scanner {
    * aren't POSIX compliant. Returns false if the token should be an argument.
    */
   longOption(token: string, index: number): boolean {
-    const found = firstSeparator(token, this.directives.optionArgSeparators);
+    const found = this.scope.firstSeparator(token);
     const optionName = found ? token.slice(0, found.index) : token;
     const option = this.findOption(optionName);
     if (option) {
       this.useOption(option, optionName);
       if (found) {
-        const valueStart = found.index + found.sep.length;
-        this.addAttachedValue(index, valueStart, token.slice(valueStart), found.sep);
+        const valueStart = found.index + found.separator.length;
+        this.addAttachedValue(index, valueStart, token.slice(valueStart), found.separator);
       }
       return true;
     }
