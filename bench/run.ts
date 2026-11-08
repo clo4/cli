@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
 import { build as rolldownBuild } from "rolldown";
@@ -12,7 +12,12 @@ import * as CLI from "../src/index.js";
 type Adapter = readonly [library: string, scriptUrl: URL];
 type BenchSignal = "SIGINT" | "SIGTERM";
 type Library = readonly [library: string, script: string];
-type Scenario = readonly [scenario: string, args: readonly string[]];
+type Scenario = readonly [scenario: string, args: readonly string[], expected?: Expected];
+
+interface Expected {
+  status: number;
+  stdout?: string;
+}
 type Status = number | string;
 
 interface BenchOptions {
@@ -25,6 +30,14 @@ interface RunResult {
   total: number;
   self: number;
   status: Status;
+  stdout: string;
+}
+
+interface Job {
+  library: string;
+  scenario: string;
+  bundle: string;
+  args: readonly string[];
 }
 
 interface Bucket {
@@ -55,7 +68,23 @@ class BenchmarkInterrupted extends Error {
 
 const benchDir = fileURLToPath(new URL("..", import.meta.url));
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
+const timingEntry = join(benchDir, "_timing.mjs");
 const timingFile = join(tmpdir(), `clo4-cli-bench-${process.pid}.txt`);
+const baselineScenario = "process startup";
+
+/** Differences smaller than this are reported as too small to matter. */
+const negligibleMs = 0.25;
+
+/**
+ * The environment every CLI runs with: the parent's, minus variables that make
+ * some libraries do extra work, such as oclif loading TypeScript support under
+ * NODE_ENV=development, logging under DEBUG, or turning colors on under CI
+ * (GitHub Actions sets CI=true) even though output is piped.
+ */
+const childEnv: NodeJS.ProcessEnv = { ...process.env };
+for (const name of ["NODE_ENV", "NODE_OPTIONS", "DEBUG", "FORCE_COLOR", "CI"]) {
+  delete childEnv[name];
+}
 
 const adapters: readonly Adapter[] = [
   ["baseline", new URL("../baseline.mjs", import.meta.url)],
@@ -63,19 +92,44 @@ const adapters: readonly Adapter[] = [
   ["Commander", new URL("../commander.mjs", import.meta.url)],
   ["Yargs", new URL("../yargs.mjs", import.meta.url)],
   ["Cac", new URL("../cac.mjs", import.meta.url)],
+  ["citty", new URL("../citty.mjs", import.meta.url)],
+  ["Clipanion", new URL("../clipanion.mjs", import.meta.url)],
+  ["oclif", new URL("../oclif.mjs", import.meta.url)],
+  ["sade", new URL("../sade.mjs", import.meta.url)],
+  ["Stricli", new URL("../stricli.mjs", import.meta.url)],
+  ["Cliffy", new URL("../cliffy.mjs", import.meta.url)],
+  ["Effect", new URL("../effect.mjs", import.meta.url)],
+  ["gunshi", new URL("../gunshi.mjs", import.meta.url)],
+  ["Optique", new URL("../optique.mjs", import.meta.url)],
+  ["clerc", new URL("../clerc.mjs", import.meta.url)],
+  ["cmd-ts", new URL("../cmd-ts.mjs", import.meta.url)],
+  ["brocli", new URL("../brocli.mjs", import.meta.url)],
+  ["node:util parseArgs", new URL("../node-parseargs.mjs", import.meta.url)],
 ];
 
+/**
+ * Scenarios with an expected result are checked once per library before
+ * timing starts, so a broken adapter fails the run instead of being timed.
+ */
 const scenarios: readonly Scenario[] = [
-  ["top-level --help", ["--help"]],
-  ["nested help (3 levels)", ["remote", "add", "--help"]],
+  ["top-level --help", ["--help"], { status: 0 }],
+  ["nested help (3 levels)", ["remote", "add", "--help"], { status: 0 }],
   [
     "build variadic + options",
     ["build", "a", "b", "c", "--out", "dist", "--mode", "release", "--watch", "-vv"],
+    { status: 0, stdout: "build:a,b,c:dist:release:true:2\n" },
   ],
-  ["alias dispatch", ["b", "a", "--out", "dist"]],
-  ["nested dispatch", ["remote", "add", "origin", "https://example.com", "--force", "--tag", "v1"]],
-  ["second group", ["config", "set", "key", "value"]],
-  ["unknown option", ["build", "a", "--uot", "dist"]],
+  ["alias dispatch", ["b", "a", "--out", "dist"], { status: 0, stdout: "build:a:dist:-:false:0\n" }],
+  [
+    "nested dispatch",
+    ["remote", "add", "origin", "https://example.com", "--force", "--tag", "v1"],
+    { status: 0, stdout: "add:origin:https://example.com:true:v1\n" },
+  ],
+  ["second group", ["config", "set", "key", "value"], { status: 0, stdout: "set:key:value\n" }],
+  // --out is given so that libraries which check required options first still
+  // reach their unknown-option check. Cliffy and citty accept the unknown
+  // option and run the build, so this isn't checked.
+  ["unknown option", ["build", "a", "--out", "dist", "--uot", "x"]],
 ];
 
 /**
@@ -105,7 +159,7 @@ process.exitCode = await CLI.run({
     },
     {
       name: "--csv-out",
-      description: "Write a header + single data row of medians to this file.",
+      description: "Write a header and a single data row of medians to this file.",
       args: { name: "file" },
     },
   ],
@@ -116,7 +170,7 @@ process.exitCode = await CLI.run({
 
 function readOptions({ options }: CLI.ActionInit): BenchOptions {
   return {
-    samples: readPositiveIntOption(options.get("--samples"), "--samples", 25),
+    samples: readPositiveIntOption(options.get("--samples"), "--samples", 50),
     warmup: readPositiveIntOption(options.get("--warmup"), "--warmup", 3),
     csvOut: options.get("--csv-out"),
   };
@@ -134,40 +188,60 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
     const libraries = await bundleAdapters(bundleDir);
     const baseline = libraries.find(([library]) => library === "baseline");
     const measuredLibraries = libraries.filter(([library]) => library !== "baseline");
-    if (baseline === undefined) {
-      throw new Error("missing baseline benchmark adapter");
+    const ours = libraries.find(([library]) => library === "@clo4/cli");
+    if (baseline === undefined || ours === undefined) {
+      throw new Error("missing baseline or @clo4/cli benchmark adapter");
     }
-    const results = new Map<string, Bucket>();
-    const baselineScenario = "process startup";
-    const totalRuns =
-      (warmup + samples) * (1 + scenarios.length * measuredLibraries.length + ownScenarios.length);
 
-    console.log(`In-process CLI benchmark (${samples} samples, ${warmup} warmups, interleaved)`);
-    console.log(`cwd: ${packageRoot}`);
-    console.log("Adapters are prebundled before timing; bundle time is excluded from all rows.");
-    console.log(
-      "Runs are interleaved by round across scenarios and libraries to reduce shared-runner drift.",
-    );
-    console.log(
-      "`self` = import->finish inside the child; `total` = full process wall-clock (about self + Node startup).",
-    );
-    console.log("");
+    const jobs: Job[] = [{ library: "baseline", scenario: baselineScenario, bundle: baseline[1], args: [] }];
+    for (const [library, bundle] of measuredLibraries) {
+      for (const [scenario, args] of scenarios) {
+        jobs.push({ library, scenario, bundle, args });
+      }
+    }
+    for (const [scenario, args] of ownScenarios) {
+      jobs.push({ library: "@clo4/cli", scenario, bundle: ours[1], args });
+    }
 
-    const progress = createProgress(totalRuns);
     const interrupt = createInterruptController();
+    const results = new Map<string, Bucket>();
 
     try {
-      for (let i = 0; i < warmup; i += 1) {
-        await runRound(baseline, measuredLibraries, false, results, baselineScenario, progress, interrupt);
+      const failures = await checkOutputs(measuredLibraries, interrupt);
+      if (failures.length > 0) {
+        console.error("These adapters printed the wrong output, so the benchmark didn't run:");
+        for (const failure of failures) {
+          console.error(`  ${failure}`);
+        }
+        return 1;
       }
 
-      for (let i = 0; i < samples; i += 1) {
-        await runRound(baseline, measuredLibraries, true, results, baselineScenario, progress, interrupt);
+      console.log(`CLI startup benchmark (${samples} samples, ${warmup} warmup rounds)`);
+      console.log(`cwd: ${packageRoot}`);
+      console.log(`cpu: ${cpus()[0]?.model ?? "unknown"}, node ${process.version}`);
+      console.log("Each adapter is bundled with its library before timing, and bundling isn't timed.");
+      console.log("Every round runs each library and scenario once, in a new random order.");
+      console.log(
+        "`self` runs from just before the bundle is imported to the process's exit event. It includes",
+      );
+      console.log("loading the bundle and its Node built-ins, and leaves out Node's own startup.");
+      console.log("`total` is the whole process, timed from outside, so it includes Node's startup.");
+      console.log("");
+
+      const progress = createProgress((warmup + samples) * jobs.length);
+      for (let i = 0; i < warmup + samples; i += 1) {
+        for (const job of shuffled(jobs)) {
+          const result = await runOnce(job.bundle, job.args, interrupt);
+          progress.tick();
+          if (i >= warmup) {
+            recordResult(bucketFor(results, job.library, job.scenario), result);
+          }
+        }
       }
+      progress.finish();
     } catch (error) {
       if (error instanceof BenchmarkInterrupted) {
-        progress.finish();
-        console.error("Benchmark interrupted.");
+        console.error("\nBenchmark interrupted.");
         return exitCodeForSignal(error.signal);
       }
       throw error;
@@ -175,13 +249,11 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
       interrupt.dispose();
     }
 
-    progress.finish();
-
     console.log(
-      formatRow(["library", "scenario", "self med", "self min", "self max", "total med", "n", "statuses"]),
+      formatRow(["library", "scenario", "self p50", "self p10", "self p90", "total p50", "n", "exit codes"]),
     );
     console.log(
-      formatRow(["-------", "--------", "--------", "--------", "--------", "---------", "-", "--------"]),
+      formatRow(["-------", "--------", "--------", "--------", "--------", "---------", "-", "----------"]),
     );
     printRow(results.get(keyFor("baseline", baselineScenario)), "baseline", baselineScenario);
     for (const [library] of measuredLibraries) {
@@ -207,43 +279,43 @@ async function runBenchmark({ samples, warmup, csvOut }: BenchOptions): Promise<
 }
 
 /**
- * Build a two-line CSV (header + one data row) capturing this run's medians.
- * The column set is fixed by the static scenario and adapter lists, so rows
- * from different runs line up when appended to a history file.
+ * Build a two-line CSV (header and one data row) of this run's medians. The
+ * columns follow the static scenario and adapter lists, so rows from different
+ * runs line up in a history file. The history file only accepts new columns at
+ * the end, and the per-library columns come last, so adding a library keeps
+ * the earlier columns in place. Adding a scenario doesn't.
  */
 function buildCsv(
   results: Map<string, Bucket>,
   measuredLibraries: readonly Library[],
   samples: number,
 ): string {
-  const header = ["timestamp_utc", "commit", "node_version", "samples"];
-  const row = [new Date().toISOString(), process.env.GITHUB_SHA ?? "local", process.version, String(samples)];
+  const header = ["timestamp_utc", "commit", "node_version", "cpu", "samples"];
+  const row = [
+    new Date().toISOString(),
+    process.env.GITHUB_SHA ?? "local",
+    process.version,
+    (cpus()[0]?.model ?? "unknown").replaceAll(",", " "),
+    String(samples),
+  ];
 
   const cell = (value: number): string => (Number.isFinite(value) ? value.toFixed(4) : "");
+  const median = (library: string, scenario: string): number =>
+    percentile(results.get(keyFor(library, scenario))?.selfTimes ?? [], 0.5);
 
-  // Per-scenario @clo4/cli self medians. The columns keep the library's old
-  // name, lode, so new rows line up with the history file.
-  for (const [scenario] of scenarios) {
-    header.push(`${slug(scenario)}_lode_self_med`);
-    row.push(cell(stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median));
+  header.push("baseline_self_med");
+  row.push(cell(median("baseline", baselineScenario)));
+
+  for (const [scenario] of [...scenarios, ...ownScenarios]) {
+    header.push(`${slug(scenario)}_clo4-cli_self_med`);
+    row.push(cell(median("@clo4/cli", scenario)));
   }
 
-  // Per-library geomean of scenario self medians.
+  // Geomeans include the baseline's time; subtract baseline_self_med to leave
+  // it out.
   for (const [library] of measuredLibraries) {
     header.push(`geomean_${slug(library)}`);
-    const medians: number[] = [];
-    for (const [scenario] of scenarios) {
-      const median = stats(results.get(keyFor(library, scenario))?.selfTimes ?? []).median;
-      if (Number.isFinite(median) && median > 0) {
-        medians.push(median);
-      }
-    }
-    row.push(cell(geometricMean(medians)));
-  }
-
-  for (const [scenario] of ownScenarios) {
-    header.push(`${slug(scenario)}_lode_self_med`);
-    row.push(cell(stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median));
+    row.push(cell(geometricMean(scenarios.map(([scenario]) => median(library, scenario)))));
   }
 
   return `${header.join(",")}\n${row.join(",")}\n`;
@@ -270,56 +342,59 @@ async function bundleAdapters(outDir: string): Promise<Library[]> {
   );
 }
 
-async function runRound(
-  baseline: Library,
+/**
+ * Run each scenario that has an expected result once per library, and return
+ * a description of every mismatch.
+ */
+async function checkOutputs(
   measuredLibraries: readonly Library[],
-  shouldRecord: boolean,
-  results: Map<string, Bucket>,
-  baselineScenario: string,
-  progress: Progress,
   interrupt: InterruptController,
-): Promise<void> {
-  const [, baselineScript] = baseline;
-  const baselineResult = await runOnce(baselineScript, [], interrupt);
-  progress.tick();
-  if (shouldRecord) {
-    recordResult(bucketFor(results, "baseline", baselineScenario), baselineResult);
-  }
-
-  for (const [scenario, args] of scenarios) {
-    for (const [library, script] of measuredLibraries) {
-      const result = await runOnce(script, args, interrupt);
-      progress.tick();
-      if (shouldRecord) {
-        recordResult(bucketFor(results, library, scenario), result);
+): Promise<string[]> {
+  const failures: string[] = [];
+  for (const [library, bundle] of measuredLibraries) {
+    for (const [scenario, args, expected] of scenarios) {
+      if (expected === undefined) {
+        continue;
+      }
+      const result = await runOnce(bundle, args, interrupt);
+      if (result.status !== expected.status) {
+        failures.push(`${library}, ${scenario}: exited ${result.status}, expected ${expected.status}`);
+      } else if (expected.stdout !== undefined && result.stdout !== expected.stdout) {
+        failures.push(
+          `${library}, ${scenario}: printed ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(expected.stdout)}`,
+        );
       }
     }
   }
-
-  const ours = measuredLibraries.find(([library]) => library === "@clo4/cli");
-  for (const [scenario, args] of ours ? ownScenarios : []) {
-    const result = await runOnce(ours![1], args, interrupt);
-    progress.tick();
-    if (shouldRecord) {
-      recordResult(bucketFor(results, "@clo4/cli", scenario), result);
-    }
-  }
+  return failures;
 }
 
+/**
+ * Run one CLI through the timed entry point. Output goes to pipes that are
+ * read to the end, as it would be for a CLI piped into another program, so
+ * libraries that write through process.stdout pay for setting up the stream.
+ */
 async function runOnce(
-  script: string,
+  bundle: string,
   args: readonly string[],
   interrupt: InterruptController,
 ): Promise<RunResult> {
   interrupt.throwIfInterrupted();
   rmSync(timingFile, { force: true });
   const start = performance.now();
-  const child = spawn(process.execPath, [script, ...args], {
+  const child = spawn(process.execPath, [timingEntry, ...args], {
     cwd: benchDir,
-    stdio: "ignore",
-    env: { ...process.env, BENCH_OUT: timingFile },
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...childEnv, BENCH_BUNDLE: pathToFileURL(bundle).href, BENCH_OUT: timingFile },
   });
   interrupt.track(child);
+
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.resume();
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -338,6 +413,7 @@ async function runOnce(
         total: performance.now() - start,
         self: Number.NaN,
         status: basename(error.name),
+        stdout,
       });
     });
 
@@ -362,6 +438,7 @@ async function runOnce(
         total: performance.now() - start,
         self,
         status: code ?? signal ?? "signal",
+        stdout,
       });
     });
   });
@@ -394,8 +471,8 @@ function recordResult(bucket: Bucket, result: RunResult): void {
 }
 
 function printRow(bucket: Bucket | undefined, library: string, scenario: string): void {
-  const self = stats(bucket?.selfTimes ?? []);
-  const total = stats(bucket?.totalTimes ?? []);
+  const self = bucket?.selfTimes ?? [];
+  const total = bucket?.totalTimes ?? [];
   const statusCells = [...(bucket?.statuses ?? new Map<Status, number>()).entries()]
     .map(([status, count]) => `${status}:${count}`)
     .join(",");
@@ -403,11 +480,11 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
     formatRow([
       library,
       scenario,
-      fmt(self.median),
-      fmt(self.min),
-      fmt(self.max),
-      fmt(total.median),
-      String(bucket?.totalTimes.length ?? 0),
+      fmt(percentile(self, 0.5)),
+      fmt(percentile(self, 0.1)),
+      fmt(percentile(self, 0.9)),
+      fmt(percentile(total, 0.5)),
+      String(total.length),
       bucket !== undefined && bucket.missing > 0
         ? `${statusCells} (!${bucket.missing} no-timing)`
         : statusCells,
@@ -415,50 +492,78 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
   );
 }
 
+/**
+ * Compare each library with @clo4/cli by the geometric mean of its scenario
+ * medians. The interval comes from resampling each scenario's measurements
+ * (a bootstrap): when it includes zero, the run can't tell the two apart.
+ * Ratios leave out the baseline's time, the cost of importing any file, which
+ * every library pays and which would otherwise pull every ratio towards 1.
+ */
 function printComparison(results: Map<string, Bucket>, measuredLibraries: readonly Library[]): void {
-  const ours = measuredLibraries.find(([library]) => library === "@clo4/cli");
-  if (ours === undefined) {
-    return;
-  }
+  const random = mulberry32(0x5eed);
+  const resamples = 1000;
+  const samplesFor = (library: string): number[][] =>
+    scenarios.map(([scenario]) => results.get(keyFor(library, scenario))?.selfTimes ?? []);
+  const geomeanOfMedians = (cells: readonly (readonly number[])[]): number =>
+    geometricMean(cells.map((cell) => percentile(cell, 0.5)));
+  const resampledGeomeans = (cells: readonly (readonly number[])[]): number[] =>
+    Array.from({ length: resamples }, () =>
+      geomeanOfMedians(cells.map((cell) => cell.map(() => cell[Math.floor(random() * cell.length)]))),
+    );
+
+  const baseline = percentile(results.get(keyFor("baseline", baselineScenario))?.selfTimes ?? [], 0.5);
+  const ourCells = samplesFor("@clo4/cli");
+  const ourMean = geomeanOfMedians(ourCells);
+  const ourResampled = resampledGeomeans(ourCells);
 
   console.log("");
-  console.log("Comparison (geomean of scenario self medians; lower is better)");
-  console.log(formatComparisonRow(["library", "@clo4/cli", "other", "result"]));
-  console.log(formatComparisonRow(["-------", "---------", "-----", "------"]));
+  console.log("Comparison with @clo4/cli (geometric mean of scenario medians; lower is better)");
+  console.log(`@clo4/cli: ${fmt(ourMean)}`);
+  console.log(formatComparisonRow(["library", "geomean", "difference (95% interval)", "result"]));
+  console.log(formatComparisonRow(["-------", "-------", "-------------------------", "------"]));
 
   for (const [library] of measuredLibraries) {
     if (library === "@clo4/cli") {
       continue;
     }
-
-    const ourMedians: number[] = [];
-    const otherMedians: number[] = [];
-    for (const [scenario] of scenarios) {
-      const ourMedian = stats(results.get(keyFor("@clo4/cli", scenario))?.selfTimes ?? []).median;
-      const otherMedian = stats(results.get(keyFor(library, scenario))?.selfTimes ?? []).median;
-      if (Number.isFinite(ourMedian) && Number.isFinite(otherMedian) && ourMedian > 0 && otherMedian > 0) {
-        ourMedians.push(ourMedian);
-        otherMedians.push(otherMedian);
-      }
-    }
-
-    const ourMean = geometricMean(ourMedians);
-    const otherMean = geometricMean(otherMedians);
+    const cells = samplesFor(library);
+    const mean = geomeanOfMedians(cells);
+    const differences = resampledGeomeans(cells).map((value, index) => value - ourResampled[index]);
+    const low = percentile(differences, 0.025);
+    const high = percentile(differences, 0.975);
     console.log(
-      formatComparisonRow([library, fmt(ourMean), fmt(otherMean), comparisonText(ourMean, otherMean)]),
+      formatComparisonRow([
+        library,
+        fmt(mean),
+        `${signed(mean - ourMean)} (${signed(low)} to ${signed(high)})`,
+        comparisonText(ourMean - baseline, mean - baseline, low, high),
+      ]),
     );
   }
 }
 
-function comparisonText(ours: number, other: number): string {
-  if (!Number.isFinite(ours) || !Number.isFinite(other) || ours <= 0 || other <= 0) {
+function comparisonText(ours: number, other: number, low: number, high: number): string {
+  if (![ours, other, low, high].every(Number.isFinite) || ours <= 0 || other <= 0) {
     return "n/a";
   }
-  const ratio = other / ours;
-  if (Math.abs(ratio - 1) < 0.005) {
-    return "same speed";
+  if (low <= 0 && high >= 0) {
+    return "no clear difference";
   }
-  return ratio > 1 ? `@clo4/cli ${ratio.toFixed(2)}x faster` : `@clo4/cli ${(1 / ratio).toFixed(2)}x slower`;
+  if (Math.abs(other - ours) < negligibleMs) {
+    return `less than ${negligibleMs}ms apart`;
+  }
+  const ratio = other / ours;
+  if (ratio >= 2) {
+    return `@clo4/cli faster (${ratio.toFixed(1)}x)`;
+  }
+  if (ratio <= 0.5) {
+    return `@clo4/cli slower (${(1 / ratio).toFixed(1)}x)`;
+  }
+  return other > ours ? "@clo4/cli faster" : "@clo4/cli slower";
+}
+
+function signed(value: number): string {
+  return Number.isFinite(value) ? `${value >= 0 ? "+" : "-"}${Math.abs(value).toFixed(2)}ms` : "n/a";
 }
 
 function geometricMean(values: readonly number[]): number {
@@ -472,17 +577,36 @@ function fmt(value: number): string {
   return Number.isFinite(value) ? `${value.toFixed(2)}ms` : "n/a";
 }
 
-function stats(values: readonly number[]): { median: number; min: number; max: number } {
+/** Percentile with linear interpolation; `fraction` 0.5 is the median. */
+function percentile(values: readonly number[], fraction: number): number {
   if (values.length === 0) {
-    return { median: Number.NaN, min: Number.NaN, max: Number.NaN };
+    return Number.NaN;
   }
   const sorted = values.toSorted((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  const median = sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
-  return {
-    median,
-    min: sorted[0],
-    max: sorted[sorted.length - 1],
+  const position = (sorted.length - 1) * fraction;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
+}
+
+function shuffled<T>(items: readonly T[]): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/** A small seeded random number generator, so the intervals are repeatable. */
+function mulberry32(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
@@ -497,12 +621,12 @@ function readPositiveIntOption(raw: string | undefined, name: string, fallback: 
 }
 
 function formatRow(cells: readonly string[]): string {
-  const widths = [12, 24, 10, 10, 10, 10, 4, 24];
+  const widths = [19, 24, 10, 10, 10, 10, 4, 24];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 
 function formatComparisonRow(cells: readonly string[]): string {
-  const widths = [12, 10, 10, 28];
+  const widths = [19, 10, 32, 28];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 

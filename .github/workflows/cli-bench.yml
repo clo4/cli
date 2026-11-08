@@ -18,12 +18,14 @@ concurrency:
 
 env:
   HISTORY_BRANCH: cli-framework-benchmarks
-  HISTORY_FILE: history.csv
+  # history.csv holds rows from before the harness timed bundle loading, which
+  # aren't comparable with newer rows.
+  HISTORY_FILE: history-v2.csv
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write
     steps:
@@ -45,7 +47,7 @@ jobs:
           {
             echo '## @clo4/cli benchmark'
             echo
-            echo '> Shared CI runners are noisy — compare medians, not absolute numbers.'
+            echo '> Shared CI runners vary from run to run. Compare libraries within one run, not absolute numbers across runs.'
             echo
             echo '```'
             cat bench-output.txt

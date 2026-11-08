@@ -1,11 +1,8 @@
-import { startTiming } from "./_timing.mjs";
-
-startTiming();
-const { Command } = await import("commander");
+import { Command } from "commander";
 
 const program = new Command();
 
-program.name("forge").description("Build orchestrator.").showSuggestionAfterError().exitOverride();
+program.name("forge").description("Build orchestrator.");
 
 program
   .command("build [inputs...]")
@@ -65,8 +62,4 @@ config
     console.log(`get:${key}`);
   });
 
-try {
-  program.parse();
-} catch (error) {
-  process.exitCode = error.exitCode ?? 1;
-}
+program.parse();

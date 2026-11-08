@@ -1,7 +1,4 @@
-import { startTiming } from "./_timing.mjs";
-
-startTiming();
-const { default: cac } = await import("cac");
+import cac from "cac";
 
 const cli = cac("forge");
 
@@ -50,4 +47,13 @@ cli
   });
 
 cli.help();
-cli.parse();
+
+// The error handling from Cac's README. Without it, Cac's errors are uncaught
+// and Node prints them with a stack trace.
+try {
+  cli.parse(process.argv, { run: false });
+  cli.runMatchedCommand();
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 1;
+}

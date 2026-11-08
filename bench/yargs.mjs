@@ -1,11 +1,9 @@
-import { startTiming } from "./_timing.mjs";
-
-startTiming();
-const { default: yargs } = await import("yargs/yargs");
-const { hideBin } = await import("yargs/helpers");
+import yargs from "yargs/yargs";
+import { hideBin } from "yargs/helpers";
 
 await yargs(hideBin(process.argv))
   .scriptName("forge")
+  .usage("$0 <command>\n\nBuild orchestrator.")
   .strict()
   .recommendCommands()
   .command(
@@ -17,8 +15,7 @@ await yargs(hideBin(process.argv))
         .option("out", { describe: "Output directory.", type: "string", demandOption: true })
         .option("mode", { describe: "Build mode.", type: "string" })
         .option("watch", { describe: "Watch files.", type: "boolean" })
-        .count("verbose")
-        .alias("verbose", "v"),
+        .option("verbose", { alias: "v", type: "count", describe: "Increase verbosity." }),
     (argv) => {
       console.log(
         `build:${(argv.inputs ?? []).join(",")}:${argv.out}:${argv.mode ?? "-"}:${Boolean(

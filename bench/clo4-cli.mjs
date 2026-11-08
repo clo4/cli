@@ -1,7 +1,4 @@
-import { startTiming } from "./_timing.mjs";
-
-startTiming();
-const { completion, help, run } = await import("../dist/index.js");
+import { completion, help, run } from "../dist/index.js";
 
 // A richer, realistic CLI shared (equivalently) across every adapter so the
 // benchmark exercises deep nesting, variadic args, aliases, repeatable options,
