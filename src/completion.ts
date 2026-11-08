@@ -448,6 +448,7 @@ export const completion: Subcommand = {
     name: "shell",
     isOptional: true,
     suggestions: SHELLS,
+    description: `One of: ${SHELLS.join(", ")}`,
   },
   subcommands: [completeCommand],
   action({ path, args: [shell] }) {
