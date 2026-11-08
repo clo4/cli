@@ -12,11 +12,11 @@ import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
 import { parse, readNext, readToken } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
-import type { Spec, Subcommand } from "../src/types.js";
+import type { Option, Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
-import { asArray } from "../src/util.js";
+import { asArray, getMinArgs } from "../src/util.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
-import { generator, shrink } from "./fuzz/generate.js";
+import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import { attempt } from "./fuzz/snapshot.js";
 
 /** What the directives should be after following `path`, worked out separately from the parser. */
@@ -120,6 +120,142 @@ test("readNext and parse keep their invariants on random specs", () => {
     if (violation(spec, input) === null) continue;
     const small = shrink(spec, input, (s, i) => violation(s, i) !== null);
     expect.fail(report(n, small.spec, small.input, violation(small.spec, small.input) ?? ""));
+  }
+});
+
+/** A copy of `value` with every `default` removed. Actions stay the same functions. */
+function withoutDefaults<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(withoutDefaults) as T;
+  if (value === null || typeof value !== "object") return value;
+  const copy: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) if (key !== "default") copy[key] = withoutDefaults(item);
+  return copy as T;
+}
+
+/** The defaults the parser should use for `args` from index `from` on, worked out separately. */
+function leadingDefaults(args: Spec["args"], from: number): string[] {
+  const values: string[] = [];
+  const list = asArray(args);
+  for (let i = from; i < list.length && list[i].default !== undefined; i++) values.push(list[i].default!);
+  return values;
+}
+
+/**
+ * The option `name` refers to at the last command on `path`, worked out
+ * separately from the parser: the last local option with that name, or else
+ * the last persistent one from any command on the path.
+ */
+function optionNamed(path: readonly (Spec | Subcommand)[], name: string): Option | undefined {
+  const named = (option: Option) => asArray(option.name).includes(name);
+  const own = path[path.length - 1].options ?? [];
+  const local = own.filter((option) => !option.isPersistent && named(option));
+  if (local.length > 0) return local[local.length - 1];
+  const persistent = path.flatMap((command) =>
+    (command.options ?? []).filter((o) => o.isPersistent && named(o)),
+  );
+  return persistent[persistent.length - 1];
+}
+
+/**
+ * The first way defaults change a parse other than adding to it, or null.
+ * Defaults must not change whether a line parses, the error, the command,
+ * which options were used or the separator. They only add positional values
+ * after the typed ones, and values of the options that were used. And
+ * `defaults(name)` only answers for options that weren't used and whose first
+ * argument is required.
+ */
+function defaultsViolation(spec: Spec, input: string[]): string | null {
+  const plain = attempt(parse, input, withoutDefaults(spec));
+  const withDefaults = attempt(parse, input, spec);
+  if (!plain.ok || !withDefaults.ok) {
+    if (plain.ok !== withDefaults.ok) return "defaults change whether the line parses";
+    const [a, b] = [plain, withDefaults].map((outcome) => (outcome.ok ? "" : outcome.error.message));
+    return a === b ? null : `defaults change the error: ${a} vs ${b}`;
+  }
+  const typed = plain.result;
+  const result = withDefaults.result;
+  const names = (path: CommandPathLike) => JSON.stringify(path.map((command) => command.name));
+  if (names(typed.path) !== names(result.path)) return "defaults change the command";
+  if (typed.argSeparatorIndex !== result.argSeparatorIndex) return "defaults change argSeparatorIndex";
+  const keys = (map: Map<string, string[]>) => JSON.stringify([...map.keys()]);
+  if (keys(typed.options) !== keys(result.options)) return "defaults change which options were used";
+  for (const [name, typedValues] of typed.options) {
+    const extra = addedValues(typedValues, result.options.get(name)!);
+    if (!extra) return `the values of ${name} don't keep the typed ones in order`;
+    const owners = optionsNamed(spec, name);
+    const allowed = new Set(owners.flatMap((option) => asArray(option.args).map((arg) => arg.default)));
+    const wrong = extra.find((value) => !allowed.has(value));
+    if (wrong !== undefined)
+      return `${name} has the value ${JSON.stringify(wrong)}, which isn't typed or a default`;
+    // With one option of that name, used once, the values are exactly the
+    // typed ones and the defaults of the arguments after them.
+    const [only] = owners;
+    if (owners.length === 1 && !only.isRepeatable) {
+      const expected = [...typedValues, ...leadingDefaults(only.args, typedValues.length)];
+      const got = result.options.get(name)!;
+      if (JSON.stringify(got) !== JSON.stringify(expected)) {
+        return `${name} is ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`;
+      }
+    }
+  }
+
+  const path = result.path as readonly (Spec | Subcommand)[];
+  const command = path[path.length - 1];
+  const fills = !command.requiresSubcommand && typed.args.length >= getMinArgs(command.args);
+  const expected = [...typed.args, ...(fills ? leadingDefaults(command.args, typed.args.length) : [])];
+  if (JSON.stringify(result.args) !== JSON.stringify(expected)) {
+    return `args are ${JSON.stringify(result.args)}, expected ${JSON.stringify(expected)}`;
+  }
+
+  if (!result.defaults) return "parse has no defaults";
+  for (const name of OPTION_NAMES) {
+    const got = result.defaults(name);
+    const option = result.options.has(name) ? undefined : optionNamed(path, name);
+    const first = asArray(option?.args)[0];
+    const values = first && !first.isOptional ? leadingDefaults(option!.args, 0) : [];
+    const want = values.length > 0 ? values : undefined;
+    if (JSON.stringify(got) !== JSON.stringify(want)) {
+      return `defaults(${JSON.stringify(name)}) is ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * The values in `values` that aren't the typed ones, if `typed` is a
+ * subsequence of it. Otherwise null.
+ */
+function addedValues(typed: readonly string[], values: readonly string[]): string[] | null {
+  const extra: string[] = [];
+  let next = 0;
+  for (const value of values) {
+    if (next < typed.length && value === typed[next]) next++;
+    else extra.push(value);
+  }
+  return next === typed.length ? extra : null;
+}
+
+/** Every option in `spec` with `name` as one of its names. */
+function optionsNamed(spec: Subcommand, name: string): Option[] {
+  const found: Option[] = [];
+  const visit = (command: Subcommand) => {
+    for (const option of command.options ?? []) if (asArray(option.name).includes(name)) found.push(option);
+    for (const sub of command.subcommands ?? []) visit(sub);
+  };
+  visit(spec);
+  return found;
+}
+
+type CommandPathLike = readonly { name: Spec["name"] | Subcommand["name"] }[];
+
+test("defaults only add to what the user typed", () => {
+  for (const n of caseNumbers()) {
+    const gen = generator(caseSeed(n), { defaults: true });
+    const spec = gen.spec();
+    const input = gen.input(spec);
+    if (defaultsViolation(spec, input) === null) continue;
+    const small = shrink(spec, input, (s, i) => defaultsViolation(s, i) !== null);
+    expect.fail(report(n, small.spec, small.input, defaultsViolation(small.spec, small.input) ?? ""));
   }
 });
 

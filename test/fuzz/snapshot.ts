@@ -8,7 +8,9 @@ import type { Action, Spec } from "../../src/types.js";
  * A result of `parse` from this version or an older one. Before `parse` picked
  * the action, it returned every command action and option action instead.
  */
-type AnyParseResult = Omit<ParseResult, "action"> & {
+type AnyParseResult = Omit<ParseResult, "action" | "defaults"> & {
+  /** Before `parse` had defaults, results didn't have this. */
+  defaults?: ParseResult["defaults"];
   action?: Action;
   actions?: Action[];
   optionActions?: Action[];
@@ -32,12 +34,14 @@ export function attempt(parse: Parse, input: readonly string[], spec: Spec): Out
  * Describe how two outcomes of `parse` differ, or return null if they match.
  * Spec objects (path entries, options, actions) must be the same objects.
  * `sameAction` decides whether two actions match, so two copies of the
- * built-in usage action can count as the same.
+ * built-in usage action can count as the same. When both versions have
+ * defaults, the defaults of each of `optionNames` are compared too.
  */
 export function difference(
   a: Outcome,
   b: Outcome,
   sameAction: (x: Action, y: Action) => boolean = Object.is,
+  optionNames: readonly string[] = [],
 ): string | null {
   if (a.ok !== b.ok)
     return a.ok ? `only the second threw: ${describe(b)}` : `only the first threw: ${describe(a)}`;
@@ -64,6 +68,12 @@ export function difference(
   const optionsA = JSON.stringify(optionEntries(x.options));
   const optionsB = JSON.stringify(optionEntries(y.options));
   if (optionsA !== optionsB) return `options differ: ${optionsA} vs ${optionsB}`;
+  if (x.defaults && y.defaults) {
+    for (const name of optionNames) {
+      const [defaultsA, defaultsB] = [JSON.stringify(x.defaults(name)), JSON.stringify(y.defaults(name))];
+      if (defaultsA !== defaultsB) return `defaults of ${name} differ: ${defaultsA} vs ${defaultsB}`;
+    }
+  }
   return null;
 }
 

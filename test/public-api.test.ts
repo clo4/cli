@@ -22,6 +22,7 @@ test("public API stays minimal and namespace-friendly", () => {
 test("the testing entrypoint exports the spec checks and test", () => {
   expect(Object.keys(Testing).sort()).toEqual([
     "assertCommonOptionsArePersistent",
+    "assertDefaultsCanBeUsed",
     "assertDescriptionLineLengthUnder69",
     "assertEverythingHasDescription",
     "assertNamesHaveNoExtraWhitespace",

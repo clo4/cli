@@ -1,4 +1,4 @@
-import type { NonEmptyArray } from "./types.js";
+import type { Arg, NonEmptyArray } from "./types.js";
 
 export function isArray<T>(o: T | readonly T[]): o is readonly T[] {
   return Array.isArray(o);
@@ -102,6 +102,19 @@ export function printError(...strings: unknown[]): void {
 }
 
 // }}}
+
+/**
+ * Add the defaults of the arguments from index `from` on to `values`, stopping
+ * at the first argument without one. The parser and help both use this, so
+ * help only shows the defaults the parser uses.
+ */
+export function addDefaults(values: string[], args: readonly Arg[], from = 0): void {
+  for (let i = from; i < args.length; i++) {
+    const value = args[i].default;
+    if (value === undefined) return;
+    values.push(value);
+  }
+}
 
 /**
  * Returns the minimum number of arguments that satisfies the args.

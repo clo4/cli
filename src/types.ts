@@ -43,16 +43,25 @@ export interface OptionArgs {
   /** Escape hatch: the underlying map of option names to values. */
   readonly options: Map<string, string[]>;
 
-  /** Get every argument supplied to a option. */
+  /**
+   * Get every argument supplied to a option, or the defaults of its arguments
+   * if it wasn't supplied.
+   */
   all(name: string): string[] | undefined;
 
-  /** Get the first argument supplied to a option. */
+  /**
+   * Get the first argument supplied to a option, or the default of its first
+   * argument if it wasn't supplied.
+   */
   get(name: string): string | undefined;
 
-  /** Check whether a option was supplied. */
+  /** Check whether a option was supplied. Defaults don't count. */
   has(name: string): boolean;
 
-  /** Count option values, useful for repeatable options. */
+  /**
+   * Count option values, useful for repeatable options. It's 0 for an option
+   * that wasn't supplied, even if its arguments have defaults.
+   */
   count(name: string): number;
 }
 
@@ -254,7 +263,11 @@ export interface Arg {
   /** Name shown in generated help. */
   name?: string;
 
-  /** Description for documentation or future help output. */
+  /**
+   * Description shown in help. A command's positional arguments are listed
+   * with their descriptions and defaults. An option argument's description
+   * isn't shown.
+   */
   description?: string;
 
   /** Allow this argument to take unlimited values. */
@@ -262,6 +275,20 @@ export interface Arg {
 
   /** Allow this argument to be omitted. */
   isOptional?: true;
+
+  /**
+   * The value used when this argument is left out.
+   *
+   * - A positional argument's default is added to `args`, so the argument
+   *   must be optional.
+   * - An optional option argument's default is added when the option is used
+   *   without it, so a bare `--inspect` can mean `--inspect=9229`.
+   * - A required option argument's default is what `get` and `all` return
+   *   when the option isn't used. `has` and `count` still say it wasn't.
+   *
+   * Help shows an option's defaults after its description.
+   */
+  default?: string;
 
   /** Completions: complete file or folder paths for this argument. */
   template?: Template;

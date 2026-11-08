@@ -18,7 +18,7 @@ import { usage } from "../src/subcommands.js";
 import { parse, readNext } from "../src/parse.js";
 import type { Action, Spec } from "../src/types.js";
 import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
-import { generator, shrink } from "./fuzz/generate.js";
+import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import { attempt, difference, nextDifference } from "./fuzz/snapshot.js";
 import type { AnyNextToken } from "./fuzz/snapshot.js";
 
@@ -43,8 +43,16 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
 
   // Each copy of the source has its own built-in usage action.
   const sameAction = (x: Action, y: Action) => x === y || (x === usage && y === theirUsage);
+  // Specs only get defaults when the other version has them, since an older
+  // parser ignores them and would differ on every one.
+  const theirsHasDefaults = typeof theirs.parse([], { name: "x" }).defaults === "function";
   const differs = (spec: Spec, input: string[], partial: string) => {
-    const diff = difference(attempt(parse, input, spec), attempt(theirs.parse, input, spec), sameAction);
+    const diff = difference(
+      attempt(parse, input, spec),
+      attempt(theirs.parse, input, spec),
+      sameAction,
+      OPTION_NAMES,
+    );
     if (diff) return `parse: ${diff}`;
     // Versions before readNext only have `parse` to compare.
     if (!theirs.readNext) return null;
@@ -53,7 +61,7 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   };
 
   for (const n of caseNumbers()) {
-    const gen = generator(caseSeed(n), { emptySeparators: true });
+    const gen = generator(caseSeed(n), { emptySeparators: true, defaults: theirsHasDefaults });
     const spec = gen.spec();
     const input = gen.input(spec);
     const partial = gen.input(spec)[0] ?? "";

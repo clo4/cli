@@ -32,7 +32,7 @@ export function random(seed: number): Random {
 // Names overlap on purpose: short and long options that share characters,
 // subcommand names that are prefixes of each other or look like options, and
 // odd ones like "-", "+", "" and "--".
-const OPTION_NAMES = [
+export const OPTION_NAMES = [
   "-a",
   "-b",
   "-c",
@@ -107,11 +107,21 @@ const LOOSE_TOKENS = [
 export interface GenerateOptions {
   /** Include empty strings in `optionArgSeparators`, which spec validation rejects. */
   emptySeparators?: boolean;
+  /**
+   * Give some arguments a `default`. The defaults come from a random generator
+   * of their own, so the spec is otherwise the same as without them.
+   */
+  defaults?: boolean;
 }
+
+// Odd values too, so a default that looks like an option or `--` can't change
+// how anything else reads.
+const DEFAULT_VALUES = ["d", "", "-v", "--", "build"];
 
 /** Create a generator of random specs and command lines from one seed. */
 export function generator(seed: number, options: GenerateOptions = {}) {
   const r = random(seed);
+  const defaults = random(seed ^ 0x5eed);
   let actionCount = 0;
 
   const action = (): Action => {
@@ -124,6 +134,7 @@ export function generator(seed: number, options: GenerateOptions = {}) {
       name: "v",
       ...(r.chance(0.3) ? { isOptional: true } : {}),
       ...(r.chance(0.25) ? { isVariadic: true } : {}),
+      ...(options.defaults && defaults.chance(0.5) ? { default: defaults.pick(DEFAULT_VALUES) } : {}),
     });
     const kind = r.int(6);
     if (kind < 2) return undefined;

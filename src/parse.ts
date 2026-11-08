@@ -1,5 +1,5 @@
 import type { Action, Arg, CommandPath, Option, Spec, Subcommand } from "./types.js";
-import { asArray, getMaxArgs, getMinArgs } from "./util.js";
+import { addDefaults, asArray, getMaxArgs, getMinArgs } from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -20,6 +20,12 @@ export interface ParseResult {
   args: string[];
   argSeparatorIndex: number;
   options: Map<string, string[]>;
+  /**
+   * The defaults of the arguments of the option `name` refers to, for an
+   * option that wasn't used. Undefined if it was used, or if its first
+   * argument is optional or has no default.
+   */
+  defaults(name: string): string[] | undefined;
   path: CommandPath;
   /**
    * The action to run: the last option action used, or else the selected
@@ -209,6 +215,7 @@ class Scanner {
   private valuesStart = 0;
   private valuesMin = 0;
   private valuesMax = 0;
+  private valueArgs: readonly Arg[] = [];
   private requiredSeparator: string | boolean = false;
 
   // The first argument past the command's limit, or a subcommand that didn't
@@ -259,10 +266,16 @@ class Scanner {
   }
 
   // Every token except an option's value, or an unknown option, ends the
-  // previous option.
+  // previous option. A strict read then adds the defaults of the optional
+  // arguments that weren't given, so a bare `--inspect` gets its port.
   private endOption(): void {
-    if (this.strict && this.values && this.values.length - this.valuesStart < this.valuesMin) {
-      throw new TooFewOptionArguments(this.openOptionName, this.valuesMin, this.valuesMax, this.ctx());
+    const values = this.values;
+    if (this.strict && values) {
+      const given = values.length - this.valuesStart;
+      if (given < this.valuesMin) {
+        throw new TooFewOptionArguments(this.openOptionName, this.valuesMin, this.valuesMax, this.ctx());
+      }
+      addDefaults(values, this.valueArgs, given);
     }
     this.values = null;
   }
@@ -322,6 +335,7 @@ class Scanner {
     if (this.valuesMax > 0) {
       this.values = optionValues;
       this.valuesStart = optionValues.length;
+      this.valueArgs = asArray(option.args);
     }
   }
 
@@ -554,7 +568,26 @@ class Scanner {
     if (!skipsChecks) {
       checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
     }
+    // Defaults are added after the checks, so they never count as typed. An
+    // option action can run with required arguments missing, and then the
+    // first default would fill a required argument's place.
+    if (!command.requiresSubcommand && this.args.length >= this.commandArgsMin) {
+      addDefaults(this.args, asArray(command.args), this.args.length);
+    }
     return this.optionAction ?? command.action ?? builtinUsageAction;
+  }
+
+  /** See {@link ParseResult.defaults}. */
+  defaults(name: string): string[] | undefined {
+    if (this.options.has(name)) return undefined;
+    const args = asArray(this.scope.resolve(name)?.args);
+    // An option whose first argument is optional, like `--inspect[=port]`,
+    // means something different when it's left out than when it's bare, so
+    // its defaults are only for the bare option.
+    if (args.length === 0 || args[0].isOptional) return undefined;
+    const values: string[] = [];
+    addDefaults(values, args);
+    return values.length > 0 ? values : undefined;
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
@@ -749,5 +782,6 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
     args: s.args,
     argSeparatorIndex: s.argSeparatorIndex,
     options: s.options,
+    defaults: (name) => s.defaults(name),
   };
 }

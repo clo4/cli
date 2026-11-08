@@ -673,6 +673,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
   const steps = await collectSteps(validSpec());
   expect(steps).toEqual([
     "Required arguments don't follow optional arguments",
+    "The parser can use every default",
     "Repeatable options that are numbers are integers greater than 1",
     "Options have locally unique names",
     "Options don't shadow persistent options",

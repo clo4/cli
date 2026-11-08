@@ -152,6 +152,40 @@ export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcom
   });
 }
 
+/**
+ * Asserts that the parser can use every default. A positional argument with a
+ * default must be optional. A required option argument's default is only used
+ * when the option is left out, so every argument before it needs a default
+ * too, and the option can't be required.
+ */
+export function assertDefaultsCanBeUsed(spec: Subcommand): void {
+  forEachSubcommand(spec, (command, path) => {
+    for (const [index, arg] of makeArray(command.args).entries()) {
+      assert(
+        arg.default === undefined || arg.isOptional,
+        `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a default, but it's required, so the default is never used`,
+      );
+    }
+  });
+  forEachOption(spec, ({ option, isDefinedHere, where }) => {
+    if (!isDefinedHere) return;
+    let firstWithout: number | null = null;
+    for (const [index, arg] of makeArray(option.args).entries()) {
+      if (arg.default === undefined) {
+        firstWithout ??= index;
+        continue;
+      }
+      if (arg.isOptional) continue;
+      const name = `${where}, argument ${arg.name || index} has a default, but`;
+      assert(!option.isRequired, `${name} the option is required, so the default is never used`);
+      assert(
+        firstWithout === null,
+        `${name} the argument at index ${firstWithout} has none, so the default is never used`,
+      );
+    }
+  });
+}
+
 /** Asserts that `isRepeatable` is only assigned a positive integer */
 export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): void {
   forEachOption(spec, ({ option, isDefinedHere, where }) => {
@@ -353,6 +387,13 @@ export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
       assert(
         command.description.split("\n").every((line) => line.length <= 68),
         `${describeCommand(path)} has a description line over 68 characters`,
+      );
+    }
+    // Help lists positional arguments with their descriptions.
+    for (const [index, arg] of makeArray(command.args).entries()) {
+      assert(
+        !arg.description || arg.description.split("\n").every((line) => line.length <= 68),
+        `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a description line over 68 characters`,
       );
     }
   });
@@ -654,6 +695,7 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
       assertRequiredArgumentsDoNotFollowOptionalArguments,
       true,
     ],
+    ["The parser can use every default", "assertDefaultsCanBeUsed", assertDefaultsCanBeUsed, true],
     [
       "Repeatable options that are numbers are integers greater than 1",
       "assertRepeatableOptionsArePositiveIntegers",

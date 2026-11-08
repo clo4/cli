@@ -4,7 +4,7 @@ import { matchSubcommand, visibleSubcommands } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { makeArray, makeArray1, print, printError } from "./util.js";
+import { addDefaults, asArray, makeArray, makeArray1, print, printError } from "./util.js";
 
 function dedent(str: string) {
   if (str[0] !== "\n") return str;
@@ -103,6 +103,7 @@ type HelpSections = {
   description?: string;
   usage?: string;
   didYouMean?: string;
+  args: [name: string, description: string][];
   options: [formattedName: string, description: string][];
   persistentOptions: [formattedName: string, description: string][];
   subcommands: [formattedName: string, description: string][];
@@ -138,10 +139,11 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
     optionObjects = (command.options ?? []).flatMap((option) => byOption.get(option) ?? []);
     persistentOptionObjects = [];
   }
-  const row = (visible: VisibleOption): [string, string] => [
-    show(visible),
-    visible.option.description ?? defaultDesc,
-  ];
+  const row = (visible: VisibleOption): [string, string] => {
+    const defaults: string[] = [];
+    addDefaults(defaults, asArray(visible.option.args));
+    return [show(visible), withDefaults(visible.option.description, defaults, defaultDesc)];
+  };
   const options = optionObjects.map(row);
   const persistentOptions = persistentOptionObjects.map(row);
 
@@ -164,13 +166,43 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
     return parts.join(" ");
   })();
 
+  // The positional arguments are only listed when there's more to say about
+  // them than the usage line does. An argument's name is often description
+  // enough, so one without a description is listed by name alone.
+  const positionals = command.requiresSubcommand ? [] : asArray(command.args);
+  const described = positionals.some((arg) => arg.description !== undefined || arg.default !== undefined);
+  const args: HelpSections["args"] = described
+    ? positionals.map((arg) => [
+        (arg.name || "argument") + (arg.isVariadic ? "..." : ""),
+        withDefaults(arg.description, arg.default === undefined ? [] : [arg.default], ""),
+      ])
+    : [];
+
   return {
     usage,
     description,
+    args,
     persistentOptions,
     options,
     subcommands,
   };
+}
+
+/**
+ * A description ending with the defaults the parser uses. They go on a line of
+ * their own when the last line would be too long for the 68 characters the
+ * spec checks allow.
+ */
+function withDefaults(
+  description: string | undefined,
+  defaults: readonly string[],
+  defaultDesc: string,
+): string {
+  if (defaults.length === 0) return description ?? defaultDesc;
+  const shown = `(default: ${defaults.join(" ")})`;
+  if (description === undefined) return shown;
+  const lastLine = description.slice(description.lastIndexOf("\n") + 1);
+  return `${description}${lastLine.length + 1 + shown.length <= 68 ? " " : "\n"}${shown}`;
 }
 
 export function formatHelpSections(sections: HelpSections): string {
@@ -197,17 +229,28 @@ export function formatHelpSections(sections: HelpSections): string {
   );
   const minSpacingBetweenNameAndDesc = 2;
 
-  const formatOptions = (options: [string, string][]) => {
+  // Each name, then its description in a column `width` wide names leave.
+  const formatRows = (rows: [string, string][], width: number) => {
     const lines = [];
-    const newline = indent + " ".repeat(longestOptionName + minSpacingBetweenNameAndDesc);
-    for (const [name, desc] of options) {
-      const spaces = " ".repeat(longestOptionName - name.length + minSpacingBetweenNameAndDesc);
+    const newline = indent + " ".repeat(width + minSpacingBetweenNameAndDesc);
+    for (const [name, desc] of rows) {
+      if (desc === "") {
+        lines.push(`${indent}${name}`);
+        continue;
+      }
+      const spaces = " ".repeat(width - name.length + minSpacingBetweenNameAndDesc);
       const [head, ...tail] = desc.split("\n");
       const description = [head, ...tail.map((line) => newline + line)].join("\n");
       lines.push(`${indent}${name}${spaces}${description}`);
     }
     return lines;
   };
+  const formatOptions = (options: [string, string][]) => formatRows(options, longestOptionName);
+
+  if (sections.args.length > 0) {
+    const longestArgName = Math.max(...sections.args.map(([name]) => name.length));
+    parts.push(["Arguments:", ...formatRows(sections.args, longestArgName)].join("\n"));
+  }
 
   if (sections.subcommands.length > 0) {
     const lines = ["Commands:"];

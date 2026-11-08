@@ -29,8 +29,7 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
     return 1;
   }
 
-  const { action } = result;
-  const options = result.options;
+  const { action, options } = result;
   const actionInit: ActionInit = {
     help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
     args: result.args,
@@ -39,8 +38,8 @@ export async function run(spec: Spec, args: readonly string[] = defaultArgs()): 
     options: {
       options,
       has: (name) => options.has(name),
-      get: (name) => options.get(name)?.[0],
-      all: (name) => options.get(name),
+      get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
+      all: (name) => options.get(name) ?? result.defaults(name),
       count: (name) => options.get(name)?.length ?? 0,
     },
   };
