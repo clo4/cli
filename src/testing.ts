@@ -6,7 +6,7 @@
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
-import { OptionScope, optionKey } from "./scope.js";
+import { CommandScope, optionKey } from "./scope.js";
 import type { OptionForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken } from "./parse.js";
@@ -111,7 +111,7 @@ interface OptionUse {
   /** The commands from the root to the one the option is used in. */
   path: Subcommand[];
   /** The options and directives in effect there. */
-  scope: OptionScope;
+  scope: CommandScope;
   /** Whether the command it's used in is the one that defines it. */
   isDefinedHere: boolean;
   /** Names the option at the start of a message. See {@link describeOption}. */
@@ -131,7 +131,7 @@ function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
   // `inherited` holds the persistent options from the commands above.
   const visit = (path: Subcommand[], inherited: Definition[]) => {
     const command = path[path.length - 1];
-    const scope = OptionScope.at(path);
+    const scope = CommandScope.at(path);
     const own = makeArray(command.options).map((option, index) => ({ option, definedIn: path, index }));
     for (const { option, definedIn, index } of [...own, ...inherited]) {
       const where = describeOption(definedIn, index, path);
@@ -246,7 +246,7 @@ export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): voi
       return;
     }
     // The persistent options this command inherits from its parents.
-    const inherited = OptionScope.at(path.slice(0, -1)).persistent;
+    const inherited = CommandScope.at(path.slice(0, -1)).persistent;
     for (const name of makeArray(option.name)) {
       assert(
         !inherited.some((persistent) => makeArray(persistent.name).includes(name)),
@@ -481,7 +481,7 @@ function tokensTo(path: readonly Subcommand[]): string[] {
  * there starts with it, or with it after '-' or '+', so the parser can only
  * read it as a value.
  */
-function placeholderValue(path: readonly Subcommand[], scope: OptionScope): string {
+function placeholderValue(path: readonly Subcommand[], scope: CommandScope): string {
   const names = [
     ...[...scope.local, ...scope.persistent].flatMap((option) => makeArray(option.name)),
     ...makeArray(path[path.length - 1].subcommands).flatMap((command) => makeArray(command.name)),
@@ -637,7 +637,7 @@ export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void
   forEachSubcommand(spec, (subcommand, path) => {
     // The path ends at this command, so this is the setting that decides how
     // its own subcommands are matched.
-    if (!OptionScope.at(path).directives.subcommandsMatchUniquePrefix) {
+    if (!CommandScope.at(path).directives.subcommandsMatchUniquePrefix) {
       return;
     }
 

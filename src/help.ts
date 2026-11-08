@@ -1,7 +1,7 @@
 import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
-import { matchSubcommand, visibleSubcommands } from "./subcommands.js";
-import { OptionScope } from "./scope.js";
+import { visibleSubcommands } from "./subcommands.js";
+import { CommandScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { addDefaults, asArray, getMaxArgs, makeArray, makeArray1, print, printError } from "./util.js";
@@ -74,27 +74,22 @@ export const helpCommand: Subcommand = {
   action({ path, args, help }) {
     const self = path[path.length - 1];
     const helpPath = path.slice(0, -1) as unknown as [Subcommand, ...Subcommand[]];
+    // Match each name the way the parser would have matched it in place of `help`.
+    const scope = CommandScope.at(helpPath);
 
     for (const name of args) {
       const command = helpPath[helpPath.length - 1];
       if (!command.subcommands) {
         break;
       }
-      // Match the name the way the parser would have matched it in place of `help`.
-      const scope = OptionScope.at(helpPath);
-      const match = matchSubcommand(
-        command.subcommands,
-        name,
-        scope.directives,
-        false,
-        scope.inheritedSubcommands,
-      );
+      const match = scope.matchSubcommand(name);
       // With a persistent help command, `cli help a help` is `cli a help`.
       if (match.command === self && !command.subcommands.includes(self)) {
         break;
       }
       if (match.command) {
         helpPath.push(match.command);
+        scope.enter(match.command);
         continue;
       }
       if (!command.requiresSubcommand && getMaxArgs(command.args) > 0) {
@@ -137,7 +132,7 @@ function getSubcommandPathString(commands: NonEmptyArray<Subcommand>): string {
 
 function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   const command = commands[commands.length - 1];
-  const scope = OptionScope.at(commands);
+  const scope = CommandScope.at(commands);
   const show = ({ option, names }: VisibleOption) => optionToString(option, scope.forms(option, names));
 
   const description = command.description;

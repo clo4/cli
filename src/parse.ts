@@ -11,10 +11,10 @@ import {
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
-import { OptionScope, optionKey } from "./scope.js";
-import type { OptionForm } from "./scope.js";
-import { matchSubcommand, usage as builtinUsageAction, withInherited } from "./subcommands.js";
-import type { NoSubcommand, SubcommandMatch } from "./subcommands.js";
+import { CommandScope, optionKey } from "./scope.js";
+import type { OptionForm, SubcommandMatch, SubcommandMatching } from "./scope.js";
+import { usage as builtinUsageAction } from "./subcommands.js";
+import type { NoSubcommand } from "./subcommands.js";
 
 export interface ParseResult {
   args: string[];
@@ -199,10 +199,7 @@ class Scanner {
   argSeparatorIndex = -1;
 
   // What the current command allows.
-  readonly scope: OptionScope = new OptionScope();
-  private subcommands: readonly Subcommand[] | undefined = undefined;
-  private commandArgsMin = 0;
-  private commandArgsMax = 0;
+  readonly scope: CommandScope = new CommandScope();
   readonly directives: Directives = this.scope.directives;
 
   hasFoundArg = false;
@@ -247,7 +244,7 @@ class Scanner {
     private readonly strict: boolean,
   ) {
     this.path = [spec];
-    this.enterCommand(spec);
+    this.scope.enter(spec);
   }
 
   private ctx(): ErrorContext {
@@ -257,14 +254,6 @@ class Scanner {
   /** Whether the open option can take the next token as a value. */
   get hasRoomForValue(): boolean {
     return this.valueCount < this.separateValueMax;
-  }
-
-  // Make `command` the current command.
-  private enterCommand(command: Spec | Subcommand): void {
-    this.scope.enter(command);
-    this.subcommands = command.subcommands;
-    this.commandArgsMin = getMinArgs(command.args);
-    this.commandArgsMax = getMaxArgs(command.args);
   }
 
   private findOption(name: string): Option | null {
@@ -409,8 +398,7 @@ class Scanner {
    * requires a subcommand takes none.
    */
   private get argsAreFull(): boolean {
-    const path = this.path;
-    return path[path.length - 1].requiresSubcommand === true || this.args.length >= this.commandArgsMax;
+    return this.scope.command.requiresSubcommand === true || this.args.length >= this.scope.argsMax;
   }
 
   private addArg(value: string): void {
@@ -426,7 +414,7 @@ class Scanner {
     this.closeOption();
     // A command that requires a subcommand allows `--` alone, and reports
     // any argument after it.
-    const command = this.path[this.path.length - 1];
+    const command = this.scope.command;
     if (this.strict && this.argsAreFull && !command.requiresSubcommand) {
       this.tooManyArgs ??= new ParseError(
         this.ctx(),
@@ -440,19 +428,21 @@ class Scanner {
   }
 
   /**
-   * Whether the next token can name a subcommand, its own or an inherited
-   * one. It can't once an argument is found, or while the open option needs
-   * the next token as its value. A required or variadic option value takes
-   * priority over a subcommand.
+   * How the next token can name a subcommand, its own or an inherited one, or
+   * null if it can't. It can't once an argument is found, or while the open
+   * option needs the next token as its value. A required or variadic option
+   * value takes priority over a subcommand. A short optional value could be a
+   * prefix of a subcommand's name, so only an exact name can end an option
+   * that still has room.
    */
-  private get canMatchSubcommand(): boolean {
-    if (this.hasFoundArg) {
-      return false;
+  private get subcommandMatching(): SubcommandMatching | null {
+    if (this.hasFoundArg || !this.scope.hasSubcommands) {
+      return null;
     }
-    if (!this.subcommands && this.scope.inheritedSubcommands.length === 0) {
-      return false;
+    if (this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity)) {
+      return null;
     }
-    return !(this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity));
+    return { exactOnly: this.hasRoomForValue };
   }
 
   /**
@@ -460,24 +450,14 @@ class Scanner {
    * none. Null if the next token can't be a subcommand at all.
    */
   private subcommandFor(token: string): SubcommandMatch | null {
-    if (!this.canMatchSubcommand) {
-      return null;
-    }
-    // A short optional value could be a prefix of a subcommand's name, so only
-    // an exact match can end an option that still has room.
-    return matchSubcommand(
-      this.subcommands ?? [],
-      token,
-      this.directives,
-      this.hasRoomForValue,
-      this.scope.inheritedSubcommands,
-    );
+    const matching = this.subcommandMatching;
+    return matching && this.scope.matchSubcommand(token, matching.exactOnly);
   }
 
   private enterSubcommand(command: Subcommand): void {
     this.closeOption();
     this.path.push(command);
-    this.enterCommand(command);
+    this.scope.enter(command);
   }
 
   /** Read a token like `-abc`, `+x` or `-ovalue`. */
@@ -576,7 +556,7 @@ class Scanner {
     // Where a subcommand could be, a token the command has no room for is a
     // subcommand that didn't match.
     if (this.strict && unmatched && this.argsAreFull) {
-      const command = this.path[this.path.length - 1];
+      const command = this.scope.command;
       if (command.subcommands?.length || command.requiresSubcommand) {
         const { message, didYouMean } = unmatched.reason();
         this.tooManyArgs ??= new ParseError(this.ctx(), message, didYouMean);
@@ -594,14 +574,14 @@ class Scanner {
     // An option with an action, like --help, works however the rest of the
     // command line is wrong, as long as every token could be read. So does the
     // usage a command shows when no subcommand is named.
-    const command = this.path[this.path.length - 1];
+    const command = this.scope.command;
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionAction !== undefined || showsUsage;
     if (!skipsChecks && this.tooManyArgs) {
       throw this.tooManyArgs;
     }
-    if (!skipsChecks && this.args.length < this.commandArgsMin) {
-      throw new TooFewArguments(this.commandArgsMin, this.commandArgsMax, this.ctx());
+    if (!skipsChecks && this.args.length < this.scope.argsMin) {
+      throw new TooFewArguments(this.scope.argsMin, this.scope.argsMax, this.ctx());
     }
     this.endOption();
     if (!skipsChecks) {
@@ -610,7 +590,7 @@ class Scanner {
     // Defaults are added after the checks, so they never count as typed. An
     // option action can run with required arguments missing, and then the
     // first default would fill a required argument's place.
-    if (!command.requiresSubcommand && this.args.length >= this.commandArgsMin) {
+    if (!command.requiresSubcommand && this.args.length >= this.scope.argsMin) {
       addDefaults(this.args, asArray(command.args), this.args.length);
     }
     return this.optionAction ?? command.action ?? builtinUsageAction;
@@ -651,18 +631,13 @@ class Scanner {
   /** The options the next token can use. See {@link NextToken.options}. */
   private usableOptions(): UsableOption[] {
     const used = new Set(this.seenOptions.map(optionKey));
-    const { local, persistent } = this.scope.live();
+    const { local, persistent } = this.scope.live(this.subcommandMatching);
     const usable: UsableOption[] = [];
     for (const { option, names } of [...local, ...persistent]) {
       if (this.conflicts(option)) {
         continue;
       }
-      // The parser reads a name that a subcommand matches as that subcommand.
-      const typeable = names.filter((name) => !this.subcommandFor(name)?.command);
-      if (typeable.length === 0) {
-        continue;
-      }
-      usable.push({ option, forms: this.scope.forms(option, typeable), used: used.has(optionKey(option)) });
+      usable.push({ option, forms: this.scope.forms(option, names), used: used.has(optionKey(option)) });
     }
     return usable;
   }
@@ -670,7 +645,7 @@ class Scanner {
   /** What the next token can be. See {@link readNext}. */
   next(): Omit<NextToken, "attached"> {
     const open = this.openOption && this.hasRoomForValue ? this.openOption : null;
-    const command = this.path[this.path.length - 1];
+    const command = this.scope.command;
     // Every token after `--` is an argument.
     const afterSeparator = this.argSeparatorIndex !== -1;
     const optionsAllowed = !afterSeparator && this.optionsAllowed;
@@ -678,10 +653,7 @@ class Scanner {
       path: this.path,
       directives: this.directives,
       optionsAllowed,
-      subcommands:
-        !afterSeparator && this.canMatchSubcommand
-          ? withInherited(this.subcommands ?? [], this.scope.inheritedSubcommands)
-          : [],
+      subcommands: !afterSeparator && this.subcommandMatching ? this.scope.subcommands() : [],
       options: optionsAllowed ? this.usableOptions() : [],
       value: open && {
         option: open,

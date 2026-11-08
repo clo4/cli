@@ -277,3 +277,21 @@ test("help: an option lists only the names that still refer to it", () => {
   expectIncludes(msg, "  --all  second");
   expectNotIncludes(msg, "-a, --all");
 });
+
+test("help: an option name a subcommand matches is left out, like the parser reads it", () => {
+  const spec: Spec = {
+    name: "TEST_NAME",
+    parserDirectives: { flagsArePosixNoncompliant: true, subcommandsMatchUniquePrefix: true },
+    options: [
+      { name: "build", description: "SHADOWED_FLAG" },
+      { name: ["bu", "--both"], description: "PREFIX_FLAG" },
+      { name: "keep", description: "KEPT_FLAG" },
+    ],
+    subcommands: [{ name: "build", description: "BUILD_CMD" }],
+  };
+  const msg = getHelp([spec]);
+  expectIncludes(msg, "BUILD_CMD");
+  expectNotIncludes(msg, "SHADOWED_FLAG");
+  expectIncludes(msg, "  --both  PREFIX_FLAG");
+  expectIncludes(msg, "  keep    KEPT_FLAG");
+});

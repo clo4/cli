@@ -1,7 +1,19 @@
 import type { Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
-import { asArray, getMaxArgs } from "./util.js";
+import { NoSubcommand } from "./subcommands.js";
+import { asArray, getMaxArgs, getMinArgs } from "./util.js";
+
+/** The subcommand a token names, or why it names none. See {@link CommandScope.matchSubcommand}. */
+export type SubcommandMatch = { command: Subcommand } | NoSubcommand;
+
+/**
+ * How the next token can match a subcommand: by any name the command's
+ * directives allow, or only by an exact name.
+ */
+export interface SubcommandMatching {
+  exactOnly: boolean;
+}
 
 /** An option that can be used here, and the names that still refer to it. */
 export interface VisibleOption {
@@ -23,16 +35,17 @@ export interface OptionForm {
 }
 
 /**
- * The options and directives in effect at one command on a path.
+ * What a name means at one command on a path: the options, subcommands,
+ * directives and argument limits in effect there.
  *
  * Moving to a subcommand replaces the local options and adds its persistent
  * options to the inherited ones. A name refers to one option: a local option
  * wins over a persistent one, and a later option wins over an earlier one in
- * the same list. The parser, help, completion and the spec checker all ask
- * this module which option a name refers to, so they can't disagree. It also
- * holds the persistent subcommands the current command inherits.
+ * the same list. A subcommand wins over an option where the next token can
+ * name a subcommand. The parser, help, completion and the spec checker all
+ * ask this module what a name refers to, so they can't disagree.
  */
-export class OptionScope {
+export class CommandScope {
   /** Non-persistent options of the current command, in definition order. */
   readonly local: Option[] = [];
   /** Persistent options from every command on the path, in definition order. */
@@ -44,11 +57,15 @@ export class OptionScope {
   readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
   readonly directives: Directives = defaultDirectives();
-  private command: Spec | Subcommand | null = null;
+  private current: Spec | Subcommand | null = null;
+  /** The fewest positional arguments the current command takes. */
+  argsMin = 0;
+  /** The most positional arguments the current command takes. */
+  argsMax = 0;
 
   /** The scope at the last command on `path`. */
-  static at(path: readonly (Spec | Subcommand)[]): OptionScope {
-    const scope = new OptionScope();
+  static at(path: readonly (Spec | Subcommand)[]): CommandScope {
+    const scope = new CommandScope();
     for (const command of path) {
       scope.enter(command);
     }
@@ -57,14 +74,16 @@ export class OptionScope {
 
   /** Move to `command`, a subcommand of the current one. */
   enter(command: Spec | Subcommand): void {
-    const parentSubcommands = this.command?.subcommands;
+    const parentSubcommands = this.current?.subcommands;
     if (parentSubcommands) {
       const persistent = parentSubcommands.filter((subcommand) => subcommand.isPersistent);
       if (persistent.length > 0) {
         this.inheritedSubcommands.unshift(...persistent);
       }
     }
-    this.command = command;
+    this.current = command;
+    this.argsMin = getMinArgs(command.args);
+    this.argsMax = getMaxArgs(command.args);
     this.local.length = 0;
     if (command.options) {
       for (const option of command.options) {
@@ -72,6 +91,67 @@ export class OptionScope {
       }
     }
     applyDirectives(this.directives, command);
+  }
+
+  /** The current command. */
+  get command(): Spec | Subcommand {
+    if (!this.current) {
+      throw new Error("The scope hasn't entered a command");
+    }
+    return this.current;
+  }
+
+  /** Whether the current command has subcommands of its own or inherits any. */
+  get hasSubcommands(): boolean {
+    return this.current?.subcommands !== undefined || this.inheritedSubcommands.length > 0;
+  }
+
+  /**
+   * The subcommands the next token can name: the current command's own,
+   * followed by each inherited one that an earlier one doesn't shadow a name
+   * of. Hidden ones are included.
+   */
+  subcommands(): readonly Subcommand[] {
+    const own = this.current?.subcommands ?? [];
+    if (this.inheritedSubcommands.length === 0) {
+      return own;
+    }
+    const all = [...own];
+    for (const candidate of this.inheritedSubcommands) {
+      if (!asArray(candidate.name).some((name) => all.some((earlier) => hasName(earlier.name, name)))) {
+        all.push(candidate);
+      }
+    }
+    return all;
+  }
+
+  /**
+   * Find the subcommand `token` names: one of the current command's own, or
+   * else an inherited persistent one. An exact name always wins. With
+   * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one of
+   * the command's own names matches that command, unless `exactOnly`. A hidden
+   * or inherited command only matches its exact name, so it can't make a
+   * visible command's prefix ambiguous or take a prefix meant as an argument,
+   * and an empty token is no command's prefix.
+   */
+  matchSubcommand(token: string, exactOnly = false): SubcommandMatch {
+    const own = this.current?.subcommands ?? [];
+    for (const candidate of own) {
+      if (hasName(candidate.name, token)) {
+        return { command: candidate };
+      }
+    }
+    for (const candidate of this.inheritedSubcommands) {
+      if (hasName(candidate.name, token)) {
+        return { command: candidate };
+      }
+    }
+    const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !exactOnly;
+    const matches = allowPrefix ? prefixMatches(own, token) : [];
+    if (matches.length === 1) {
+      return { command: matches[0] };
+    }
+    return new NoSubcommand(this.subcommands(), token, matches);
   }
 
   /** The option `name` refers to, if any. */
@@ -93,9 +173,13 @@ export class OptionScope {
   /**
    * The options that can be used here, in definition order, each with only
    * its live names: the names that still refer to it. Options with every name
-   * shadowed are left out.
+   * shadowed are left out. Where the next token can name a subcommand, as
+   * `subcommands` says, a name that one matches is that subcommand's.
    */
-  live(): { local: VisibleOption[]; persistent: VisibleOption[] } {
+  live(subcommands: SubcommandMatching | null = null): {
+    local: VisibleOption[];
+    persistent: VisibleOption[];
+  } {
     // Which option each name refers to, built in one pass so the later and the
     // local options overwrite the ones they shadow. Same answer as `resolve`.
     const owner = new Map<string, Option>();
@@ -109,7 +193,11 @@ export class OptionScope {
     const pick = (options: readonly Option[]) => {
       const picked: VisibleOption[] = [];
       for (const option of options) {
-        const names = asArray(option.name).filter((name) => owner.get(name) === option);
+        const names = asArray(option.name).filter(
+          (name) =>
+            owner.get(name) === option &&
+            !(subcommands && this.matchSubcommand(name, subcommands.exactOnly).command),
+        );
         if (names.length > 0) {
           picked.push({ option, names });
         }
@@ -119,17 +207,21 @@ export class OptionScope {
     return { local: pick(this.local), persistent: pick(this.persistent) };
   }
 
-  /** The options a user can see here: the {@link live} ones that aren't hidden. */
+  /**
+   * The options a user can see at the start of the current command: the
+   * {@link live} ones that aren't hidden, without the names a subcommand takes.
+   */
   visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
-    const { local, persistent } = this.live();
+    const { local, persistent } = this.live(this.hasSubcommands ? { exactOnly: false } : null);
     const shown = (visible: VisibleOption) => !visible.option.hidden;
     return { local: local.filter(shown), persistent: persistent.filter(shown) };
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */
   suggestionNames(): string[][] {
-    const { local, persistent } = this.visible();
-    return [...local, ...persistent].map((visible) => visible.names);
+    const { local, persistent } = this.live();
+    const shown = (visible: VisibleOption) => !visible.option.hidden;
+    return [...local, ...persistent].filter(shown).map((visible) => visible.names);
   }
 
   /** The options that must be used, local first. */
@@ -190,4 +282,14 @@ export function optionKey(option: Option): string {
 
 function hasName(names: string | readonly string[], name: string): boolean {
   return typeof names === "string" ? names === name : names.includes(name);
+}
+
+/** The visible commands that `token` is a prefix of a name of, each listed once. */
+function prefixMatches(subcommands: readonly Subcommand[], token: string): Subcommand[] {
+  if (token === "") {
+    return [];
+  }
+  return subcommands.filter(
+    (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(token)),
+  );
 }
