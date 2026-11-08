@@ -4,7 +4,7 @@ import { matchSubcommand, visibleSubcommands } from "./subcommands.js";
 import { OptionScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { addDefaults, asArray, makeArray, makeArray1, print, printError } from "./util.js";
+import { addDefaults, asArray, getMaxArgs, makeArray, makeArray1, print, printError } from "./util.js";
 
 function dedent(str: string) {
   if (str[0] !== "\n") return str;
@@ -52,39 +52,53 @@ export function printUsageError(
   printError(`${message}\n\n${getHelp(path, { description: false, didYouMean })}`);
 }
 
-/** A subcommand that prints help for its parent or a sibling command. */
+/**
+ * A subcommand that prints help for its parent, or for the command the names
+ * after it lead to from there, so `cli help a b` prints the help of `cli a b`.
+ * It reads names until one isn't a subcommand. A token where the command takes
+ * arguments, or where it has no subcommands, ends the names, so
+ * `cli help completion zsh` prints the help of `completion`. Any other token
+ * is an unknown command. Add `{ ...helpCommand, isPersistent: true }` instead
+ * to make `cli a b help` work too.
+ */
 export const helpCommand: Subcommand = {
   name: "help",
   description: "Print a help message",
   args: {
     name: "command",
     isOptional: true,
+    isVariadic: true,
   },
-  action({ path, args: [commandName], help }) {
-    const helpRoot = path.slice(0, -1) as unknown as NonEmptyArray<Subcommand>;
+  action({ path, args, help }) {
+    const self = path[path.length - 1];
+    const helpPath = path.slice(0, -1) as unknown as [Subcommand, ...Subcommand[]];
 
-    if (!commandName) {
-      print(help({ path: helpRoot }));
-      return 0;
-    }
-
-    const parent = path[path.length - 2];
-
-    if (!parent.subcommands) {
-      printUsageError(helpRoot, "No subcommands, try using 'help' with nothing after it");
-      return 1;
-    }
-
-    // Match the name the way the parser would have matched it in place of `help`.
-    const { directives } = OptionScope.at(helpRoot);
-    const match = matchSubcommand(parent.subcommands, commandName, directives);
-    if (!match.command) {
+    for (const name of args) {
+      const command = helpPath[helpPath.length - 1];
+      if (!command.subcommands) break;
+      // Match the name the way the parser would have matched it in place of `help`.
+      const scope = OptionScope.at(helpPath);
+      const match = matchSubcommand(
+        command.subcommands,
+        name,
+        scope.directives,
+        false,
+        scope.inheritedSubcommands,
+      );
+      // With a persistent help command, `cli help a help` is `cli a help`.
+      if (match.command === self && !command.subcommands.includes(self)) break;
+      if (match.command) {
+        helpPath.push(match.command);
+        continue;
+      }
+      if (!command.requiresSubcommand && getMaxArgs(command.args) > 0) break;
       const { message, didYouMean } = match.reason();
-      printUsageError(helpRoot, message, didYouMean);
+      printUsageError(helpPath, message, didYouMean);
       return 1;
     }
 
-    print(help({ path: [...helpRoot, match.command] }));
+    print(help({ path: helpPath }));
+    return 0;
   },
 };
 

@@ -13,7 +13,7 @@ import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { OptionScope, optionKey } from "./scope.js";
 import type { OptionForm } from "./scope.js";
-import { matchSubcommand, usage as builtinUsageAction } from "./subcommands.js";
+import { matchSubcommand, usage as builtinUsageAction, withInherited } from "./subcommands.js";
 import type { NoSubcommand, SubcommandMatch } from "./subcommands.js";
 
 export interface ParseResult {
@@ -422,15 +422,15 @@ class Scanner {
   }
 
   /**
-   * The subcommands the next token can name. None once an argument is found,
-   * or while the open option needs the next token as its value. A required
-   * or variadic option value takes priority over a subcommand.
+   * Whether the next token can name a subcommand, its own or an inherited
+   * one. It can't once an argument is found, or while the open option needs
+   * the next token as its value. A required or variadic option value takes
+   * priority over a subcommand.
    */
-  private get matchableSubcommands(): readonly Subcommand[] | undefined {
-    if (!this.subcommands || this.hasFoundArg) return undefined;
-    const valueIsRequired =
-      this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity);
-    return valueIsRequired ? undefined : this.subcommands;
+  private get canMatchSubcommand(): boolean {
+    if (this.hasFoundArg) return false;
+    if (!this.subcommands && this.scope.inheritedSubcommands.length === 0) return false;
+    return !(this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity));
   }
 
   /**
@@ -438,11 +438,16 @@ class Scanner {
    * none. Null if the next token can't be a subcommand at all.
    */
   private subcommandFor(token: string): SubcommandMatch | null {
-    const subcommands = this.matchableSubcommands;
-    if (!subcommands) return null;
+    if (!this.canMatchSubcommand) return null;
     // A short optional value could be a prefix of a subcommand's name, so only
     // an exact match can end an option that still has room.
-    return matchSubcommand(subcommands, token, this.directives, this.hasRoomForValue);
+    return matchSubcommand(
+      this.subcommands ?? [],
+      token,
+      this.directives,
+      this.hasRoomForValue,
+      this.scope.inheritedSubcommands,
+    );
   }
 
   private enterSubcommand(command: Subcommand): void {
@@ -627,7 +632,10 @@ class Scanner {
       path: this.path,
       directives: this.directives,
       optionsAllowed,
-      subcommands: (!afterSeparator && this.matchableSubcommands) || [],
+      subcommands:
+        !afterSeparator && this.canMatchSubcommand
+          ? withInherited(this.subcommands ?? [], this.scope.inheritedSubcommands)
+          : [],
       options: optionsAllowed ? this.usableOptions() : [],
       value: open && {
         option: open,

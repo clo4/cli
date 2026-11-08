@@ -150,6 +150,15 @@ export interface Subcommand {
   hidden?: true;
 
   /**
+   * Allow descendant commands to use this command as a subcommand too, like
+   * `{ ...helpCommand, isPersistent: true }`. There it only matches its exact
+   * name, a descendant's own subcommand with the same name wins, and help
+   * doesn't list it. Where a descendant takes positional arguments, its first
+   * argument can't be this command's name without `--` before it.
+   */
+  isPersistent?: true;
+
+  /**
    * Require a subcommand, so the command takes no arguments. Without a
    * subcommand, the command's action runs, or its help prints if it has none.
    */

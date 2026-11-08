@@ -29,15 +29,22 @@ export interface OptionForm {
  * options to the inherited ones. A name refers to one option: a local option
  * wins over a persistent one, and a later option wins over an earlier one in
  * the same list. The parser, help, completion and the spec checker all ask
- * this module which option a name refers to, so they can't disagree.
+ * this module which option a name refers to, so they can't disagree. It also
+ * holds the persistent subcommands the current command inherits.
  */
 export class OptionScope {
   /** Non-persistent options of the current command, in definition order. */
   readonly local: Option[] = [];
   /** Persistent options from every command on the path, in definition order. */
   readonly persistent: Option[] = [];
+  /**
+   * Persistent subcommands of the commands above the current one, nearest
+   * command first, so a nearer one wins a name.
+   */
+  readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
   readonly directives: Directives = defaultDirectives();
+  private command: Spec | Subcommand | null = null;
 
   /** The scope at the last command on `path`. */
   static at(path: readonly (Spec | Subcommand)[]): OptionScope {
@@ -48,6 +55,12 @@ export class OptionScope {
 
   /** Move to `command`, a subcommand of the current one. */
   enter(command: Spec | Subcommand): void {
+    const parentSubcommands = this.command?.subcommands;
+    if (parentSubcommands) {
+      const persistent = parentSubcommands.filter((subcommand) => subcommand.isPersistent);
+      if (persistent.length > 0) this.inheritedSubcommands.unshift(...persistent);
+    }
+    this.command = command;
     this.local.length = 0;
     if (command.options) {
       for (const option of command.options) {

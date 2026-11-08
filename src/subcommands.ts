@@ -8,26 +8,54 @@ export type SubcommandMatch = { command: Subcommand } | NoSubcommand;
 
 /**
  * Find the subcommand `token` names among `subcommands`, in a command where
- * `directives` are in effect. An exact name always wins. With
+ * `directives` are in effect, or else among the persistent subcommands the
+ * command `inherited`. An exact name always wins. With
  * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one
- * command's names matches that command, unless `exactOnly`. A hidden command
- * only matches its exact name, so it can't make a visible command's prefix
- * ambiguous, and an empty token is no command's prefix.
+ * of the command's own names matches that command, unless `exactOnly`. A
+ * hidden or inherited command only matches its exact name, so it can't make a
+ * visible command's prefix ambiguous or take a prefix meant as an argument,
+ * and an empty token is no command's prefix.
  */
 export function matchSubcommand(
   subcommands: readonly Subcommand[],
   token: string,
   directives: Readonly<Directives>,
   exactOnly = false,
+  inherited: readonly Subcommand[] = [],
 ): SubcommandMatch {
   for (const candidate of subcommands) {
-    const names = candidate.name;
-    if (typeof names === "string" ? names === token : names.includes(token)) return { command: candidate };
+    if (hasName(candidate, token)) return { command: candidate };
+  }
+  for (const candidate of inherited) {
+    if (hasName(candidate, token)) return { command: candidate };
   }
   const allowPrefix = directives.subcommandsMatchUniquePrefix && !exactOnly;
   const matches = allowPrefix ? prefixMatches(subcommands, token) : [];
   if (matches.length === 1) return { command: matches[0] };
-  return new NoSubcommand(subcommands, token, matches);
+  return new NoSubcommand(withInherited(subcommands, inherited), token, matches);
+}
+
+/**
+ * A command's own `subcommands` followed by the `inherited` ones it can use,
+ * leaving out each inherited one that an earlier command shadows a name of.
+ */
+export function withInherited(
+  subcommands: readonly Subcommand[],
+  inherited: readonly Subcommand[],
+): readonly Subcommand[] {
+  if (inherited.length === 0) return subcommands;
+  const all = [...subcommands];
+  for (const candidate of inherited) {
+    if (!asArray(candidate.name).some((name) => all.some((earlier) => hasName(earlier, name)))) {
+      all.push(candidate);
+    }
+  }
+  return all;
+}
+
+function hasName(command: Subcommand, token: string): boolean {
+  const names = command.name;
+  return typeof names === "string" ? names === token : names.includes(token);
 }
 
 /** The visible commands that `token` is a prefix of a name of, each listed once. */

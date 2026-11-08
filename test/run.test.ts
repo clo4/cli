@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { help, helpCommand, printError, run } from "../src/index.js";
-import type { ActionInit, Spec } from "../src/types.js";
+import type { ActionInit, Spec, Subcommand } from "../src/types.js";
 import { captureConsole } from "./helpers.js";
 
 test("run: a spec without an action prints its help", async () => {
@@ -175,6 +175,126 @@ test("run: helpCommand matches a unique prefix like the parser does", async () =
   const ambiguous = await captureConsole(() => run(spec, ["help", "bu"]));
   expect(ambiguous.code).toBe(1);
   expect(ambiguous.stderr).toMatch(/^Error: Ambiguous command 'bu', could be: build, bundle/);
+});
+
+test("run: helpCommand reads a path of command names", async () => {
+  const c: Subcommand = { name: "c", description: "the c command", args: { name: "file" }, action: () => {} };
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [{ name: "a", subcommands: [{ name: "b", subcommands: [c] }] }, helpCommand],
+  };
+
+  const nested = await captureConsole(() => run(spec, ["help", "a", "b", "c"]));
+  expect(nested.code).toBe(0);
+  expect(nested.stdout).toMatch(/the c command/);
+  expect(nested.stdout).toMatch(/Usage:\n {2}demo a b c <file>\n/);
+
+  // `help help` is help for `help`.
+  const helpHelp = await captureConsole(() => run(spec, ["help", "help"]));
+  expect(helpHelp.stdout).toMatch(/demo help \[command\]\.\.\./);
+});
+
+test("run: helpCommand stops at an argument and reports an unknown command", async () => {
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      {
+        name: "completion",
+        description: "print a script",
+        args: { name: "shell", isOptional: true },
+        subcommands: [{ name: "complete", hidden: true, action: () => {} }],
+        action: () => {},
+      },
+      { name: "version", description: "print the version", action: () => {} },
+      { name: "remote", subcommands: [{ name: "add", action: () => {} }] },
+      helpCommand,
+    ],
+  };
+
+  // A command that takes arguments, or that has no subcommands, ends the names.
+  const shell = await captureConsole(() => run(spec, ["help", "completion", "nushell", "extra"]));
+  expect(shell.code).toBe(0);
+  expect(shell.stdout).toMatch(/print a script/);
+  const leaf = await captureConsole(() => run(spec, ["help", "version", "extra"]));
+  expect(leaf.code).toBe(0);
+  expect(leaf.stdout).toMatch(/print the version/);
+
+  // Where only a subcommand can go, the error shows that command's usage.
+  const unknown = await captureConsole(() => run(spec, ["help", "remote", "ad"]));
+  expect(unknown.code).toBe(1);
+  expect(unknown.stderr).toMatch(/^Error: Unknown command 'ad'/);
+  expect(unknown.stderr).toMatch(/Did you mean 'add'/);
+  expect(unknown.stderr).toMatch(/Usage:\n {2}demo remote\n/);
+});
+
+test("run: a persistent helpCommand works from any command", async () => {
+  const c: Subcommand = { name: "c", description: "the c command", args: { name: "file" }, action: () => {} };
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      { name: "a", subcommands: [{ name: "b", subcommands: [c] }] },
+      { ...helpCommand, isPersistent: true },
+    ],
+  };
+
+  const before = await captureConsole(() => run(spec, ["help", "a", "b", "c"]));
+  const after = await captureConsole(() => run(spec, ["a", "b", "c", "help"]));
+  const middle = await captureConsole(() => run(spec, ["a", "help", "b", "c"]));
+  expect(before.code).toBe(0);
+  expect(before.stdout).toMatch(/the c command/);
+  expect(after).toEqual(before);
+  expect(middle).toEqual(before);
+
+  // A name that leads back to `help` is the same as ending the names there.
+  expect(await captureConsole(() => run(spec, ["help", "a", "b", "c", "help"]))).toEqual(before);
+  expect(await captureConsole(() => run(spec, ["help", "a", "help", "b"]))).toEqual(
+    await captureConsole(() => run(spec, ["help", "a"])),
+  );
+});
+
+test("run: helpCommand isn't persistent", async () => {
+  const seen: string[][] = [];
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      { name: "open", args: { name: "file" }, action: ({ args }) => void seen.push(args) },
+      helpCommand,
+    ],
+  };
+  await captureConsole(() => run(spec, ["open", "help"]));
+  expect(seen).toEqual([["help"]]);
+});
+
+test("run: an inherited subcommand gives way to arguments and own subcommands", async () => {
+  const seen: string[][] = [];
+  const spec: Spec = {
+    name: "demo",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [
+      {
+        name: "open",
+        description: "open files",
+        args: { name: "file", isVariadic: true },
+        action: ({ args }) => void seen.push(args),
+      },
+      { name: "group", subcommands: [{ name: "help", action: () => void seen.push(["own help"]) }] },
+      { ...helpCommand, isPersistent: true },
+    ],
+  };
+
+  // After an argument, and after `--`, "help" is an argument.
+  await captureConsole(() => run(spec, ["open", "x", "help"]));
+  await captureConsole(() => run(spec, ["open", "--", "help"]));
+  // An inherited command only matches its exact name.
+  await captureConsole(() => run(spec, ["open", "he"]));
+  // A command's own subcommand wins the name.
+  await captureConsole(() => run(spec, ["group", "help"]));
+  expect(seen).toEqual([["x", "help"], ["help"], ["he"], ["own help"]]);
+
+  const help = await captureConsole(() => run(spec, ["open", "help"]));
+  expect(help.stdout).toMatch(/open files/);
+  // Help only lists an inherited command under the command that defines it.
+  expect(help.stdout).not.toMatch(/Commands:/);
 });
 
 test("run: ambiguous unique-prefix command reports the candidates", async () => {
