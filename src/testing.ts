@@ -536,15 +536,21 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
       if (!include(option, form.name)) {
         continue;
       }
+      const tokens = writeForm(option, form, value);
+      const reader = tokenReader(root);
+      for (const token of before) {
+        reader.read(token);
+      }
+      const first = reader.read(tokens[0]);
       // A name joined to its value with nothing between isn't a token by itself.
       if (form.join !== "") {
-        const reading = readToken(root, before, form.name);
+        // Without a join, the first token is the name.
+        const reading = form.join === null ? first : readToken(root, before, form.name);
         assert(
           readsAs(reading, option),
           `${where} has the name '${form.name}', but the parser reads it as ${describeReading(reading, path)}`,
         );
       }
-      const tokens = writeForm(option, form, value);
       const written = `${where} is written '${optionToString(option, [form])}'`;
       if (form.join) {
         assert(
@@ -552,11 +558,6 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
           `${written}, but '${form.join}' isn't one of the option arg separators there (${scope.directives.optionArgSeparators.map((separator) => `'${separator}'`).join(", ") || "none"}). Add it to \`parserDirectives.optionArgSeparators\`.`,
         );
       }
-      const reader = tokenReader(root);
-      for (const token of before) {
-        reader.read(token);
-      }
-      const first = reader.read(tokens[0]);
       if (form.join !== null) {
         const joined = first.kind === "options" && first.attached?.option === option;
         assert(
