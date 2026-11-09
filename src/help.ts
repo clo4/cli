@@ -158,7 +158,7 @@ function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
   }
   const row = (visible: VisibleOption): [string, string] => {
     const defaults: string[] = [];
-    addDefaults(defaults, asArray(visible.option.args));
+    addDefaults(defaults, visible.option.args);
     return [show(visible), withDefaults(visible.option.description, defaults, defaultDesc)];
   };
   const options = optionObjects.map(row);

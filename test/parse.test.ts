@@ -774,6 +774,18 @@ test("parse: finite repeatable options work", () => {
   expect(() => parse(["-rrr"], spec)).toThrow();
 });
 
+test("parse: a subcommand's copy of a repeatable option uses its own limit", () => {
+  const withLimits = (parent: number, sub: number): Spec => ({
+    name: "command",
+    options: [{ name: "-v", isRepeatable: parent }],
+    subcommands: [{ name: "sub", options: [{ name: "-v", isRepeatable: sub }] }],
+  });
+  // The copies share their uses, so the last -v is the third use of both.
+  const input = ["-v", "-v", "sub", "-v"];
+  expect(parse(input, withLimits(2, 3)).options.get("-v")).toEqual(["", "", ""]);
+  expect(() => parse(input, withLimits(3, 2))).toThrow("Too many repetitions");
+});
+
 test("parse: requiresSeparator is true", () => {
   const spec: Spec = {
     name: "command",

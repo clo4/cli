@@ -1,5 +1,11 @@
 import type { Arg, NonEmptyArray } from "./types.js";
 
+/**
+ * `Array.isArray`, typed to narrow read-only arrays. `asArray`, `getMinArgs`,
+ * `getMaxArgs` and `addDefaults` run on every parse, so they call
+ * `Array.isArray` and cast instead, which saves a cold start compiling this
+ * function.
+ */
 export function isArray<T>(o: T | readonly T[]): o is readonly T[] {
   return Array.isArray(o);
 }
@@ -24,10 +30,10 @@ export function asArray<T>(thing: T | readonly T[] | undefined): readonly T[] {
   if (thing === undefined) {
     return [];
   }
-  if (isArray(thing)) {
+  if (Array.isArray(thing)) {
     return thing;
   }
-  return [thing];
+  return [thing as T];
 }
 
 /** Convert the value to an array with at least one element */
@@ -114,7 +120,17 @@ export function printError(...strings: unknown[]): void {
  * at the first argument without one. The parser and help both use this, so
  * help only shows the defaults the parser uses.
  */
-export function addDefaults(values: string[], args: readonly Arg[], from = 0): void {
+export function addDefaults(values: string[], args: Arg | readonly Arg[] | undefined, from = 0): void {
+  if (args === undefined) {
+    return;
+  }
+  if (!Array.isArray(args)) {
+    const value = (args as Arg).default;
+    if (from === 0 && value !== undefined) {
+      values.push(value);
+    }
+    return;
+  }
   for (let i = from; i < args.length; i++) {
     const value = args[i].default;
     if (value === undefined) {
@@ -136,8 +152,8 @@ export function getMinArgs(
   if (args === undefined) {
     return 0;
   }
-  if (!isArray(args)) {
-    return args.isOptional ? 0 : 1;
+  if (!Array.isArray(args)) {
+    return (args as { isOptional?: boolean }).isOptional ? 0 : 1;
   }
   let count = 0;
   for (let i = 0; i < args.length; i++) {
@@ -156,8 +172,8 @@ export function getMaxArgs(
   if (args === undefined) {
     return 0;
   }
-  if (!isArray(args)) {
-    return args.isVariadic ? Infinity : 1;
+  if (!Array.isArray(args)) {
+    return (args as { isVariadic?: boolean }).isVariadic ? Infinity : 1;
   }
   // Loop over the array backwards because variadic arguments are
   // more likely to be at the end of the array. They don't _need_

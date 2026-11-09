@@ -12,7 +12,32 @@ export type SubcommandMatch = { command: Subcommand } | NoSubcommand;
  * directives allow, or only by an exact name.
  */
 export interface SubcommandMatching {
-  exactOnly: boolean;
+  readonly exactOnly: boolean;
+}
+
+/** Match a subcommand by any name the directives allow. */
+export const anyName: SubcommandMatching = { exactOnly: false };
+/** Match a subcommand by its exact name only. */
+export const exactName: SubcommandMatching = { exactOnly: true };
+
+/** What a token means at one command. See {@link CommandScope.meaning}. */
+export type TokenMeaning =
+  | { kind: "subcommand"; command: Subcommand }
+  | {
+      kind: "options";
+      /** Each name the token uses, in order. */
+      uses: OptionUse[];
+      /**
+       * Where the value attached to the last option starts, and the separator
+       * before it, which is "" if there's none.
+       */
+      attached: { start: number; separator: string } | null;
+    };
+
+/** A name a token uses, and the option it refers to, or null if none. */
+export interface OptionUse {
+  option: Option | null;
+  name: string;
 }
 
 /** An option that can be used here, and the names that still refer to it. */
@@ -63,53 +88,65 @@ export class CommandScope {
   readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
   readonly directives: Directives = defaultDirectives();
-  private current: Spec | Subcommand | null = null;
+  /** The current command. */
+  command: Spec | Subcommand;
+  /** Whether the current command has subcommands of its own or inherits any. */
+  hasSubcommands = false;
   /** The fewest positional arguments the current command takes. */
   argsMin = 0;
   /** The most positional arguments the current command takes. */
   argsMax = 0;
+  /**
+   * How many arguments the current command takes before the parser reports
+   * one too many. It's `argsMax`, or 0 if the command requires a subcommand.
+   */
+  argsLimit = 0;
+
+  /** The scope at `root`. */
+  constructor(root: Spec | Subcommand) {
+    this.command = root;
+    this.select(root);
+  }
 
   /** The scope at the last command on `path`. */
   static at(path: readonly (Spec | Subcommand)[]): CommandScope {
-    const scope = new CommandScope();
-    for (const command of path) {
-      scope.enter(command);
+    const scope = new CommandScope(path[0]);
+    for (let i = 1; i < path.length; i++) {
+      scope.enter(path[i]);
     }
     return scope;
   }
 
   /** Move to `command`, a subcommand of the current one. */
   enter(command: Spec | Subcommand): void {
-    const parentSubcommands = this.current?.subcommands;
+    const parentSubcommands = this.command.subcommands;
     if (parentSubcommands) {
-      const persistent = parentSubcommands.filter((subcommand) => subcommand.isPersistent);
-      if (persistent.length > 0) {
-        this.inheritedSubcommands.unshift(...persistent);
+      // Nearest first, so these go in front of the ones inherited from above.
+      let at = 0;
+      for (let i = 0; i < parentSubcommands.length; i++) {
+        if (parentSubcommands[i].isPersistent) {
+          this.inheritedSubcommands.splice(at++, 0, parentSubcommands[i]);
+        }
       }
     }
-    this.current = command;
+    this.command = command;
+    this.select(command);
+  }
+
+  /** Take the argument limits, options and directives of `command`, the new current command. */
+  private select(command: Spec | Subcommand): void {
+    this.hasSubcommands = command.subcommands !== undefined || this.inheritedSubcommands.length > 0;
     this.argsMin = getMinArgs(command.args);
     this.argsMax = getMaxArgs(command.args);
+    this.argsLimit = command.requiresSubcommand === true ? 0 : this.argsMax;
     this.local.length = 0;
-    if (command.options) {
-      for (const option of command.options) {
-        (option.isPersistent ? this.persistent : this.local).push(option);
+    const options = command.options;
+    if (options) {
+      for (let i = 0; i < options.length; i++) {
+        (options[i].isPersistent ? this.persistent : this.local).push(options[i]);
       }
     }
     applyDirectives(this.directives, command);
-  }
-
-  /** The current command. */
-  get command(): Spec | Subcommand {
-    if (!this.current) {
-      throw new Error("The scope hasn't entered a command");
-    }
-    return this.current;
-  }
-
-  /** Whether the current command has subcommands of its own or inherits any. */
-  get hasSubcommands(): boolean {
-    return this.current?.subcommands !== undefined || this.inheritedSubcommands.length > 0;
   }
 
   /**
@@ -124,7 +161,7 @@ export class CommandScope {
    * way, a name that only one subcommand has keeps working.
    */
   subcommands(): LiveSubcommand[] {
-    const own = this.current?.subcommands ?? [];
+    const own = this.command.subcommands ?? [];
     const live = own.map((command) => ({ command, names: asArray(command.name) }));
     if (this.inheritedSubcommands.length === 0) {
       return live;
@@ -142,32 +179,14 @@ export class CommandScope {
     return live;
   }
 
-  /**
-   * Find the subcommand `token` names: one of the current command's own, or
-   * else an inherited persistent one. An exact name always wins. With
-   * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one of
-   * the command's own names matches that command, unless `exactOnly`. A hidden
-   * or inherited command only matches its exact name, so it can't make a
-   * visible command's prefix ambiguous or take a prefix meant as an argument,
-   * and an empty token is no command's prefix.
-   */
+  /** The subcommand `token` names, or why it names none. See {@link meaning}. */
   matchSubcommand(token: string, exactOnly = false): SubcommandMatch {
-    const own = this.current?.subcommands ?? [];
-    for (const candidate of own) {
-      if (hasName(candidate.name, token)) {
-        return { command: candidate };
-      }
-    }
-    for (const candidate of this.inheritedSubcommands) {
-      if (hasName(candidate.name, token)) {
-        return { command: candidate };
-      }
+    const meaning = this.meaning(token, exactOnly ? exactName : anyName, false);
+    if (meaning?.kind === "subcommand") {
+      return meaning;
     }
     const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !exactOnly;
-    const matches = allowPrefix ? prefixMatches(own, token) : [];
-    if (matches.length === 1) {
-      return { command: matches[0] };
-    }
+    const matches = allowPrefix ? prefixMatches(this.command.subcommands ?? [], token) : [];
     return new NoSubcommand(this.subcommands(), token, matches);
   }
 
@@ -185,6 +204,132 @@ export class CommandScope {
       }
     }
     return null;
+  }
+
+  /**
+   * What `token` means here: the subcommand it names, the options it uses, or
+   * null for an argument or a value. `subcommands` says how the token can name
+   * a subcommand, or is null if it can't, and `options` says whether it can
+   * be an option. A subcommand wins over an option.
+   *
+   * The token names one of the current command's own subcommands, or else an
+   * inherited persistent one. An exact name always wins. With
+   * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one of
+   * the command's own names matches that command, unless `exactOnly`. A hidden
+   * or inherited command only matches its exact name, so it can't make a
+   * visible command's prefix ambiguous or take a prefix meant as an argument,
+   * and an empty token is no command's prefix.
+   *
+   * A token written like an option whose first name refers to no option still
+   * means options, with a null option for that name. The parser reads it as
+   * an unknown option, or as a value if the open option has room for one.
+   */
+  meaning(token: string, subcommands: SubcommandMatching | null, options: boolean): TokenMeaning | null {
+    if (subcommands) {
+      const own = this.command.subcommands ?? [];
+      for (let i = 0; i < own.length; i++) {
+        if (hasName(own[i].name, token)) {
+          return { kind: "subcommand", command: own[i] };
+        }
+      }
+      const inherited = this.inheritedSubcommands;
+      for (let i = 0; i < inherited.length; i++) {
+        if (hasName(inherited[i].name, token)) {
+          return { kind: "subcommand", command: inherited[i] };
+        }
+      }
+      if (this.directives.subcommandsMatchUniquePrefix && !subcommands.exactOnly) {
+        const matches = prefixMatches(own, token);
+        if (matches.length === 1) {
+          return { kind: "subcommand", command: matches[0] };
+        }
+      }
+    }
+    if (!options) {
+      return null;
+    }
+    const { optionArgSeparators: separators, flagsArePosixNoncompliant: noncompliant } = this.directives;
+    const first = token.charCodeAt(0);
+    const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
+
+    if (!noncompliant && token.length > 1 && (first === 45 || first === 43) /* + */ && !isDoubleDash) {
+      return this.shortOptions(token);
+    }
+
+    if (!noncompliant && !(token.length > 2 && isDoubleDash)) {
+      return null;
+    }
+    // A token like `--name` or `--name=value`, or any token when options
+    // aren't POSIX compliant. The separator that appears first splits it, so
+    // the value can contain the other separators. When two separators start
+    // at the same place, the longer one wins.
+    let separator = "";
+    let index = -1;
+    for (let i = 0; i < separators.length; i++) {
+      const candidate = separators[i];
+      const at = token.indexOf(candidate);
+      if (
+        at !== -1 &&
+        (index === -1 || at < index || (at === index && candidate.length > separator.length))
+      ) {
+        separator = candidate;
+        index = at;
+      }
+    }
+    const name = separator ? token.slice(0, index) : token;
+    const option = this.resolve(name);
+    // When options aren't POSIX compliant, no token looks like an option, so
+    // one that isn't an option is an argument.
+    if (!option && noncompliant) {
+      return null;
+    }
+    const attached = option && separator ? { start: index + separator.length, separator } : null;
+    return { kind: "options", uses: [{ option, name }], attached };
+  }
+
+  /**
+   * What a token like `-abc`, `+x` or `-ovalue` means. See {@link meaning}.
+   * It's a method of its own so that a cold parse of a line without one
+   * doesn't compile it.
+   */
+  private shortOptions(token: string): TokenMeaning {
+    const separators = this.directives.optionArgSeparators;
+    // A single dash or plus option takes the rest of the token as its value
+    // if it takes arguments and the first character after it isn't an option.
+    const leadingChar = token[0];
+    const dashOption = this.resolve(leadingChar);
+    if (dashOption?.args && !this.resolve(token.slice(0, 2))) {
+      return {
+        kind: "options",
+        uses: [{ option: dashOption, name: leadingChar }],
+        attached: { start: 1, separator: "" },
+      };
+    }
+    // Otherwise it's chained short options. An option that takes arguments
+    // takes the rest of the token as its value, after a separator if one
+    // follows. So does an option without arguments that a separator follows,
+    // so that `-v=1` fails like `--verbose=1`, unless the next character is
+    // an option.
+    const uses: OptionUse[] = [];
+    for (let char = 1; char < token.length; char++) {
+      const name = leadingChar + token[char];
+      const option = this.resolve(name);
+      uses.push({ option, name });
+      if (!option || char === token.length - 1) {
+        continue;
+      }
+      let separator = "";
+      for (let i = 0; i < separators.length; i++) {
+        if (token.startsWith(separators[i], char + 1)) {
+          separator = separators[i];
+          break;
+        }
+      }
+      if (option.args || (separator && !this.resolve(leadingChar + token[char + 1]))) {
+        return { kind: "options", uses, attached: { start: char + separator.length + 1, separator } };
+      }
+    }
+    return { kind: "options", uses, attached: null };
   }
 
   /**
@@ -213,7 +358,7 @@ export class CommandScope {
         const names = asArray(option.name).filter(
           (name) =>
             owner.get(name) === option &&
-            !(subcommands && this.matchSubcommand(name, subcommands.exactOnly).command),
+            !(subcommands && this.meaning(name, subcommands, false)?.kind === "subcommand"),
         );
         if (names.length > 0) {
           picked.push({ option, names });
@@ -229,7 +374,7 @@ export class CommandScope {
    * {@link live} ones that aren't hidden, without the names a subcommand takes.
    */
   visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
-    const { local, persistent } = this.live(this.hasSubcommands ? { exactOnly: false } : null);
+    const { local, persistent } = this.live(this.hasSubcommands ? anyName : null);
     const shown = (visible: VisibleOption) => !visible.option.hidden;
     return { local: local.filter(shown), persistent: persistent.filter(shown) };
   }
@@ -239,11 +384,6 @@ export class CommandScope {
     const { local, persistent } = this.live();
     const shown = (visible: VisibleOption) => !visible.option.hidden;
     return [...local, ...persistent].filter(shown).map((visible) => visible.names);
-  }
-
-  /** The options that must be used, local first. */
-  required(): Option[] {
-    return [...this.local, ...this.persistent].filter((option) => option.isRequired);
   }
 
   /*
@@ -288,37 +428,6 @@ export class CommandScope {
   /** Whether the parser splits an option from its value at `separator` here. */
   readsSeparator(separator: string): boolean {
     return this.directives.optionArgSeparators.includes(separator);
-  }
-
-  /** The separator that `text` starts with, or "" if none. Used after a short option. */
-  leadingSeparator(text: string): string {
-    for (const separator of this.directives.optionArgSeparators) {
-      if (text.startsWith(separator)) {
-        return separator;
-      }
-    }
-    return "";
-  }
-
-  /**
-   * The separator that appears first in `token`, so the value after it can
-   * contain the other separators. When two separators start at the same place,
-   * the longer one wins. Null if there's none, or if the one found is empty.
-   */
-  firstSeparator(token: string): { index: number; separator: string } | null {
-    let found = "";
-    let index = -1;
-    for (const candidate of this.directives.optionArgSeparators) {
-      const at = token.indexOf(candidate);
-      if (at === -1) {
-        continue;
-      }
-      if (index === -1 || at < index || (at === index && candidate.length > found.length)) {
-        found = candidate;
-        index = at;
-      }
-    }
-    return found ? { index, separator: found } : null;
   }
 
   /**

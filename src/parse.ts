@@ -11,8 +11,8 @@ import {
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
-import { CommandScope, optionKey } from "./scope.js";
-import type { LiveSubcommand, OptionForm, SubcommandMatch, SubcommandMatching } from "./scope.js";
+import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
+import type { LiveSubcommand, OptionForm, SubcommandMatching } from "./scope.js";
 import { usage as builtinUsageAction } from "./subcommands.js";
 import type { NoSubcommand } from "./subcommands.js";
 
@@ -105,57 +105,103 @@ export type TokenReading =
   /** An option that doesn't exist. */
   | { kind: "unknown" };
 
+// The readings that carry nothing else, made once and shared.
+const separatorReading: TokenReading = Object.freeze({ kind: "separator" });
+const argumentReading: TokenReading = Object.freeze({ kind: "argument" });
+const unknownReading: TokenReading = Object.freeze({ kind: "unknown" });
+
 /** The values a repeatable option has collected, and how many times it's been used. */
 interface RepeatedUses {
   values: string[];
   count: number;
 }
 
-/** How many times `option` can be used. */
+/**
+ * How many times `option` can be used. Copies of an option with the same
+ * names share their uses, but each copy keeps its own limit.
+ */
 function repeatLimit(option: Option): number {
   return typeof option.isRepeatable === "number" ? option.isRepeatable : Infinity;
 }
 
 /**
+ * The last option used, which later tokens can be values of. `count` is how
+ * many separate tokens it has taken as values, `min` how many it needs, and
+ * `separateMax` how many it can take.
+ */
+interface OpenOption {
+  readonly option: Option | null;
+  readonly name: string;
+  count: number;
+  min: number;
+  separateMax: number;
+}
+
+/** The state when no option is open. It's frozen because every scanner shares it. */
+const noOpenOption: OpenOption = Object.freeze({ option: null, name: "", count: 0, min: 0, separateMax: 0 });
+
+/** The context of an error at the end of `path`, with a copy of the path. */
+function contextAt(path: CommandPath): ErrorContext {
+  return { path: [...path] };
+}
+
+/**
  * Throw if the options used break a `dependsOn` or `exclusiveOn` rule, or if
- * any of `required` is missing.
+ * an option that `scope` requires is missing. `path` ends at the command
+ * `scope` is for.
  */
 function checkOptionRules(
   options: ReadonlyMap<string, string[]>,
   seenOptions: readonly Option[],
-  required: readonly Option[],
-  context: ErrorContext,
+  scope: CommandScope,
+  path: CommandPath,
 ): void {
-  for (const option of seenOptions) {
+  for (let i = 0; i < seenOptions.length; i++) {
+    const option = seenOptions[i];
     if (!option.dependsOn) {
       continue;
     }
     for (const name of option.dependsOn) {
       if (!options.has(name)) {
         throw new ParseError(
-          context,
+          contextAt(path),
           `${asArray(option.name).join("/")} requires ${name}, add it to fix this error`,
         );
       }
     }
   }
-  for (const option of seenOptions) {
+  for (let i = 0; i < seenOptions.length; i++) {
+    const option = seenOptions[i];
     if (!option.exclusiveOn) {
       continue;
     }
     for (const name of option.exclusiveOn) {
       if (options.has(name)) {
         throw new ParseError(
-          context,
+          contextAt(path),
           `${asArray(option.name).join("/")} can't be used together with ${name}`,
         );
       }
     }
   }
-  for (const option of required) {
-    for (const name of asArray(option.name)) {
-      if (!options.has(name)) {
-        throw new MissingRequiredOption(name, context);
+  // Checking local options first reports a missing local option before a
+  // missing persistent one.
+  const { local, persistent } = scope;
+  for (let i = 0; i < local.length + persistent.length; i++) {
+    const option = i < local.length ? local[i] : persistent[i - local.length];
+    if (!option.isRequired) {
+      continue;
+    }
+    const names = option.name;
+    if (typeof names === "string") {
+      if (!options.has(names)) {
+        throw new MissingRequiredOption(names, contextAt(path));
+      }
+      continue;
+    }
+    for (let j = 0; j < names.length; j++) {
+      if (!options.has(names[j])) {
+        throw new MissingRequiredOption(names[j], contextAt(path));
       }
     }
   }
@@ -168,12 +214,12 @@ export interface TokenReader {
 }
 
 /**
- * The state of reading one command line, one token at a time. This is the
- * only code that decides what each input token is. It never throws: it skips
- * whatever is invalid and keeps going, so {@link readNext} can still read a
- * line that's wrong at the moment, and it keeps the first problem it finds for
- * {@link parse} to throw. Each method handles one kind of token, and says what
- * the token was read as.
+ * The state of reading one command line, one token at a time. The scope says
+ * what each token means at the current command, and this is the only code
+ * that decides what the token is read as and keeps what that changes. It
+ * never throws: it skips whatever is invalid and keeps going, so
+ * {@link readNext} can still read a line that's wrong at the moment, and it
+ * keeps the first problem it finds for {@link parse} to throw.
  */
 class Scanner implements TokenReader {
   private readonly path: [Spec, ...Subcommand[]];
@@ -185,30 +231,28 @@ class Scanner implements TokenReader {
   private argSeparatorIndex = -1;
 
   // What the current command allows.
-  private readonly scope: CommandScope = new CommandScope();
-  private readonly directives: Directives = this.scope.directives;
+  private readonly scope: CommandScope;
+  private readonly directives: Directives;
 
   private hasFoundArg = false;
+  // Whether the next token can be an option. It can't after `--`, or after
+  // the first argument when the command's options must precede arguments.
+  private optionsAllowed = true;
 
-  // The last option used, and how many more separate tokens it can take as
-  // values. While it has room, a token that isn't an option or `--` becomes its
-  // value. A subcommand's exact name ends it unless a value is required.
-  // `useOption` sets all of these and `closeOption` clears them.
-  private openOption: Option | null = null;
-  private openOptionName = "";
-  private valueCount = 0;
-  private valueMin = 0;
-  private separateValueMax = 0;
+  // The last option used. While it has room, a token that isn't an option or
+  // `--` becomes its value. A subcommand's exact name ends it unless a value
+  // is required. `useOption` sets it, and `--` or a subcommand closes it.
+  private open: OpenOption = noOpenOption;
 
   // The values of the last option, checked against its arity when it ends.
-  // Unlike the counts above, this includes values attached with a separator.
+  // Unlike the open option's counts, this includes values attached with a separator.
   // A repeatable option keeps adding to the same array, so this use's values
   // start at `valuesStart`.
   private values: string[] | null = null;
   private valuesStart = 0;
   private valuesMin = 0;
   private valuesMax = 0;
-  private valueArgs: readonly Arg[] = [];
+  private valueArgs: Option["args"] = undefined;
 
   /**
    * Makes the error for the first token that can't be read the way it's
@@ -230,22 +274,14 @@ class Scanner implements TokenReader {
 
   constructor(spec: Spec) {
     this.path = [spec];
-    this.scope.enter(spec);
+    this.scope = new CommandScope(spec);
+    this.directives = this.scope.directives;
   }
 
   // A copy of the path, since reading carries on after a problem and can
   // enter a subcommand before the error is made.
   private ctx(): ErrorContext {
-    return { path: [...this.path] };
-  }
-
-  /** Whether the open option can take the next token as a value. */
-  private get hasRoomForValue(): boolean {
-    return this.valueCount < this.separateValueMax;
-  }
-
-  private findOption(name: string): Option | null {
-    return this.scope.resolve(name);
+    return contextAt(this.path);
   }
 
   /**
@@ -283,8 +319,9 @@ class Scanner implements TokenReader {
     if (values) {
       const given = values.length - this.valuesStart;
       if (given < this.valuesMin) {
-        const { openOptionName, valuesMin, valuesMax } = this;
-        this.fail((ctx) => new TooFewOptionArguments(openOptionName, valuesMin, valuesMax, ctx));
+        const { valuesMin, valuesMax } = this;
+        const name = this.open.name;
+        this.fail((ctx) => new TooFewOptionArguments(name, valuesMin, valuesMax, ctx));
       } else {
         addDefaults(values, this.valueArgs, given);
       }
@@ -292,32 +329,20 @@ class Scanner implements TokenReader {
     this.values = null;
   }
 
-  /** End the open option, so no later token can be its value. */
-  private closeOption(): void {
-    this.endOption();
-    this.openOption = null;
-    this.valueCount = this.valueMin = this.separateValueMax = 0;
-  }
-
   private useOption(option: Option, name: string): void {
     this.endOption();
-    this.openOption = option;
-    this.openOptionName = name;
-    this.valueCount = 0;
-    this.valueMin = getMinArgs(option.args);
+    const valuesMin = getMinArgs(option.args);
+    const valuesMax = getMaxArgs(option.args);
     // Options that require a separator only take attached values.
-    this.separateValueMax = option.requiresSeparator ? 0 : getMaxArgs(option.args);
+    const separateMax = option.requiresSeparator ? 0 : valuesMax;
+    this.open = { option, name, count: 0, min: valuesMin, separateMax };
     this.seenOptions.push(option);
     if (option.action) {
       this.optionAction = option.action;
     }
-    const names = asArray(option.name);
-    const options = this.options;
-
     let optionValues: string[];
     if (option.isRepeatable) {
-      // A repeatable option collects the values from every use. Without
-      // arguments, each use adds an empty string, so the values count the uses.
+      // A repeatable option collects the values from every use.
       const key = optionKey(option);
       let uses = this.repeatedUses.get(key);
       if (!uses) {
@@ -328,101 +353,90 @@ class Scanner implements TokenReader {
         this.fail((ctx) => new ParseError(ctx, "Too many repetitions"));
       }
       uses.count += 1;
-      // Another option may have taken one of the names since the last use.
-      for (const other of names) {
-        options.set(other, uses.values);
-      }
-      if (!option.args) {
-        uses.values.push("");
-        return;
-      }
       optionValues = uses.values;
     } else {
       // The last use of an option wins, so a user can override a flag that a
       // shell alias already sets.
       optionValues = [];
-      for (const other of names) {
-        options.set(other, optionValues);
+    }
+    // A repeatable option stores its values again on each use, because another
+    // option may have taken one of its names since the last use.
+    const names = option.name;
+    if (typeof names === "string") {
+      this.options.set(names, optionValues);
+    } else {
+      for (let i = 0; i < names.length; i++) {
+        this.options.set(names[i], optionValues);
       }
     }
+    // Each use of a repeatable option without arguments adds an empty string,
+    // so its values count the uses.
+    if (option.isRepeatable && !option.args) {
+      optionValues.push("");
+      return;
+    }
 
-    this.valuesMin = this.valueMin;
-    this.valuesMax = getMaxArgs(option.args);
-    if (this.valuesMax > 0) {
+    this.valuesMin = valuesMin;
+    this.valuesMax = valuesMax;
+    if (valuesMax > 0) {
       this.values = optionValues;
       this.valuesStart = optionValues.length;
-      this.valueArgs = asArray(option.args);
+      this.valueArgs = option.args;
     }
   }
 
-  /** Add a value to the open option. Returns whether it's a value the option accepts. */
-  private addValue(value: string, separator: string): boolean {
-    this.valueCount += 1;
+  /**
+   * Add the value attached to the open option's token after `separator`,
+   * starting at `start`. It's the option's only value, so no later token can
+   * be one. Returns where the value starts, or null if the option doesn't
+   * accept it.
+   */
+  private addAttachedValue(
+    token: string,
+    start: number,
+    separator: string,
+  ): { option: Option; start: number } | null {
+    const open = this.open;
+    const option = open.option!;
+    const name = open.name;
+    open.count += 1;
+    open.min = open.separateMax = 0;
     if (!this.values) {
-      const name = this.openOptionName;
       this.fail((ctx) => new InvalidOptionArg(name, ctx));
-      return false;
+      return null;
     }
-    const problem = this.scope.separatorProblem(this.openOption!, this.openOptionName, separator);
+    const problem = this.scope.separatorProblem(option, name, separator);
     if (problem) {
       this.fail((ctx) => new ParseError(ctx, problem));
     }
-    this.values.push(value);
-    return problem === null;
-  }
-
-  /** Add a separate token as a value of the open option. */
-  private value(token: string): TokenReading {
-    this.addValue(token, "");
-    return { kind: "value", option: this.openOption! };
-  }
-
-  /**
-   * Add a value attached to the option's own token, starting at `start`. It's
-   * the option's only value, so no later token can be one. Returns where the
-   * value starts, or null if the option doesn't accept it.
-   */
-  private addAttachedValue(
-    start: number,
-    value: string,
-    separator: string,
-  ): { option: Option; start: number } | null {
-    const option = this.openOption!;
-    const accepted = this.addValue(value, separator);
-    this.valueMin = this.separateValueMax = 0;
-    return accepted ? { option, start } : null;
-  }
-
-  /**
-   * Whether the command already has all the arguments it takes. A command that
-   * requires a subcommand takes none.
-   */
-  private get argsAreFull(): boolean {
-    return this.scope.command.requiresSubcommand === true || this.args.length >= this.scope.argsMax;
+    this.values.push(token.slice(start));
+    return problem === null ? { option, start } : null;
   }
 
   private addArg(value: string): TokenReading {
     this.endOption();
-    if (this.argsAreFull) {
+    if (this.args.length >= this.scope.argsLimit) {
       this.failArgs((ctx) => new TooManyArguments(value, ctx));
     }
     this.args.push(value);
-    return { kind: "argument" };
+    return argumentReading;
   }
 
   /** Read `--`. Every token after it is an argument. */
   private argSeparator(): TokenReading {
-    this.closeOption();
+    this.endOption();
+    this.open = noOpenOption;
+    this.optionsAllowed = false;
     // A command that requires a subcommand allows `--` alone, and reports
     // any argument after it.
     const command = this.scope.command;
-    if (this.argsAreFull && !command.requiresSubcommand) {
+    if (this.args.length >= this.scope.argsLimit && !command.requiresSubcommand) {
       this.failArgs(
         (ctx) => new ParseError(ctx, "Unexpected argument '--', did you mean to use an option instead?"),
       );
     }
     this.argSeparatorIndex = this.args.length;
-    return { kind: "separator" };
+    return separatorReading;
   }
 
   /**
@@ -437,132 +451,12 @@ class Scanner implements TokenReader {
     if (this.hasFoundArg || !this.scope.hasSubcommands) {
       return null;
     }
-    if (this.valueCount < this.valueMin || (this.hasRoomForValue && this.separateValueMax === Infinity)) {
+    const open = this.open;
+    const hasRoom = open.count < open.separateMax;
+    if (open.count < open.min || (hasRoom && open.separateMax === Infinity)) {
       return null;
     }
-    return { exactOnly: this.hasRoomForValue };
-  }
-
-  /**
-   * The subcommand the next token enters if it's `token`, or why it enters
-   * none. Null if the next token can't be a subcommand at all.
-   */
-  private subcommandFor(token: string): SubcommandMatch | null {
-    const matching = this.subcommandMatching;
-    return matching && this.scope.matchSubcommand(token, matching.exactOnly);
-  }
-
-  private enterSubcommand(command: Subcommand): TokenReading {
-    this.closeOption();
-    this.path.push(command);
-    this.scope.enter(command);
-    return { kind: "subcommand", command };
-  }
-
-  /** Read a token like `-abc`, `+x` or `-ovalue`. */
-  private shortOptions(token: string): TokenReading {
-    const leadingChar = token[0];
-
-    // Parse as a single dash or plus with an arg. Try dash and plus options
-    // first if:
-    // - the options exist
-    // - the options take args
-    // - the first non-leading character isn't an option
-    const dashOption = this.findOption(leadingChar);
-    if (dashOption?.args && !this.findOption(token.slice(0, 2))) {
-      this.useOption(dashOption, leadingChar);
-      const attached = this.addAttachedValue(1, token.slice(1), "");
-      return { kind: "options", options: [dashOption], attached };
-    }
-
-    // Parse as chained short options. If we got here, the option wasn't `-` or `+`.
-    const used: Option[] = [];
-    let attached: { option: Option; start: number } | null = null;
-    for (let char = 1; char < token.length; char++) {
-      const optionName = leadingChar + token[char];
-      const option = this.findOption(optionName);
-      if (!option) {
-        // An open option takes anything unknown as a value, like `-5`.
-        if (char === 1 && this.hasRoomForValue) {
-          return this.value(token);
-        }
-        this.unknownOption(optionName);
-        continue;
-      }
-
-      this.useOption(option, optionName);
-      used.push(option);
-      if (char === token.length - 1) {
-        break;
-      }
-
-      const sep = this.scope.leadingSeparator(token.slice(char + 1));
-      // An option without args still takes a separated value, so that `-v=1`
-      // fails like `--verbose=1`, unless the next character is an option.
-      if (option.args || (sep && !this.findOption(leadingChar + token[char + 1]))) {
-        const argStart = char + sep.length + 1;
-        attached = this.addAttachedValue(argStart, token.slice(argStart), sep);
-        break;
-      }
-    }
-    return used.length > 0 ? { kind: "options", options: used, attached } : { kind: "unknown" };
-  }
-
-  /**
-   * Read a token like `--name` or `--name=value`, or any token when options
-   * aren't POSIX compliant. Returns null if the token should be an argument.
-   */
-  private longOption(token: string): TokenReading | null {
-    const found = this.scope.firstSeparator(token);
-    const optionName = found ? token.slice(0, found.index) : token;
-    const option = this.findOption(optionName);
-    if (option) {
-      this.useOption(option, optionName);
-      let attached: { option: Option; start: number } | null = null;
-      if (found) {
-        const valueStart = found.index + found.separator.length;
-        attached = this.addAttachedValue(valueStart, token.slice(valueStart), found.separator);
-      }
-      return { kind: "options", options: [option], attached };
-    }
-    // POSIX-noncompliant option means that there's nothing "option-like". Any
-    // token can be an option if it matches an option name, and if it's not an
-    // option then it's just a regular argument.
-    if (this.directives.flagsArePosixNoncompliant) {
-      return null;
-    }
-    if (this.hasRoomForValue) {
-      return this.value(token);
-    }
-    // The option is unknown and looks like a POSIX-compliant option, so
-    // it's an unknown option instead of an arg.
-    this.unknownOption(optionName);
-    return { kind: "unknown" };
-  }
-
-  /**
-   * Read a token that isn't `--`, a subcommand or an option. It's a value of
-   * the open option if that has room, and otherwise an argument, which stops
-   * later tokens from being subcommands. `unmatched` is why the token isn't a
-   * subcommand, if it could have been one.
-   */
-  private valueOrArg(token: string, unmatched: NoSubcommand | null): TokenReading {
-    if (this.hasRoomForValue) {
-      return this.value(token);
-    }
-    // Where a subcommand could be, a token the command has no room for is a
-    // subcommand that didn't match.
-    if (unmatched && this.argsAreFull) {
-      const command = this.scope.command;
-      if (command.subcommands?.length || command.requiresSubcommand) {
-        this.failArgs((ctx) => {
-          const { message, didYouMean } = unmatched.reason();
-          return new ParseError(ctx, message, didYouMean);
-        });
-      }
-    }
-    this.hasFoundArg = true;
-    return this.addArg(token);
+    return hasRoom ? exactName : anyName;
   }
 
   /**
@@ -587,13 +481,13 @@ class Scanner implements TokenReader {
       throw this.problem();
     }
     if (!skipsChecks) {
-      checkOptionRules(this.options, this.seenOptions, this.scope.required(), this.ctx());
+      checkOptionRules(this.options, this.seenOptions, this.scope, this.path);
     }
     // Defaults are added after the checks, so they never count as typed. An
     // option action can run with required arguments missing, and then the
     // first default would fill a required argument's place.
     if (!command.requiresSubcommand && this.args.length >= this.scope.argsMin) {
-      addDefaults(this.args, asArray(command.args), this.args.length);
+      addDefaults(this.args, command.args, this.args.length);
     }
     return {
       path: this.path,
@@ -654,29 +548,24 @@ class Scanner implements TokenReader {
    * doesn't change what this returns.
    */
   next(): Omit<NextToken, "attached" | "partialIsOption"> {
-    const open = this.openOption && this.hasRoomForValue ? this.openOption : null;
+    const { count, min, separateMax } = this.open;
+    const open = count < separateMax ? this.open.option : null;
     const command = this.scope.command;
     // Every token after `--` is an argument.
     const afterSeparator = this.argSeparatorIndex !== -1;
-    const optionsAllowed = !afterSeparator && this.optionsAllowed;
     return {
       path: [...this.path],
       directives: { ...this.directives },
-      optionsAllowed,
+      optionsAllowed: this.optionsAllowed,
       subcommands: !afterSeparator && this.subcommandMatching ? this.scope.subcommands() : [],
-      options: optionsAllowed ? this.usableOptions() : [],
+      options: this.optionsAllowed ? this.usableOptions() : [],
       value: open && {
         option: open,
-        arg: argAt(asArray(open.args), this.valueCount),
-        required: this.valueCount < this.valueMin,
+        arg: argAt(asArray(open.args), count),
+        required: count < min,
       },
       arg: open ? undefined : argAt(asArray(command.args), this.args.length),
     };
-  }
-
-  /** Whether the next token can be an option. Once options must stop, every token is an argument. */
-  private get optionsAllowed(): boolean {
-    return !(this.directives.optionsMustPrecedeArguments && this.hasFoundArg);
   }
 
   read(token: string): TokenReading {
@@ -684,39 +573,84 @@ class Scanner implements TokenReader {
     if (this.argSeparatorIndex !== -1) {
       return this.addArg(token);
     }
-    const optionsAllowed = this.optionsAllowed;
-
     // "--" disables option & subcommand parsing, so it's checked first.
-    if (token === "--" && optionsAllowed) {
+    // Once options must stop, it's an argument like any other token.
+    if (token === "--" && this.optionsAllowed) {
       return this.argSeparator();
     }
 
-    const subcommand = this.subcommandFor(token);
-    if (subcommand?.command) {
-      return this.enterSubcommand(subcommand.command);
+    const subcommands = this.subcommandMatching;
+    const meaning = this.scope.meaning(token, subcommands, this.optionsAllowed);
+    if (meaning?.kind === "subcommand") {
+      this.endOption();
+      this.open = noOpenOption;
+      this.path.push(meaning.command);
+      this.scope.enter(meaning.command);
+      return meaning;
     }
 
-    if (optionsAllowed) {
-      const flagsArePosixNoncompliant = this.directives.flagsArePosixNoncompliant;
-      const first = token.charCodeAt(0);
-      const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
-      if (
-        !flagsArePosixNoncompliant &&
-        token.length > 1 &&
-        (first === 45 || first === 43) /* + */ &&
-        !isDoubleDash
-      ) {
-        return this.shortOptions(token);
-      }
-      if (flagsArePosixNoncompliant || (token.length > 2 && isDoubleDash)) {
-        const reading = this.longOption(token);
-        if (reading) {
-          return reading;
+    // Whether the open option can take this token as a value.
+    const open = this.open;
+    const hasRoom = open.count < open.separateMax;
+
+    // A token written like an option is one, unless its first name refers to
+    // no option and the open option has room. Then it's a value, like `-5`.
+    if (meaning && (meaning.uses[0].option || !hasRoom)) {
+      const used: Option[] = [];
+      const uses = meaning.uses;
+      for (let i = 0; i < uses.length; i++) {
+        const { option, name } = uses[i];
+        if (option) {
+          this.useOption(option, name);
+          used.push(option);
+        } else {
+          this.unknownOption(name);
         }
       }
+      if (used.length === 0) {
+        return unknownReading;
+      }
+      const value = meaning.attached;
+      const attached = value && this.addAttachedValue(token, value.start, value.separator);
+      return { kind: "options", options: used, attached };
     }
 
-    return this.valueOrArg(token, subcommand);
+    // The token isn't `--`, a subcommand or an option. It's a value of the
+    // open option if that has room. Only an option that takes separate tokens
+    // has room, so the value needs no separator check.
+    if (hasRoom) {
+      open.count += 1;
+      this.values!.push(token);
+      return { kind: "value", option: open.option! };
+    }
+
+    // Otherwise it's an argument, which stops later tokens from being
+    // subcommands. Where a subcommand could be, a token the command has no
+    // room for is a subcommand that didn't match.
+    if (subcommands && this.args.length >= this.scope.argsLimit) {
+      this.failUnmatched(token, subcommands.exactOnly);
+    }
+    this.hasFoundArg = true;
+    // No subcommand follows an argument, so the directives can't change after this.
+    if (this.directives.optionsMustPrecedeArguments) {
+      this.optionsAllowed = false;
+    }
+    return this.addArg(token);
+  }
+
+  /**
+   * Keep why `token` names no subcommand, like {@link failArgs}, if the
+   * current command has subcommands of its own or requires one.
+   */
+  private failUnmatched(token: string, exactOnly: boolean): void {
+    const command = this.scope.command;
+    if (command.subcommands?.length || command.requiresSubcommand) {
+      const unmatched = this.scope.matchSubcommand(token, exactOnly) as NoSubcommand;
+      this.failArgs((ctx) => {
+        const { message, didYouMean } = unmatched.reason();
+        return new ParseError(ctx, message, didYouMean);
+      });
+    }
   }
 }
 
@@ -793,8 +727,8 @@ export function readToken(spec: Spec, before: readonly string[], token: string):
  */
 export function parse(input: readonly string[], spec: Spec): ParseResult {
   const s = new Scanner(spec);
-  for (const token of input) {
-    s.read(token);
+  for (let i = 0; i < input.length; i++) {
+    s.read(input[i]);
     if (s.problem) {
       throw s.problem();
     }
