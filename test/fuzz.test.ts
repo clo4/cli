@@ -380,13 +380,13 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   }
   const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));
   const next = readNext(spec, before, "");
-  for (const sub of next.subcommands) {
-    for (const name of asArray(sub.name)) {
+  for (const { command, names } of next.subcommands) {
+    for (const name of names) {
       if (!offered.has(name)) {
         continue;
       }
       const reading = readToken(spec, before, name);
-      if (reading.kind !== "subcommand" || reading.command !== sub) {
+      if (reading.kind !== "subcommand" || reading.command !== command) {
         return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
       }
     }
@@ -405,6 +405,37 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   }
   return null;
 }
+
+/** A subcommand the parser enters by one of its names, where readNext doesn't list it by that name. */
+function enteredButNotListed(spec: Spec, input: readonly string[]): string | null {
+  for (let i = 0; i < input.length; i++) {
+    const before = input.slice(0, i);
+    const token = input[i];
+    const reading = readToken(spec, before, token);
+    if (reading.kind !== "subcommand" || !asArray(reading.command.name).includes(token)) {
+      continue;
+    }
+    const listed = readNext(spec, before, "").subcommands.some(
+      ({ command, names }) => command === reading.command && names.includes(token),
+    );
+    if (!listed) {
+      return `token ${i}, ${JSON.stringify(token)}, enters a subcommand that readNext doesn't list by that name`;
+    }
+  }
+  return null;
+}
+
+test("readNext lists every subcommand the parser enters by name", () => {
+  for (const n of caseNumbers()) {
+    const gen = generator(caseSeed(n), shapes);
+    const spec = gen.spec();
+    const input = gen.input(spec);
+    const violation = enteredButNotListed(spec, input);
+    if (violation !== null) {
+      expect.fail(report(n, spec, input, violation));
+    }
+  }
+});
 
 test("completion only offers options and subcommands the parser reads as such", async () => {
   for (const n of caseNumbers()) {

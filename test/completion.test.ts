@@ -289,6 +289,19 @@ test("runtime: a hidden option isn't offered, but still shadows", async () => {
   expect(values(await resolve(spec, ["sub"], ""))).toEqual(["-a"]);
 });
 
+test("runtime: an inherited subcommand is offered by the names nothing nearer takes", async () => {
+  const spec: Spec = {
+    name: "app",
+    subcommands: [
+      { name: "a", subcommands: [{ name: "x" }] },
+      { name: ["x", "y"], isPersistent: true },
+    ],
+  };
+  expect(values(await resolve(spec, ["a"], ""))).toEqual(["x", "y"]);
+  expect(parse(["a", "x"], spec).path.map((command) => command.name)).toEqual(["app", "a", "x"]);
+  expect(parse(["a", "y"], spec).path.map((command) => command.name)).toEqual(["app", "a", ["x", "y"]]);
+});
+
 test("runtime: requiresSeparator options are offered in their attached form", async () => {
   const spec: Spec = {
     name: "x",

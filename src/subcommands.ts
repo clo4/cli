@@ -1,5 +1,6 @@
 import type { Action, Subcommand } from "./types.js";
 import type { DidYouMean } from "./errors.js";
+import type { LiveSubcommand } from "./scope.js";
 import { asArray, print } from "./util.js";
 
 /**
@@ -14,7 +15,7 @@ export class NoSubcommand {
    * prefixes match. There is never exactly one of them.
    */
   constructor(
-    private readonly subcommands: readonly Subcommand[],
+    private readonly subcommands: readonly LiveSubcommand[],
     private readonly token: string,
     private readonly prefixOf: readonly Subcommand[],
   ) {}
@@ -31,7 +32,7 @@ export class NoSubcommand {
       );
       return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
     }
-    const choices = visibleSubcommands(this.subcommands).map((command) => asArray(command.name));
+    const choices = this.subcommands.filter(({ command }) => !command.hidden).map(({ names }) => names);
     return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
   }
 }

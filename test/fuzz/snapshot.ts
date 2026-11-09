@@ -2,7 +2,8 @@
 // versions of the parser can be checked for differences.
 
 import type { NextToken, ParseResult } from "../../src/parse.js";
-import type { Action, Spec } from "../../src/types.js";
+import type { Action, Spec, Subcommand } from "../../src/types.js";
+import { asArray } from "../../src/util.js";
 
 /**
  * A result of `parse` from this version or an older one. Before `parse` picked
@@ -92,11 +93,25 @@ export function difference(
  * listed the usable options, it returned the option scope, every option used,
  * and a function to check each option's rules.
  */
-export type AnyNextToken = Omit<NextToken, "directives" | "options"> & {
+export type AnyNextToken = Omit<NextToken, "directives" | "options" | "subcommands"> & {
   directives?: NextToken["directives"];
   options?: readonly AnyUsableOption[];
   scope?: { directives: NextToken["directives"] };
+  subcommands: readonly (NextToken["subcommands"][number] | Subcommand)[];
 };
+
+/**
+ * Each subcommand the token can name, paired with each name that refers to
+ * it. Before `readNext` listed those names, it listed the subcommands alone,
+ * and every name of one referred to it.
+ */
+function subcommandNames(next: AnyNextToken): [Subcommand, string][] {
+  return next.subcommands.flatMap((item): [Subcommand, string][] =>
+    "command" in item
+      ? item.names.map((name): [Subcommand, string] => [item.command, name])
+      : asArray(item.name).map((name): [Subcommand, string] => [item, name]),
+  );
+}
 
 /**
  * A usable option from this version or an older one. Before options listed
@@ -143,7 +158,7 @@ export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null 
   if (x.optionsAllowed !== y.optionsAllowed) {
     return "optionsAllowed differs";
   }
-  if (!sameItems(x.subcommands, y.subcommands)) {
+  if (!sameItems(subcommandNames(x), subcommandNames(y), (a, b) => a[0] === b[0] && a[1] === b[1])) {
     return "subcommands differ";
   }
   if (x.arg !== y.arg) {

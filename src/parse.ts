@@ -12,7 +12,7 @@ import {
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { CommandScope, optionKey } from "./scope.js";
-import type { OptionForm, SubcommandMatch, SubcommandMatching } from "./scope.js";
+import type { LiveSubcommand, OptionForm, SubcommandMatch, SubcommandMatching } from "./scope.js";
 import { usage as builtinUsageAction } from "./subcommands.js";
 import type { NoSubcommand } from "./subcommands.js";
 
@@ -43,10 +43,11 @@ export interface NextToken {
   /** Whether the token can be an option. */
   optionsAllowed: boolean;
   /**
-   * The subcommands the token can name, hidden ones included. While the open
-   * option can still take a value, only an exact name matches.
+   * The subcommands the token can name, hidden ones included, each with the
+   * names that still refer to it. While the open option can still take a
+   * value, only an exact name matches.
    */
-  subcommands: readonly Subcommand[];
+  subcommands: readonly LiveSubcommand[];
   /**
    * The options the token can use, hidden ones included, local options first.
    * Empty when the token can't be an option.

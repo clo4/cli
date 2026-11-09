@@ -21,6 +21,12 @@ export interface VisibleOption {
   names: string[];
 }
 
+/** A subcommand the next token can name, and the names that still refer to it. */
+export interface LiveSubcommand {
+  command: Subcommand;
+  names: readonly string[];
+}
+
 /** How one name of an option is written with its value, at one command. */
 export interface OptionForm {
   name: string;
@@ -107,22 +113,33 @@ export class CommandScope {
   }
 
   /**
-   * The subcommands the next token can name: the current command's own,
-   * followed by each inherited one that an earlier one doesn't shadow a name
-   * of. Hidden ones are included.
+   * The subcommands the next token can name, each with the names that still
+   * refer to it: the current command's own, then the inherited ones, nearest
+   * first. Hidden ones are included.
+   *
+   * A name a nearer subcommand takes is shadowed one name at a time, as it is
+   * for options. With an own `x` and an inherited `x`/`y`, the inherited one
+   * is still `y`. The other way would drop an inherited subcommand once any of
+   * its names is taken, and make the parser refuse its other names too. This
+   * way, a name that only one subcommand has keeps working.
    */
-  subcommands(): readonly Subcommand[] {
+  subcommands(): LiveSubcommand[] {
     const own = this.current?.subcommands ?? [];
+    const live = own.map((command) => ({ command, names: asArray(command.name) }));
     if (this.inheritedSubcommands.length === 0) {
-      return own;
+      return live;
     }
-    const all = [...own];
-    for (const candidate of this.inheritedSubcommands) {
-      if (!asArray(candidate.name).some((name) => all.some((earlier) => hasName(earlier.name, name)))) {
-        all.push(candidate);
+    const taken = new Set(live.flatMap(({ names }) => names));
+    for (const command of this.inheritedSubcommands) {
+      const names = asArray(command.name).filter((name) => !taken.has(name));
+      if (names.length > 0) {
+        live.push({ command, names });
+        for (const name of names) {
+          taken.add(name);
+        }
       }
     }
-    return all;
+    return live;
   }
 
   /**

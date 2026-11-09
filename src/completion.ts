@@ -15,7 +15,6 @@
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, print } from "./util.js";
 import { printUsageError } from "./help.js";
-import { visibleSubcommands } from "./subcommands.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 
@@ -202,9 +201,12 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
       candidates.push(...(await argValues(arg, tokens, req.partial)));
     }
   }
-  for (const sub of visibleSubcommands(next.subcommands)) {
-    const description = firstLine(sub.description);
-    for (const token of makeArray(sub.name)) {
+  for (const { command, names } of next.subcommands) {
+    if (command.hidden) {
+      continue;
+    }
+    const description = firstLine(command.description);
+    for (const token of names) {
       if (wantSubcommand(token)) {
         candidates.push({ value: token, description });
       }
