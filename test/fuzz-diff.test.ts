@@ -204,7 +204,7 @@ function helpViews(version: HelpModule, spec: Spec, input: string[]): string[] {
         return version.parse(input, spec).path.length;
       } catch (error) {
         // Their errors are their own classes, so this can't use instanceof.
-        if (!(error instanceof Error) || !("context" in error)) {
+        if (typeof error !== "object" || error === null || !("context" in error)) {
           throw error;
         }
         const failure = error as ParseError;

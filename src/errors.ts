@@ -17,12 +17,18 @@ export interface DidYouMean {
  * A command line the parser can't accept. `run` prints the message with the
  * help for the command at `context.path`, and suggests the closest of
  * `didYouMean.choices` if there is one.
+ *
+ * It isn't an `Error`, because `run` prints only its message. An `Error`
+ * records a stack trace that nothing would show, which made a usage error
+ * slower to build.
  */
-export class ParseError extends Error {
+export class ParseError {
+  readonly name: string;
+  readonly message: string;
   readonly context: ErrorContext;
   readonly didYouMean: DidYouMean | undefined;
   constructor(context: ErrorContext, message: string, didYouMean?: DidYouMean) {
-    super(message);
+    this.message = message;
     this.context = context;
     this.didYouMean = didYouMean;
     this.name = this.constructor.name;

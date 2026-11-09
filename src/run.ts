@@ -27,34 +27,39 @@ export function run(spec: Spec, args?: readonly string[]): Promise<number> {
     } catch (error: unknown) {
       return Promise.resolve(reportParseError(error));
     }
-
-    const { action, options } = result;
-    const actionInit: ActionInit = {
-      help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
-      args: result.args,
-      path: result.path,
-      argSeparatorIndex: result.argSeparatorIndex,
-      options: {
-        options,
-        has: (name) => options.has(name),
-        get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
-        all: (name) => options.get(name) ?? result.defaults(name),
-        count: (name) => options.get(name)?.length ?? 0,
-      },
-    };
-
-    let actionResult: ReturnType<typeof action>;
-    try {
-      actionResult = action(actionInit);
-    } catch (error) {
-      return Promise.resolve(reportThrown(error));
-    }
-    return typeof actionResult === "object"
-      ? settle(actionResult)
-      : Promise.resolve(exitStatus(actionResult));
+    return runAction(result);
   } catch (error) {
     return Promise.reject(error);
   }
+}
+
+/**
+ * Run the action `result` picked. It's a function of its own so that a usage
+ * error, which runs no action, doesn't compile it.
+ */
+function runAction(result: ParseResult): Promise<number> {
+  const { action, options } = result;
+  const actionInit: ActionInit = {
+    help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
+    args: result.args,
+    path: result.path,
+    argSeparatorIndex: result.argSeparatorIndex,
+    options: {
+      options,
+      has: (name) => options.has(name),
+      get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
+      all: (name) => options.get(name) ?? result.defaults(name),
+      count: (name) => options.get(name)?.length ?? 0,
+    },
+  };
+
+  let actionResult: ReturnType<typeof action>;
+  try {
+    actionResult = action(actionInit);
+  } catch (error) {
+    return Promise.resolve(reportThrown(error));
+  }
+  return typeof actionResult === "object" ? settle(actionResult) : Promise.resolve(exitStatus(actionResult));
 }
 
 /** Wait for the value an action returned as an object, usually a promise. */

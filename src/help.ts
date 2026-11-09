@@ -186,7 +186,9 @@ function helpText(
   }
 
   const argumentsSection =
-    command.requiresSubcommand || command.args === undefined ? "" : argumentRows(asArray(command.args));
+    command.requiresSubcommand || command.args === undefined || !hasArgumentDetails(command.args)
+      ? ""
+      : argumentRows(asArray(command.args));
 
   const parts: string[] = [];
   if (didYouMean) {
@@ -304,22 +306,30 @@ function requiredOptions(options: readonly VisibleOption[], names: readonly stri
 }
 
 /**
- * The Arguments section, or "" if it would only repeat the usage line. An
- * argument's name is often description enough, so the arguments are only
- * listed when one of them has a description or a default. One without a
- * description is listed by name alone.
+ * Whether help lists the arguments in a section of their own. An argument's
+ * name is often description enough, so they're only listed when one of them
+ * has a description or a default. Otherwise the section would only repeat the
+ * usage line. It's checked before {@link argumentRows} is called, so that help
+ * for a command without one doesn't compile that.
  */
-function argumentRows(args: readonly Arg[]): string {
-  let described = false;
+function hasArgumentDetails(args: Arg | readonly Arg[]): boolean {
+  if (!Array.isArray(args)) {
+    const arg = args as Arg;
+    return arg.description !== undefined || arg.default !== undefined;
+  }
   for (let i = 0; i < args.length; i++) {
     if (args[i].description !== undefined || args[i].default !== undefined) {
-      described = true;
-      break;
+      return true;
     }
   }
-  if (!described) {
-    return "";
-  }
+  return false;
+}
+
+/**
+ * The Arguments section. An argument without a description is listed by name
+ * alone.
+ */
+function argumentRows(args: readonly Arg[]): string {
   const names: string[] = [];
   const descriptions: string[] = [];
   let width = 0;
