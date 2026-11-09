@@ -74,11 +74,28 @@ function editDistance(a: string, b: string, limit: number): number {
  */
 export type Choice = string | readonly string[];
 
-/** The first name of the only choice with a name that `matches`, if exactly one has one. */
-function onlyMatch(choices: readonly Choice[], matches: (name: string) => boolean): string | undefined {
+/**
+ * The first name of the only choice with a name that starts with `input`, or,
+ * if `abbreviates`, with a name that `input` is an abbreviation of once the
+ * leading dashes are left out. Undefined unless exactly one choice has one.
+ */
+function onlyMatch(choices: readonly Choice[], input: string, abbreviates: boolean): string | undefined {
   let match: string | undefined;
-  for (const choice of choices) {
-    const name = (typeof choice === "string" ? [choice] : choice).find(matches);
+  for (let i = 0; i < choices.length; i++) {
+    const choice = choices[i];
+    const names = typeof choice === "string" ? [choice] : choice;
+    let name: string | undefined;
+    for (let j = 0; j < names.length; j++) {
+      const candidate = names[j];
+      if (
+        abbreviates
+          ? isAbbreviation(input, candidate.slice(dashCount(candidate)))
+          : candidate.startsWith(input)
+      ) {
+        name = candidate;
+        break;
+      }
+    }
     if (name === undefined) {
       continue;
     }
@@ -105,14 +122,14 @@ export function closestChoice(input: string, choices: readonly Choice[]): string
   const bare = input.slice(inputDashes);
 
   if (bare.length >= 2) {
-    const match = onlyMatch(choices, (name) => name.startsWith(input));
+    const match = onlyMatch(choices, input, false);
     if (match !== undefined) {
       return match;
     }
   }
 
   if (bare.length >= 3) {
-    const match = onlyMatch(choices, (name) => isAbbreviation(bare, name.slice(dashCount(name))));
+    const match = onlyMatch(choices, bare, true);
     if (match !== undefined) {
       return match;
     }

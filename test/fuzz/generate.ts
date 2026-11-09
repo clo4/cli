@@ -120,11 +120,36 @@ export interface GenerateOptions {
   persistentSubcommands?: boolean;
   /** Make some subcommands hidden, from the same generator as `persistentSubcommands`. */
   hiddenSubcommands?: boolean;
+  /**
+   * Add what only help shows: descriptions, argument names, hidden options and
+   * a help option. Like defaults, these come from a random generator of their
+   * own, so the spec is otherwise the same as without them.
+   */
+  help?: boolean;
 }
 
 // Odd values too, so a default that looks like an option or `--` can't change
 // how anything else reads.
 const DEFAULT_VALUES = ["d", "", "-v", "--", "build"];
+
+// Descriptions that help lays out differently: several lines, an indented
+// block after a leading newline, paragraphs, trailing spaces and a tab.
+// A lone "\n", or a leading newline without a trailing one, makes dedenting
+// throw, so those are rare.
+const DESCRIPTIONS = [
+  "Short.",
+  "",
+  "Two lines,\nthe second one here.",
+  "\n  Indented under a leading newline.\n    Indented more.\n  ",
+  "\n  One indented line.\n",
+  "First paragraph.\n\nSecond paragraph.",
+  "Line one.\nLine two.\n\nNext paragraph.",
+  "Trailing spaces   ",
+  "Tab\tinside",
+];
+const BROKEN_DESCRIPTIONS = ["\n", "\nNo trailing newline"];
+const ARG_NAMES = ["v", "", "file", "a-much-longer-argument-name", "x"];
+const HELP_OPTION = { name: ["-h", "--help"], description: "Print a help message", isPersistent: true };
 
 // How often a subcommand is persistent or hidden, and how often a command line
 // starts with a walk down the spec. At these rates, about 5% of command lines
@@ -139,6 +164,23 @@ export function generator(seed: number, options: GenerateOptions = {}) {
   const r = random(seed);
   const defaults = random(seed ^ 0x5eed);
   const kinds = random(seed ^ 0x5ab5);
+  const extras = random(seed ^ 0x4e1b);
+  /**
+   * A description, sometimes with a last line of a random length, so a
+   * default lands on either side of the 68-character limit.
+   */
+  const description = (): string => {
+    if (extras.chance(0.02)) {
+      return extras.pick(BROKEN_DESCRIPTIONS);
+    }
+    if (extras.chance(0.3)) {
+      return `${extras.pick(["", "Above.\n"])}${"Word ".repeat(1 + extras.int(15)).trimEnd()}`;
+    }
+    return extras.pick(DESCRIPTIONS);
+  };
+  /** Copy `item` with a description, at `rate`, or return it unchanged if `help` is off. */
+  const describe = <T extends object>(item: T, rate: number): T =>
+    options.help && extras.chance(rate) ? { ...item, description: description() } : item;
   let actionCount = 0;
 
   const action = (): Action => {
@@ -147,12 +189,16 @@ export function generator(seed: number, options: GenerateOptions = {}) {
   };
 
   const args = (): Arg | Arg[] | undefined => {
-    const one = (): Arg => ({
-      name: "v",
-      ...(r.chance(0.3) ? { isOptional: true } : {}),
-      ...(r.chance(0.25) ? { isVariadic: true } : {}),
-      ...(options.defaults && defaults.chance(0.5) ? { default: defaults.pick(DEFAULT_VALUES) } : {}),
-    });
+    const one = (): Arg =>
+      describe(
+        {
+          name: options.help ? extras.pick(ARG_NAMES) : "v",
+          ...(r.chance(0.3) ? { isOptional: true } : {}),
+          ...(r.chance(0.25) ? { isVariadic: true } : {}),
+          ...(options.defaults && defaults.chance(0.5) ? { default: defaults.pick(DEFAULT_VALUES) } : {}),
+        },
+        0.3,
+      );
     const kind = r.int(6);
     if (kind < 2) {
       return undefined;
@@ -204,13 +250,22 @@ export function generator(seed: number, options: GenerateOptions = {}) {
     if (r.chance(0.15)) {
       o.action = action();
     }
-    return o as unknown as Option;
+    if (options.help && extras.chance(0.15)) {
+      o.hidden = true;
+    }
+    return describe(o, 0.7) as unknown as Option;
   };
 
   const command = (depth: number): Record<string, unknown> => {
     const c: Record<string, unknown> = {};
     if (r.chance(0.85)) {
       c.options = Array.from({ length: r.int(6) }, option);
+    }
+    if (options.help && extras.chance(0.2)) {
+      c.options = [...((c.options as Option[] | undefined) ?? []), HELP_OPTION];
+    }
+    if (options.help && extras.chance(0.7)) {
+      c.description = description();
     }
     const a = args();
     if (a) {

@@ -1,15 +1,16 @@
 import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
-import { visibleSubcommands } from "./subcommands.js";
 import { CommandScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { addDefaults, asArray, getMaxArgs, makeArray, makeArray1, print, printError } from "./util.js";
+import { addDefaults, asArray, getMaxArgs, print, printError } from "./util.js";
 
+// Help uses plain loops instead of array callbacks. V8 compiles each function
+// the first time it's called, and a CLI prints help at most once a run, so
+// each callback would be compiled for one use.
+
+/** Remove the leading newline and the first line's indent from every line. */
 function dedent(str: string) {
-  if (str[0] !== "\n") {
-    return str;
-  }
   const lines = str.split("\n").slice(1, -1);
   const margin = lines[0].length - lines[0].trimStart().length;
   return lines.map((line) => line.slice(margin)).join("\n");
@@ -29,17 +30,7 @@ export interface HelpConfig {
 /** Get the help message used by the built-in help option and command. */
 export function getHelp(path: NonEmptyArray<Subcommand>, config: HelpConfig = {}): string {
   const { description = true, usage = true, didYouMean } = config;
-  const sections = getSections(path);
-  if (didYouMean) {
-    sections.didYouMean = closestChoice(didYouMean.input, didYouMean.choices);
-  }
-  if (!description) {
-    sections.description = undefined;
-  }
-  if (!usage) {
-    sections.usage = undefined;
-  }
-  return formatHelpSections(sections);
+  return helpText(path, description, usage, didYouMean);
 }
 
 /**
@@ -51,7 +42,7 @@ export function printUsageError(
   message: string,
   didYouMean?: DidYouMean,
 ): void {
-  printError(`${message}\n\n${getHelp(path, { description: false, didYouMean })}`);
+  printError(`${message}\n\n${helpText(path, false, true, didYouMean)}`);
 }
 
 /**
@@ -111,100 +102,273 @@ export const help: Option = {
   description: "Print a help message",
   isPersistent: true,
   action({ path }) {
-    print(formatHelpSections(getSections(path)));
+    print(helpText(path, true, true, undefined));
     return 0;
   },
 };
 
-type HelpSections = {
-  description?: string;
-  usage?: string;
-  didYouMean?: string;
-  args: [name: string, description: string][];
-  options: [formattedName: string, description: string][];
-  persistentOptions: [formattedName: string, description: string][];
-  subcommands: [formattedName: string, description: string][];
-};
+const indent = "  ";
+const minSpacingBetweenNameAndDesc = 2;
+const defaultDesc = "No description";
 
-function getSubcommandPathString(commands: NonEmptyArray<Subcommand>): string {
-  return commands.map((command) => getLongestString(makeArray1(command.name))).join(" ");
-}
-
-function getSections(commands: NonEmptyArray<Subcommand>): HelpSections {
+/**
+ * The help for the last command on `commands`. The description and usage line
+ * are left out when `showDescription` or `showUsage` is false. A "did you
+ * mean" line comes first if one of `didYouMean.choices` is close.
+ */
+function helpText(
+  commands: NonEmptyArray<Subcommand>,
+  showDescription: boolean,
+  showUsage: boolean,
+  didYouMean: DidYouMean | undefined,
+): string {
   const command = commands[commands.length - 1];
+
+  const commandsSection = command.subcommands ? subcommandRows(command.subcommands) : "";
+
+  let flagsSection = "";
+  let globalFlagsSection = "";
+  let required = "";
   const scope = CommandScope.at(commands);
-  const show = ({ option, names }: VisibleOption) => optionToString(option, scope.forms(option, names));
-
-  const description = command.description;
-  const defaultDesc = "No description";
-
-  const subcommands: HelpSections["subcommands"] = visibleSubcommands(command.subcommands).map(
-    (subcommand) => [
-      makeArray1(subcommand.name)
-        .sort((a, b) => a.length - b.length)
-        .join(", "),
-      subcommand.description ?? defaultDesc,
-    ],
-  );
-
-  const visible = scope.visible();
-  let optionObjects = visible.local;
-  let persistentOptionObjects = visible.persistent;
-  // A command without parents or subcommands has no global flags to set apart.
-  if (commands.length === 1 && subcommands.length === 0) {
-    const byOption = new Map([...optionObjects, ...persistentOptionObjects].map((v) => [v.option, v]));
-    optionObjects = (command.options ?? []).flatMap((option) => byOption.get(option) ?? []);
-    persistentOptionObjects = [];
-  }
-  const row = (visible: VisibleOption): [string, string] => {
-    const defaults: string[] = [];
-    addDefaults(defaults, visible.option.args);
-    return [show(visible), withDefaults(visible.option.description, defaults, defaultDesc)];
-  };
-  const options = optionObjects.map(row);
-  const persistentOptions = persistentOptionObjects.map(row);
-
-  const usage = (() => {
-    const parts = [getSubcommandPathString(commands)];
-    for (const visible of [...optionObjects, ...persistentOptionObjects]) {
-      if (visible.option.isRequired) {
-        parts.push(show(visible));
-      }
+  let { local, persistent } = scope.visible();
+  if (local.length > 0 || persistent.length > 0) {
+    // A command without parents or subcommands has no global flags to set
+    // apart, so all its flags are listed in the order it defines them. Without
+    // persistent flags, the local ones are in that order already.
+    if (commands.length === 1 && commandsSection === "" && persistent.length > 0) {
+      local = inDefinitionOrder(command.options ?? [], local, persistent);
+      persistent = [];
     }
-    if (options.length || persistentOptions.length) {
-      parts.push("[flags]");
+    const localNames = optionNames(scope, local);
+    const persistentNames = optionNames(scope, persistent);
+    let width = 0;
+    for (let i = 0; i < localNames.length; i++) {
+      width = Math.max(width, localNames[i].length);
+    }
+    for (let i = 0; i < persistentNames.length; i++) {
+      width = Math.max(width, persistentNames[i].length);
+    }
+    if (local.length > 0) {
+      flagsSection = rows("Flags:", localNames, optionDescriptions(local), false, width);
+    }
+    if (persistent.length > 0) {
+      globalFlagsSection = rows(
+        "Global flags:",
+        persistentNames,
+        optionDescriptions(persistent),
+        false,
+        width,
+      );
+    }
+    if (showUsage) {
+      required = requiredOptions(local, localNames) + requiredOptions(persistent, persistentNames);
+    }
+  }
+
+  let usage = "";
+  if (showUsage) {
+    for (let i = 0; i < commands.length; i++) {
+      const name = commands[i].name;
+      usage += (i === 0 ? "" : " ") + (typeof name === "string" ? name : longest(name));
+    }
+    usage += required;
+    if (flagsSection !== "" || globalFlagsSection !== "") {
+      usage += " [flags]";
     }
     if (command.requiresSubcommand) {
-      parts.push("<command>");
-    } else {
-      const args = makeArray(command.args);
+      usage += " <command>";
+    } else if (command.args !== undefined) {
+      const args = asArray(command.args);
       if (args.length > 0) {
-        parts.push(summarizeArguments(args));
+        usage += ` ${summarizeArguments(args)}`;
       }
     }
-    return parts.join(" ");
-  })();
+  }
 
-  // The positional arguments are only listed when there's more to say about
-  // them than the usage line does. An argument's name is often description
-  // enough, so one without a description is listed by name alone.
-  const positionals = command.requiresSubcommand ? [] : asArray(command.args);
-  const described = positionals.some((arg) => arg.description !== undefined || arg.default !== undefined);
-  const args: HelpSections["args"] = described
-    ? positionals.map((arg) => [
-        (arg.name || "argument") + (arg.isVariadic ? "..." : ""),
-        withDefaults(arg.description, arg.default === undefined ? [] : [arg.default], ""),
-      ])
-    : [];
+  const argumentsSection =
+    command.requiresSubcommand || command.args === undefined ? "" : argumentRows(asArray(command.args));
 
-  return {
-    usage,
-    description,
-    args,
-    persistentOptions,
-    options,
-    subcommands,
-  };
+  const parts: string[] = [];
+  if (didYouMean) {
+    const suggestion = closestChoice(didYouMean.input, didYouMean.choices);
+    if (suggestion) {
+      parts.push(`    Did you mean '${suggestion}'?`);
+    }
+  }
+  const description = command.description;
+  if (showDescription && description) {
+    // Checked here so that help for a description without a leading newline
+    // doesn't compile `dedent`.
+    parts.push(description[0] === "\n" ? dedent(description) : description);
+  }
+  if (usage) {
+    parts.push(`Usage:\n${indent}${usage}`);
+  }
+  if (argumentsSection !== "") {
+    parts.push(argumentsSection);
+  }
+  if (commandsSection !== "") {
+    parts.push(commandsSection);
+  }
+  if (flagsSection !== "") {
+    parts.push(flagsSection);
+  }
+  if (globalFlagsSection !== "") {
+    parts.push(globalFlagsSection);
+  }
+  return `${parts.join("\n\n")}\n`;
+}
+
+/**
+ * The Commands section, or "" if every subcommand is hidden. Only the
+ * command's own subcommands are listed, not inherited ones. It's a function of
+ * its own so that help for a command without subcommands doesn't compile it.
+ */
+function subcommandRows(subcommands: readonly Subcommand[]): string {
+  const names: string[] = [];
+  const descriptions: string[] = [];
+  for (let i = 0; i < subcommands.length; i++) {
+    const subcommand = subcommands[i];
+    if (!subcommand.hidden) {
+      const name = subcommand.name;
+      names.push(typeof name === "string" ? name : byLength(name).join(", "));
+      descriptions.push(subcommand.description ?? defaultDesc);
+    }
+  }
+  return names.length > 0 ? rows("Commands:", names, descriptions, true) : "";
+}
+
+/**
+ * The visible options in the order `options` defines them. An option defined
+ * twice is listed twice.
+ */
+function inDefinitionOrder(
+  options: readonly Option[],
+  local: readonly VisibleOption[],
+  persistent: readonly VisibleOption[],
+): VisibleOption[] {
+  const byOption = new Map<Option, VisibleOption>();
+  for (let i = 0; i < local.length; i++) {
+    byOption.set(local[i].option, local[i]);
+  }
+  for (let i = 0; i < persistent.length; i++) {
+    byOption.set(persistent[i].option, persistent[i]);
+  }
+  const ordered: VisibleOption[] = [];
+  for (let i = 0; i < options.length; i++) {
+    const visible = byOption.get(options[i]);
+    if (visible) {
+      ordered.push(visible);
+    }
+  }
+  return ordered;
+}
+
+/** How help writes each option: its live names, each with its arguments. */
+function optionNames(scope: CommandScope, options: readonly VisibleOption[]): string[] {
+  const names: string[] = [];
+  for (let i = 0; i < options.length; i++) {
+    const { option, names: live } = options[i];
+    names.push(optionToString(option, scope.forms(option, live)));
+  }
+  return names;
+}
+
+/** Each option's description, ending with the defaults the parser uses. */
+function optionDescriptions(options: readonly VisibleOption[]): string[] {
+  const descriptions: string[] = [];
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i].option;
+    const defaults: string[] = [];
+    if (option.args !== undefined) {
+      addDefaults(defaults, option.args);
+    }
+    descriptions.push(
+      defaults.length === 0
+        ? (option.description ?? defaultDesc)
+        : withDefaults(option.description, defaults, defaultDesc),
+    );
+  }
+  return descriptions;
+}
+
+/** The required options for the usage line, each after a space. */
+function requiredOptions(options: readonly VisibleOption[], names: readonly string[]): string {
+  let text = "";
+  for (let i = 0; i < options.length; i++) {
+    if (options[i].option.isRequired) {
+      text += ` ${names[i]}`;
+    }
+  }
+  return text;
+}
+
+/**
+ * The Arguments section, or "" if it would only repeat the usage line. An
+ * argument's name is often description enough, so the arguments are only
+ * listed when one of them has a description or a default. One without a
+ * description is listed by name alone.
+ */
+function argumentRows(args: readonly Arg[]): string {
+  let described = false;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].description !== undefined || args[i].default !== undefined) {
+      described = true;
+      break;
+    }
+  }
+  if (!described) {
+    return "";
+  }
+  const names: string[] = [];
+  const descriptions: string[] = [];
+  let width = 0;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const name = (arg.name || "argument") + (arg.isVariadic ? "..." : "");
+    names.push(name);
+    width = Math.max(width, name.length);
+    descriptions.push(
+      arg.default === undefined ? (arg.description ?? "") : withDefaults(arg.description, [arg.default], ""),
+    );
+  }
+  return rows("Arguments:", names, descriptions, false, width);
+}
+
+/**
+ * A section of help: its title, then each name with its description in a
+ * column `width` wide names leave, or as wide as the widest command name. Each
+ * line after a description's first starts at that column. A command shows the
+ * first paragraph of its description. An argument or option with an empty
+ * description shows its name alone.
+ */
+function rows(
+  title: string,
+  names: readonly string[],
+  descriptions: readonly string[],
+  commands: boolean,
+  width = 0,
+): string {
+  if (commands) {
+    for (let i = 0; i < names.length; i++) {
+      width = Math.max(width, names[i].length);
+    }
+  }
+  const newline = `\n${indent}${" ".repeat(width + minSpacingBetweenNameAndDesc)}`;
+  let text = title;
+  for (let i = 0; i < names.length; i++) {
+    const name = names[i];
+    let description = descriptions[i];
+    if (commands) {
+      description = description.split("\n\n")[0];
+    } else if (description === "") {
+      text += `\n${indent}${name}`;
+      continue;
+    }
+    const spaces = " ".repeat(width - name.length + minSpacingBetweenNameAndDesc);
+    text += `\n${indent}${name}${spaces}${description.split("\n").join(newline)}`;
+  }
+  return text;
 }
 
 /**
@@ -228,87 +392,32 @@ function withDefaults(
   return `${description}${lastLine.length + 1 + shown.length <= 68 ? " " : "\n"}${shown}`;
 }
 
-export function formatHelpSections(sections: HelpSections): string {
-  const parts = [];
-
-  const indent = "  ";
-
-  if (sections.didYouMean) {
-    parts.push(`    Did you mean '${sections.didYouMean}'?`);
-  }
-
-  if (sections.description) {
-    parts.push(dedent(sections.description));
-  }
-
-  if (sections.usage) {
-    parts.push(`Usage:\n${indent}${sections.usage}`);
-  }
-
-  const longestOptionName = Math.max(
-    0,
-    ...sections.options.map(([name]) => name.length),
-    ...sections.persistentOptions.map(([name]) => name.length),
-  );
-  const minSpacingBetweenNameAndDesc = 2;
-
-  // Each name, then its description in a column `width` wide names leave.
-  const formatRows = (rows: [string, string][], width: number) => {
-    const lines = [];
-    const newline = indent + " ".repeat(width + minSpacingBetweenNameAndDesc);
-    for (const [name, desc] of rows) {
-      if (desc === "") {
-        lines.push(`${indent}${name}`);
-        continue;
-      }
-      const spaces = " ".repeat(width - name.length + minSpacingBetweenNameAndDesc);
-      const [head, ...tail] = desc.split("\n");
-      const description = [head, ...tail.map((line) => newline + line)].join("\n");
-      lines.push(`${indent}${name}${spaces}${description}`);
+/** The first of the longest strings. */
+function longest(strings: readonly string[]): string {
+  let result = strings[0];
+  for (let i = 1; i < strings.length; i++) {
+    if (strings[i].length > result.length) {
+      result = strings[i];
     }
-    return lines;
-  };
-  const formatOptions = (options: [string, string][]) => formatRows(options, longestOptionName);
-
-  if (sections.args.length > 0) {
-    const longestArgName = Math.max(...sections.args.map(([name]) => name.length));
-    parts.push(["Arguments:", ...formatRows(sections.args, longestArgName)].join("\n"));
   }
-
-  if (sections.subcommands.length > 0) {
-    const lines = ["Commands:"];
-    const longestName = Math.max(...sections.subcommands.map(([name]) => name.length));
-    const newline = indent + " ".repeat(longestName + minSpacingBetweenNameAndDesc);
-    for (const [name, desc] of sections.subcommands) {
-      const spaces = " ".repeat(longestName - name.length + minSpacingBetweenNameAndDesc);
-      const [head, ...tail] = desc.split("\n\n")[0].split("\n");
-      const description = [head, ...tail.map((line) => newline + line)].join("\n");
-      lines.push(`${indent}${name}${spaces}${description}`);
-    }
-    parts.push(lines.join("\n"));
-  }
-
-  if (sections.options.length > 0) {
-    const lines = ["Flags:", ...formatOptions(sections.options)];
-    parts.push(lines.join("\n"));
-  }
-
-  if (sections.persistentOptions.length > 0) {
-    const lines = ["Global flags:", ...formatOptions(sections.persistentOptions)];
-    parts.push(lines.join("\n"));
-  }
-  return parts.join("\n\n") + "\n";
+  return result;
 }
 
-export function getLongestString(strings: NonEmptyArray<string>): string {
-  let longest = strings[0];
-  for (let i = 1; i < strings.length; i++) {
-    const string = strings[i];
-    if (string.length > longest.length) {
-      longest = string;
+/** A copy of `items`, shortest first by each string or form name, keeping ties in order. */
+function byLength<T extends string | OptionForm>(items: readonly T[]): T[] {
+  const sorted: T[] = [];
+  const lengths: number[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const length = typeof item === "string" ? item.length : (item as OptionForm).name.length;
+    let at = sorted.length;
+    while (at > 0 && lengths[at - 1] > length) {
+      at--;
     }
+    sorted.splice(at, 0, item);
+    lengths.splice(at, 0, length);
   }
-  return longest;
+  return sorted;
 }
 
 /**
@@ -316,47 +425,54 @@ export function getLongestString(strings: NonEmptyArray<string>): string {
  * says. Names written the same way share one copy of the arguments.
  */
 export function optionToString(option: Option, forms: readonly OptionForm[]): string {
-  const optionArgs = makeArray(option.args);
-  const sorted = [...forms].sort((a, b) => a.name.length - b.name.length);
-  const joins = [...new Set(sorted.map((form) => form.join))];
-  return joins
-    .map((join) => {
-      const names = sorted.filter((form) => form.join === join).map((form) => form.name);
-      return names.join(", ") + argumentsAfterName(optionArgs, join);
-    })
-    .join(", ");
+  const args = option.args === undefined ? [] : asArray(option.args);
+  if (forms.length === 1) {
+    return forms[0].name + argumentsAfterName(args, forms[0].join);
+  }
+  const sorted = byLength(forms);
+  const joins: (string | null)[] = [];
+  let text = "";
+  for (let i = 0; i < sorted.length; i++) {
+    const join = sorted[i].join;
+    if (joins.includes(join)) {
+      continue;
+    }
+    let names = sorted[i].name;
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (sorted[j].join === join) {
+        names += `, ${sorted[j].name}`;
+      }
+    }
+    text += (joins.length === 0 ? "" : ", ") + names + argumentsAfterName(args, join);
+    joins.push(join);
+  }
+  return text;
 }
 
 /** The text after an option's name that shows its arguments, joined to the name by `join`. */
-function argumentsAfterName(args: Arg[], join: string | null): string {
+function argumentsAfterName(args: readonly Arg[], join: string | null): string {
   if (args.length === 0) {
     return "";
   }
   if (join === null) {
     return ` ${summarizeArguments(args)}`;
   }
-  const [first, ...rest] = args;
+  const first = args[0];
   const name = first.name || "argument";
   const joined =
     (first.isOptional ? `[${join}${name}]` : `${join}<${name}>`) + (first.isVariadic ? "..." : "");
-  return rest.length > 0 ? `${joined} ${summarizeArguments(rest)}` : joined;
+  return args.length > 1 ? `${joined} ${summarizeArguments(args.slice(1))}` : joined;
 }
 
-export function summarizeArguments(args: Arg[]) {
-  return args.map((arg) => argToString(arg)).join(" ");
+export function summarizeArguments(args: readonly Arg[]): string {
+  let text = "";
+  for (let i = 0; i < args.length; i++) {
+    text += (i === 0 ? "" : " ") + argToString(args[i]);
+  }
+  return text;
 }
 
 export function argToString(arg: Arg): string {
   const name = arg.name || "argument";
-  let lhs = "<";
-  let rhs = ">";
-  let suffix = "";
-  if (arg.isOptional) {
-    lhs = "[";
-    rhs = "]";
-  }
-  if (arg.isVariadic) {
-    suffix = "...";
-  }
-  return `${lhs}${name}${rhs}${suffix}`;
+  return (arg.isOptional ? `[${name}]` : `<${name}>`) + (arg.isVariadic ? "..." : "");
 }

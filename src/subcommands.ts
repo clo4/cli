@@ -27,19 +27,24 @@ export class NoSubcommand {
       return { message: "Expected a command, but the value was empty" };
     }
     if (this.prefixOf.length > 0) {
-      const possible = this.prefixOf.flatMap((command) =>
-        asArray(command.name).filter((name) => name.startsWith(token)),
-      );
+      const possible: string[] = [];
+      for (const command of this.prefixOf) {
+        for (const name of asArray(command.name)) {
+          if (name.startsWith(token)) {
+            possible.push(name);
+          }
+        }
+      }
       return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
     }
-    const choices = this.subcommands.filter(({ command }) => !command.hidden).map(({ names }) => names);
+    const choices: (readonly string[])[] = [];
+    for (const { command, names } of this.subcommands) {
+      if (!command.hidden) {
+        choices.push(names);
+      }
+    }
     return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
   }
-}
-
-/** The subcommands that help, completion and suggestions show. */
-export function visibleSubcommands(subcommands: readonly Subcommand[] | undefined): Subcommand[] {
-  return subcommands?.filter((subcommand) => !subcommand.hidden) ?? [];
 }
 
 /** The action of a command that has none of its own: print the command's help. */

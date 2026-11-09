@@ -372,31 +372,7 @@ export class CommandScope {
     local: VisibleOption[];
     persistent: VisibleOption[];
   } {
-    // Which option each name refers to, built in one pass so the later and the
-    // local options overwrite the ones they shadow. Same answer as `resolve`.
-    const owner = new Map<string, Option>();
-    for (const options of [this.persistent, this.local]) {
-      for (const option of options) {
-        for (const name of asArray(option.name)) {
-          owner.set(name, option);
-        }
-      }
-    }
-    const pick = (options: readonly Option[]) => {
-      const picked: VisibleOption[] = [];
-      for (const option of options) {
-        const names = asArray(option.name).filter(
-          (name) =>
-            owner.get(name) === option &&
-            !(subcommands && this.meaning(name, subcommands, false)?.kind === "subcommand"),
-        );
-        if (names.length > 0) {
-          picked.push({ option, names });
-        }
-      }
-      return picked;
-    };
-    return { local: pick(this.local), persistent: pick(this.persistent) };
+    return this.liveOptions(subcommands, true);
   }
 
   /**
@@ -404,16 +380,81 @@ export class CommandScope {
    * {@link live} ones that aren't hidden, without the names a subcommand takes.
    */
   visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
-    const { local, persistent } = this.live(this.hasSubcommands ? anyName : null);
-    const shown = (visible: VisibleOption) => !visible.option.hidden;
-    return { local: local.filter(shown), persistent: persistent.filter(shown) };
+    return this.liveOptions(this.hasSubcommands ? anyName : null, false);
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */
   suggestionNames(): string[][] {
-    const { local, persistent } = this.live();
-    const shown = (visible: VisibleOption) => !visible.option.hidden;
-    return [...local, ...persistent].filter(shown).map((visible) => visible.names);
+    const { local, persistent } = this.liveOptions(null, false);
+    const names: string[][] = [];
+    for (let i = 0; i < local.length; i++) {
+      names.push(local[i].names);
+    }
+    for (let i = 0; i < persistent.length; i++) {
+      names.push(persistent[i].names);
+    }
+    return names;
+  }
+
+  /**
+   * The {@link live} options, without the hidden ones unless `hidden`. A
+   * hidden option still shadows the names it takes. It uses loops instead of
+   * callbacks because each callback is one more function for V8 to compile,
+   * and this runs only a few times a run.
+   */
+  private liveOptions(
+    subcommands: SubcommandMatching | null,
+    hidden: boolean,
+  ): { local: VisibleOption[]; persistent: VisibleOption[] } {
+    const { local, persistent } = this;
+    if (local.length === 0 && persistent.length === 0) {
+      return { local: [], persistent: [] };
+    }
+    // Which option each name refers to, built in one pass so the later and the
+    // local options overwrite the ones they shadow. Same answer as `resolve`.
+    const owner = new Map<string, Option>();
+    for (let i = 0; i < persistent.length + local.length; i++) {
+      const option = i < persistent.length ? persistent[i] : local[i - persistent.length];
+      const names = asArray(option.name);
+      for (let j = 0; j < names.length; j++) {
+        owner.set(names[j], option);
+      }
+    }
+    return {
+      local: this.pickLive(local, owner, subcommands, hidden),
+      persistent: this.pickLive(persistent, owner, subcommands, hidden),
+    };
+  }
+
+  /** Each of `options` with its live names, as {@link liveOptions} lists them. */
+  private pickLive(
+    options: readonly Option[],
+    owner: ReadonlyMap<string, Option>,
+    subcommands: SubcommandMatching | null,
+    hidden: boolean,
+  ): VisibleOption[] {
+    const picked: VisibleOption[] = [];
+    for (let i = 0; i < options.length; i++) {
+      const option = options[i];
+      if (option.hidden && !hidden) {
+        continue;
+      }
+      const all = asArray(option.name);
+      const names: string[] = [];
+      for (let j = 0; j < all.length; j++) {
+        const name = all[j];
+        if (
+          owner.get(name) === option &&
+          !(subcommands && this.meaning(name, subcommands, false)?.kind === "subcommand")
+        ) {
+          names.push(name);
+        }
+      }
+      if (names.length > 0) {
+        picked.push({ option, names });
+      }
+    }
+    return picked;
   }
 
   /*
@@ -430,17 +471,21 @@ export class CommandScope {
    * through the parser.
    */
   forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
-    const join = (name: string): string | null => {
-      if (getMaxArgs(option.args) === 0) {
-        return null;
+    const takesArgs = getMaxArgs(option.args) !== 0;
+    const forms: OptionForm[] = [];
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      let join: string | null = null;
+      if (takesArgs) {
+        if (option.requiresSeparator) {
+          join = this.requiredSeparator(option);
+        } else if (!this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+")) {
+          join = "";
+        }
       }
-      if (option.requiresSeparator) {
-        return this.requiredSeparator(option);
-      }
-      const glued = !this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+");
-      return glued ? "" : null;
-    };
-    return names.map((name) => ({ name, join: join(name) }));
+      forms.push({ name, join });
+    }
+    return forms;
   }
 
   /**
