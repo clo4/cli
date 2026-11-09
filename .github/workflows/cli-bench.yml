@@ -12,9 +12,11 @@ on:
       - pnpm-lock.yaml
       - .github/workflows/cli-bench.yml
 
+# Every push gets its own benchmark row. Up to 100 runs wait their turn in
+# order, so one run never cancels another and history pushes never race.
 concurrency:
   group: cli-bench-${{ github.ref }}
-  cancel-in-progress: true
+  queue: max
 
 env:
   HISTORY_BRANCH: cli-framework-benchmarks
