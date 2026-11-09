@@ -1,4 +1,4 @@
-import type { Spec, Subcommand } from "./types.js";
+import type { Subcommand } from "./types.js";
 import { asArray } from "./util.js";
 
 /** The parser directives in effect for a command, with defaults filled in. */
@@ -20,14 +20,14 @@ export function defaultDirectives(): Directives {
 }
 
 /**
- * Update `directives` for entering `command`. A subcommand inherits each
- * directive until it sets its own.
+ * Update `directives` with the ones `configured` sets, when entering the
+ * command that sets them. A subcommand inherits each directive until it sets
+ * its own.
  */
-export function applyDirectives(directives: Directives, command: Spec | Subcommand): void {
-  const configured = command.parserDirectives;
-  if (!configured) {
-    return;
-  }
+export function applyDirectives(
+  directives: Directives,
+  configured: NonNullable<Subcommand["parserDirectives"]>,
+): void {
   if (configured.optionArgSeparators) {
     directives.optionArgSeparators = asArray(configured.optionArgSeparators);
   }

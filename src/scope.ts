@@ -92,6 +92,12 @@ export class CommandScope {
   command: Spec | Subcommand;
   /** Whether the current command has subcommands of its own or inherits any. */
   hasSubcommands = false;
+  /**
+   * Whether a command on the path has a required option. It stays true after
+   * the scope moves past the command that has it, which only costs a check
+   * that finds nothing missing.
+   */
+  hasRequiredOption = false;
   /** The fewest positional arguments the current command takes. */
   argsMin = 0;
   /** The most positional arguments the current command takes. */
@@ -144,9 +150,15 @@ export class CommandScope {
     if (options) {
       for (let i = 0; i < options.length; i++) {
         (options[i].isPersistent ? this.persistent : this.local).push(options[i]);
+        if (options[i].isRequired) {
+          this.hasRequiredOption = true;
+        }
       }
     }
-    applyDirectives(this.directives, command);
+    const configured = command.parserDirectives;
+    if (configured) {
+      applyDirectives(this.directives, configured);
+    }
   }
 
   /**
@@ -226,22 +238,18 @@ export class CommandScope {
    */
   meaning(token: string, subcommands: SubcommandMatching | null, options: boolean): TokenMeaning | null {
     if (subcommands) {
-      const own = this.command.subcommands ?? [];
-      for (let i = 0; i < own.length; i++) {
-        if (hasName(own[i].name, token)) {
-          return { kind: "subcommand", command: own[i] };
+      const own = this.command.subcommands;
+      if (own) {
+        for (let i = 0; i < own.length; i++) {
+          if (hasName(own[i].name, token)) {
+            return { kind: "subcommand", command: own[i] };
+          }
         }
       }
-      const inherited = this.inheritedSubcommands;
-      for (let i = 0; i < inherited.length; i++) {
-        if (hasName(inherited[i].name, token)) {
-          return { kind: "subcommand", command: inherited[i] };
-        }
-      }
-      if (this.directives.subcommandsMatchUniquePrefix && !subcommands.exactOnly) {
-        const matches = prefixMatches(own, token);
-        if (matches.length === 1) {
-          return { kind: "subcommand", command: matches[0] };
+      if (this.inheritedSubcommands.length > 0 || this.directives.subcommandsMatchUniquePrefix) {
+        const command = this.otherSubcommand(token, subcommands.exactOnly);
+        if (command) {
+          return { kind: "subcommand", command };
         }
       }
     }
@@ -285,6 +293,28 @@ export class CommandScope {
     }
     const attached = option && separator ? { start: index + separator.length, separator } : null;
     return { kind: "options", uses: [{ option, name }], attached };
+  }
+
+  /**
+   * The inherited subcommand `token` names, or else the subcommand of the
+   * current command that `token` is a unique prefix of, when prefixes match.
+   * See {@link meaning}. It's a method of its own so that a cold parse of a
+   * spec without persistent subcommands or prefix matching doesn't compile it.
+   */
+  private otherSubcommand(token: string, exactOnly: boolean): Subcommand | null {
+    const inherited = this.inheritedSubcommands;
+    for (let i = 0; i < inherited.length; i++) {
+      if (hasName(inherited[i].name, token)) {
+        return inherited[i];
+      }
+    }
+    if (this.directives.subcommandsMatchUniquePrefix && !exactOnly) {
+      const matches = prefixMatches(this.command.subcommands ?? [], token);
+      if (matches.length === 1) {
+        return matches[0];
+      }
+    }
+    return null;
   }
 
   /**

@@ -15,45 +15,75 @@ export { printError };
  * satisfying the selected command's required arguments. A command without an
  * action prints its help.
  */
-export async function run(spec: Spec, args: readonly string[] = defaultArgs()): Promise<number> {
-  let result: ParseResult;
-
+export function run(spec: Spec, args?: readonly string[]): Promise<number> {
+  // This isn't an async function, because one costs more to compile on a
+  // cold start. Anything thrown here still becomes a rejected promise, as it
+  // would in an async function.
   try {
-    result = parse(args, spec);
-  } catch (error: unknown) {
-    if (error instanceof ParseError) {
-      printUsageError(error.context.path, error.message, error.didYouMean);
-    } else {
-      printError(`${error}`);
+    const input = args === undefined ? defaultArgs() : args;
+    let result: ParseResult;
+    try {
+      result = parse(input, spec);
+    } catch (error: unknown) {
+      return Promise.resolve(reportParseError(error));
     }
-    return 1;
+
+    const { action, options } = result;
+    const actionInit: ActionInit = {
+      help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
+      args: result.args,
+      path: result.path,
+      argSeparatorIndex: result.argSeparatorIndex,
+      options: {
+        options,
+        has: (name) => options.has(name),
+        get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
+        all: (name) => options.get(name) ?? result.defaults(name),
+        count: (name) => options.get(name)?.length ?? 0,
+      },
+    };
+
+    let actionResult: ReturnType<typeof action>;
+    try {
+      actionResult = action(actionInit);
+    } catch (error) {
+      return Promise.resolve(reportThrown(error));
+    }
+    return typeof actionResult === "object"
+      ? settle(actionResult)
+      : Promise.resolve(exitStatus(actionResult));
+  } catch (error) {
+    return Promise.reject(error);
   }
+}
 
-  const { action, options } = result;
-  const actionInit: ActionInit = {
-    help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
-    args: result.args,
-    path: result.path,
-    argSeparatorIndex: result.argSeparatorIndex,
-    options: {
-      options,
-      has: (name) => options.has(name),
-      get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
-      all: (name) => options.get(name) ?? result.defaults(name),
-      count: (name) => options.get(name)?.length ?? 0,
-    },
-  };
-
+/** Wait for the value an action returned as an object, usually a promise. */
+async function settle(pending: unknown): Promise<number> {
   let exitCode: number | void;
   try {
-    const actionResult = action(actionInit);
-    exitCode = typeof actionResult === "object" ? await actionResult : actionResult;
+    exitCode = (await pending) as number | void;
   } catch (error) {
-    printError(describeThrown(error));
-    return 1;
+    return reportThrown(error);
   }
+  return exitStatus(exitCode);
+}
 
+function exitStatus(exitCode: number | void): number {
   return Math.min(Math.max(exitCode ?? 0, 0), 255);
+}
+
+function reportParseError(error: unknown): number {
+  if (error instanceof ParseError) {
+    printUsageError(error.context.path, error.message, error.didYouMean);
+  } else {
+    printError(`${error}`);
+  }
+  return 1;
+}
+
+function reportThrown(error: unknown): number {
+  printError(describeThrown(error));
+  return 1;
 }
 
 /**

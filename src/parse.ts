@@ -146,14 +146,12 @@ function contextAt(path: CommandPath): ErrorContext {
 }
 
 /**
- * Throw if the options used break a `dependsOn` or `exclusiveOn` rule, or if
- * an option that `scope` requires is missing. `path` ends at the command
- * `scope` is for.
+ * Throw if the options used break a `dependsOn` or `exclusiveOn` rule. `path`
+ * ends at the current command.
  */
 function checkOptionRules(
   options: ReadonlyMap<string, string[]>,
   seenOptions: readonly Option[],
-  scope: CommandScope,
   path: CommandPath,
 ): void {
   for (let i = 0; i < seenOptions.length; i++) {
@@ -184,6 +182,17 @@ function checkOptionRules(
       }
     }
   }
+}
+
+/**
+ * Throw if an option that `scope` requires is missing. `path` ends at the
+ * command `scope` is for.
+ */
+function checkRequiredOptions(
+  options: ReadonlyMap<string, string[]>,
+  scope: CommandScope,
+  path: CommandPath,
+): void {
   // Checking local options first reports a missing local option before a
   // missing persistent one.
   const { local, persistent } = scope;
@@ -235,6 +244,8 @@ class Scanner implements TokenReader {
   private readonly directives: Directives;
 
   private hasFoundArg = false;
+  // Whether an option used has a `dependsOn` or `exclusiveOn` rule to check.
+  private hasOptionRules = false;
   // Whether the next token can be an option. It can't after `--`, or after
   // the first argument when the command's options must precede arguments.
   private optionsAllowed = true;
@@ -266,11 +277,11 @@ class Scanner implements TokenReader {
   // action like --help allows it.
   private tooManyArgs: (() => ParseError) | null = null;
 
-  // The uses of each repeatable option, keyed by `optionKey`.
-  // A subcommand's copy of a parent's option has the same names, so it
-  // continues the parent's uses. An option with other names, even a subset,
-  // has uses of its own.
-  private readonly repeatedUses: Map<string, RepeatedUses> = new Map();
+  // The uses of each repeatable option, keyed by `optionKey`, or null until
+  // one is used. A subcommand's copy of a parent's option has the same names,
+  // so it continues the parent's uses. An option with other names, even a
+  // subset, has uses of its own.
+  private repeatedUses: Map<string, RepeatedUses> | null = null;
 
   constructor(spec: Spec) {
     this.path = [spec];
@@ -319,14 +330,24 @@ class Scanner implements TokenReader {
     if (values) {
       const given = values.length - this.valuesStart;
       if (given < this.valuesMin) {
-        const { valuesMin, valuesMax } = this;
-        const name = this.open.name;
-        this.fail((ctx) => new TooFewOptionArguments(name, valuesMin, valuesMax, ctx));
-      } else {
+        this.failTooFewValues();
+      } else if (given < this.valuesMax) {
+        // Only an argument that wasn't given can have a default to add.
         addDefaults(values, this.valueArgs, given);
       }
     }
     this.values = null;
+  }
+
+  /**
+   * Keep the problem of an open option given too few values, like
+   * {@link fail}. It's a method of its own so that a cold parse where every
+   * option gets its values doesn't compile it.
+   */
+  private failTooFewValues(): void {
+    const { valuesMin, valuesMax } = this;
+    const name = this.open.name;
+    this.fail((ctx) => new TooFewOptionArguments(name, valuesMin, valuesMax, ctx));
   }
 
   private useOption(option: Option, name: string): void {
@@ -340,25 +361,13 @@ class Scanner implements TokenReader {
     if (option.action) {
       this.optionAction = option.action;
     }
-    let optionValues: string[];
-    if (option.isRepeatable) {
-      // A repeatable option collects the values from every use.
-      const key = optionKey(option);
-      let uses = this.repeatedUses.get(key);
-      if (!uses) {
-        uses = { values: [], count: 0 };
-        this.repeatedUses.set(key, uses);
-      }
-      if (uses.count >= repeatLimit(option)) {
-        this.fail((ctx) => new ParseError(ctx, "Too many repetitions"));
-      }
-      uses.count += 1;
-      optionValues = uses.values;
-    } else {
-      // The last use of an option wins, so a user can override a flag that a
-      // shell alias already sets.
-      optionValues = [];
+    if (option.dependsOn || option.exclusiveOn) {
+      this.hasOptionRules = true;
     }
+    // A repeatable option collects the values from every use. Otherwise the
+    // last use of an option wins, so a user can override a flag that a shell
+    // alias already sets.
+    const optionValues = option.isRepeatable ? this.repeatUse(option) : [];
     // A repeatable option stores its values again on each use, because another
     // option may have taken one of its names since the last use.
     const names = option.name;
@@ -383,6 +392,26 @@ class Scanner implements TokenReader {
       this.valuesStart = optionValues.length;
       this.valueArgs = option.args;
     }
+  }
+
+  /**
+   * Count a use of the repeatable `option`, and return the values its uses
+   * share. It's a method of its own so that a cold parse of a line without a
+   * repeatable option doesn't compile it.
+   */
+  private repeatUse(option: Option): string[] {
+    const key = optionKey(option);
+    const repeatedUses = (this.repeatedUses ??= new Map());
+    let uses = repeatedUses.get(key);
+    if (!uses) {
+      uses = { values: [], count: 0 };
+      repeatedUses.set(key, uses);
+    }
+    if (uses.count >= repeatLimit(option)) {
+      this.fail((ctx) => new ParseError(ctx, "Too many repetitions"));
+    }
+    uses.count += 1;
+    return uses.values;
   }
 
   /**
@@ -481,13 +510,20 @@ class Scanner implements TokenReader {
       throw this.problem();
     }
     if (!skipsChecks) {
-      checkOptionRules(this.options, this.seenOptions, this.scope, this.path);
+      if (this.hasOptionRules) {
+        checkOptionRules(this.options, this.seenOptions, this.path);
+      }
+      if (this.scope.hasRequiredOption) {
+        checkRequiredOptions(this.options, this.scope, this.path);
+      }
     }
     // Defaults are added after the checks, so they never count as typed. An
     // option action can run with required arguments missing, and then the
-    // first default would fill a required argument's place.
-    if (!command.requiresSubcommand && this.args.length >= this.scope.argsMin) {
-      addDefaults(this.args, command.args, this.args.length);
+    // first default would fill a required argument's place. Only an argument
+    // that wasn't given can have a default to add.
+    const given = this.args.length;
+    if (!command.requiresSubcommand && given >= this.scope.argsMin && given < this.scope.argsMax) {
+      addDefaults(this.args, command.args, given);
     }
     return {
       path: this.path,
@@ -518,7 +554,7 @@ class Scanner implements TokenReader {
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
   private conflicts(option: Option): boolean {
-    if ((this.repeatedUses.get(optionKey(option))?.count ?? 0) >= repeatLimit(option)) {
+    if ((this.repeatedUses?.get(optionKey(option))?.count ?? 0) >= repeatLimit(option)) {
       return true;
     }
     const options = this.options;
