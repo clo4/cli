@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, cpus, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -8,11 +8,22 @@ import { performance } from "node:perf_hooks";
 import { build as rolldownBuild } from "rolldown";
 
 import * as CLI from "../src/index.js";
+import { largeCommandLine, largeGenerators } from "./large.js";
+import type { LargeShape } from "./large.js";
 
 type Adapter = readonly [library: string, scriptUrl: URL];
 type BenchSignal = "SIGINT" | "SIGTERM";
-type Library = readonly [library: string, script: string];
-type Scenario = readonly [scenario: string, args: readonly string[], expected?: Expected];
+
+/** The kinds of work the comparison reports separately. */
+type Group = "command" | "help" | "error" | "large";
+
+interface Scenario {
+  name: string;
+  group: Group;
+  args: readonly string[];
+  /** Checked once per library before timing starts, so a broken adapter fails the run. */
+  expected?: Expected;
+}
 
 interface Expected {
   status: number;
@@ -24,25 +35,26 @@ interface BenchOptions {
   samples: number;
   warmup: number;
   concurrency: number;
-  csvOut: string | undefined;
+  jsonOut: string | undefined;
 }
 
 interface RunResult {
   total: number;
   self: number;
+  stdio: number;
   status: Status;
   stdout: string;
 }
 
 interface Job {
   library: string;
-  scenario: string;
+  scenario: Scenario;
   bundle: string;
-  args: readonly string[];
 }
 
 interface Bucket {
   selfTimes: number[];
+  stdioTimes: number[];
   totalTimes: number[];
   statuses: Map<Status, number>;
   missing: number;
@@ -70,7 +82,7 @@ class BenchmarkInterrupted extends Error {
 const benchDir = fileURLToPath(new URL("..", import.meta.url));
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const timingEntry = join(benchDir, "_timing.mjs");
-const baselineScenario = "process startup";
+const ours = "@clo4/cli";
 
 /** Differences smaller than this are reported as too small to matter. */
 const negligibleMs = 0.25;
@@ -86,9 +98,11 @@ for (const name of ["NODE_ENV", "NODE_OPTIONS", "DEBUG", "FORCE_COLOR", "CI"]) {
   delete childEnv[name];
 }
 
+const baselineAdapter = new URL("../baseline.mjs", import.meta.url);
+const completionAdapter = new URL("../clo4-cli-completion.mjs", import.meta.url);
+
 const adapters: readonly Adapter[] = [
-  ["baseline", new URL("../baseline.mjs", import.meta.url)],
-  ["@clo4/cli", new URL("../clo4-cli.mjs", import.meta.url)],
+  [ours, new URL("../clo4-cli.mjs", import.meta.url)],
   ["Commander", new URL("../commander.mjs", import.meta.url)],
   ["Yargs", new URL("../yargs.mjs", import.meta.url)],
   ["Cac", new URL("../cac.mjs", import.meta.url)],
@@ -107,40 +121,70 @@ const adapters: readonly Adapter[] = [
   ["node:util parseArgs", new URL("../node-parseargs.mjs", import.meta.url)],
 ];
 
-/**
- * Scenarios with an expected result are checked once per library before
- * timing starts, so a broken adapter fails the run instead of being timed.
- */
+/** The groups, in the order the comparison reports them. */
+const groups: readonly { group: Group; title: string }[] = [
+  { group: "command", title: "Running a command" },
+  { group: "help", title: "Printing help" },
+  { group: "error", title: "Usage errors" },
+  { group: "large", title: "Running a command in a large CLI" },
+];
+
+/** What every library runs, on the 7-command CLI in each adapter. */
 const scenarios: readonly Scenario[] = [
-  ["top-level --help", ["--help"], { status: 0 }],
-  ["nested help (3 levels)", ["remote", "add", "--help"], { status: 0 }],
-  [
-    "build variadic + options",
-    ["build", "a", "b", "c", "--out", "dist", "--mode", "release", "--watch", "-vv"],
-    { status: 0, stdout: "build:a,b,c:dist:release:true:2\n" },
-  ],
-  ["alias dispatch", ["b", "a", "--out", "dist"], { status: 0, stdout: "build:a:dist:-:false:0\n" }],
-  [
-    "nested dispatch",
-    ["remote", "add", "origin", "https://example.com", "--force", "--tag", "v1"],
-    { status: 0, stdout: "add:origin:https://example.com:true:v1\n" },
-  ],
-  ["second group", ["config", "set", "key", "value"], { status: 0, stdout: "set:key:value\n" }],
+  { name: "top-level --help", group: "help", args: ["--help"], expected: { status: 0 } },
+  {
+    name: "nested help (3 levels)",
+    group: "help",
+    args: ["remote", "add", "--help"],
+    expected: { status: 0 },
+  },
+  {
+    name: "build variadic + options",
+    group: "command",
+    args: ["build", "a", "b", "c", "--out", "dist", "--mode", "release", "--watch", "-vv"],
+    expected: { status: 0, stdout: "build:a,b,c:dist:release:true:2\n" },
+  },
+  {
+    name: "alias dispatch",
+    group: "command",
+    args: ["b", "a", "--out", "dist"],
+    expected: { status: 0, stdout: "build:a:dist:-:false:0\n" },
+  },
+  {
+    name: "nested dispatch",
+    group: "command",
+    args: ["remote", "add", "origin", "https://example.com", "--force", "--tag", "v1"],
+    expected: { status: 0, stdout: "add:origin:https://example.com:true:v1\n" },
+  },
+  {
+    name: "second group",
+    group: "command",
+    args: ["config", "set", "key", "value"],
+    expected: { status: 0, stdout: "set:key:value\n" },
+  },
   // --out is given so that libraries which check required options first still
   // reach their unknown-option check. Cliffy and citty accept the unknown
   // option and run the build, so this isn't checked.
-  ["unknown option", ["build", "a", "--out", "dist", "--uot", "x"]],
+  { name: "unknown option", group: "error", args: ["build", "a", "--out", "dist", "--uot", "x"] },
 ];
 
 /**
- * Scenarios only @clo4/cli can run. They're left out of the comparison, and
- * their CSV columns come after every other column, so adding one keeps the
- * earlier columns of the history file in place.
+ * The large CLIs, generated for the libraries in bench/large.ts. The cost of
+ * building a spec grows with the CLI, and a 7-command CLI hides it.
  */
-const ownScenarios: readonly Scenario[] = [
-  // What bash runs on Tab after `forge remote add origin url --`.
-  ["completion", ["completion", "complete", "--gate-options", "--", "remote", "add", "origin", "url", "--"]],
+const largeShapes: readonly { commands: string; shape: LargeShape }[] = [
+  { commands: "100", shape: { groups: 10, commands: 10, options: 6 } },
+  { commands: "1,000", shape: { groups: 50, commands: 20, options: 6 } },
 ];
+
+const baselineScenario: Scenario = { name: "process startup", group: "command", args: [] };
+
+/** What bash runs on Tab after `forge remote add origin url --`. Only @clo4/cli has it. */
+const completionScenario: Scenario = {
+  name: "completion",
+  group: "command",
+  args: ["completion", "complete", "--gate-options", "--", "remote", "add", "origin", "url", "--"],
+};
 
 process.exitCode = await CLI.run({
   name: "clo4-cli-bench",
@@ -163,8 +207,8 @@ process.exitCode = await CLI.run({
       args: { name: "count" },
     },
     {
-      name: "--csv-out",
-      description: "Write a header and a single data row of medians to this file.",
+      name: "--json-out",
+      description: "Append this run's results to this file as one line of JSON.",
       args: { name: "file" },
     },
   ],
@@ -178,11 +222,11 @@ function readOptions({ options }: CLI.ActionInit): BenchOptions {
     samples: readPositiveIntOption(options.get("--samples"), "--samples", 50),
     warmup: readPositiveIntOption(options.get("--warmup"), "--warmup", 3),
     concurrency: readConcurrency(options.get("--concurrency")),
-    csvOut: options.get("--csv-out"),
+    jsonOut: options.get("--json-out"),
   };
 }
 
-async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptions): Promise<number> {
+async function runBenchmark({ samples, warmup, concurrency, jsonOut }: BenchOptions): Promise<number> {
   if (!existsSync(new URL("../../dist/index.js", import.meta.url))) {
     console.error("Build @clo4/cli before benchmarking: pnpm build");
     return 1;
@@ -191,29 +235,12 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
   const bundleDir = mkdtempSync(join(tmpdir(), "clo4-cli-bench-compiled-"));
 
   try {
-    const libraries = await bundleAdapters(bundleDir);
-    const baseline = libraries.find(([library]) => library === "baseline");
-    const measuredLibraries = libraries.filter(([library]) => library !== "baseline");
-    const ours = libraries.find(([library]) => library === "@clo4/cli");
-    if (baseline === undefined || ours === undefined) {
-      throw new Error("missing baseline or @clo4/cli benchmark adapter");
-    }
-
-    const jobs: Job[] = [{ library: "baseline", scenario: baselineScenario, bundle: baseline[1], args: [] }];
-    for (const [library, bundle] of measuredLibraries) {
-      for (const [scenario, args] of scenarios) {
-        jobs.push({ library, scenario, bundle, args });
-      }
-    }
-    for (const [scenario, args] of ownScenarios) {
-      jobs.push({ library: "@clo4/cli", scenario, bundle: ours[1], args });
-    }
-
+    const { jobs, libraries, largeScenarios } = await prepareJobs(bundleDir);
     const interrupt = createInterruptController();
     const results = new Map<string, Bucket>();
 
     try {
-      const failures = await checkOutputs(measuredLibraries, interrupt, concurrency, bundleDir);
+      const failures = await checkOutputs(jobs, interrupt, concurrency, bundleDir);
       if (failures.length > 0) {
         console.error("These adapters printed the wrong output, so the benchmark didn't run:");
         for (const failure of failures) {
@@ -237,6 +264,10 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
         "`self` runs from just before the bundle is imported to the process's exit event. It includes",
       );
       console.log("loading the bundle and its Node built-ins, and leaves out Node's own startup.");
+      console.log(
+        "`stdio` is the part of `self` Node spent building process.stdout and process.stderr, which",
+      );
+      console.log("happens the first time anything reads them, such as the first console.log.");
       console.log("`total` is the whole process, timed from outside, so it includes Node's startup.");
       console.log("");
 
@@ -245,13 +276,13 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
         await forEachConcurrent(shuffled(jobs), concurrency, async (job, slot) => {
           const result = await runOnce(
             job.bundle,
-            job.args,
+            job.scenario.args,
             interrupt,
             join(bundleDir, `timing-${slot}.txt`),
           );
           progress.tick();
           if (i >= warmup) {
-            recordResult(bucketFor(results, job.library, job.scenario), result);
+            recordResult(bucketFor(results, job.library, job.scenario.name), result);
           }
         });
       }
@@ -267,25 +298,62 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
     }
 
     console.log(
-      formatRow(["library", "scenario", "self p50", "self p10", "self p90", "total p50", "n", "exit codes"]),
+      formatRow([
+        "library",
+        "scenario",
+        "self p50",
+        "self p10",
+        "self p90",
+        "stdio p50",
+        "total p50",
+        "n",
+        "exit codes",
+      ]),
     );
     console.log(
-      formatRow(["-------", "--------", "--------", "--------", "--------", "---------", "-", "----------"]),
+      formatRow([
+        "-------",
+        "--------",
+        "--------",
+        "--------",
+        "--------",
+        "---------",
+        "---------",
+        "-",
+        "----------",
+      ]),
     );
-    printRow(results.get(keyFor("baseline", baselineScenario)), "baseline", baselineScenario);
-    for (const [library] of measuredLibraries) {
-      for (const [scenario] of scenarios) {
-        printRow(results.get(keyFor(library, scenario)), library, scenario);
-      }
+    for (const job of uniqueJobs(jobs)) {
+      printRow(results.get(keyFor(job.library, job.scenario.name)), job.library, job.scenario.name);
     }
-    for (const [scenario] of ownScenarios) {
-      printRow(results.get(keyFor("@clo4/cli", scenario)), "@clo4/cli", scenario);
-    }
-    printComparison(results, measuredLibraries);
 
-    if (csvOut !== undefined) {
-      writeFileSync(csvOut, buildCsv(results, measuredLibraries, samples, concurrency));
-      console.log(`\nWrote CSV row to ${csvOut}`);
+    const baseline = median(results, "baseline", baselineScenario.name);
+    console.log("");
+    console.log("Comparison with @clo4/cli, one table per kind of work. Each library's score is the");
+    console.log("geometric mean of its scenario medians in that table. Ratios leave out the time");
+    console.log("to load an empty bundle. Lower is better. `stdio` is the mean of its scenario");
+    console.log("`stdio` medians.");
+    const comparisons = groups.map(({ group, title }) => {
+      const groupScenarios = [...scenarios, ...largeScenarios].filter((s) => s.group === group);
+      const groupLibraries = libraries.filter((library) =>
+        groupScenarios.every((s) => results.has(keyFor(library, s.name))),
+      );
+      const comparison = compareGroup(results, group, groupScenarios, groupLibraries, baseline);
+      printComparison(title, comparison);
+      return comparison;
+    });
+
+    if (jsonOut !== undefined) {
+      const record = {
+        ...runInfo(samples, warmup, concurrency),
+        results: resultRecords(results, jobs),
+        comparisons,
+      };
+      // Times are in milliseconds, rounded to the microsecond.
+      const rounded = (_: string, value: unknown) =>
+        typeof value === "number" && !Number.isInteger(value) ? Math.round(value * 1000) / 1000 : value;
+      appendFileSync(jsonOut, `${JSON.stringify(record, rounded)}\n`);
+      console.log(`\nAppended this run's results to ${jsonOut}`);
     }
   } finally {
     rmSync(bundleDir, { recursive: true, force: true });
@@ -295,106 +363,151 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
 }
 
 /**
- * Build a two-line CSV (header and one data row) of this run's medians. The
- * columns follow the static scenario and adapter lists, so rows from different
- * runs line up in a history file. The history file only accepts new columns at
- * the end. When adding a library or scenario, preserve the existing column
- * order and append its columns after the concurrency metadata.
+ * Bundle every adapter and list the timed jobs: the baseline, each library on
+ * each scenario, the large CLIs, and @clo4/cli's completion.
  */
-function buildCsv(
-  results: Map<string, Bucket>,
-  measuredLibraries: readonly Library[],
-  samples: number,
-  concurrency: number,
-): string {
-  const header = ["timestamp_utc", "commit", "node_version", "cpu", "samples"];
-  const row = [
-    new Date().toISOString(),
-    process.env.GITHUB_SHA ?? "local",
-    process.version,
-    (cpus()[0]?.model ?? "unknown").replaceAll(",", " "),
-    String(samples),
-  ];
+async function prepareJobs(
+  bundleDir: string,
+): Promise<{ jobs: Job[]; libraries: string[]; largeScenarios: Scenario[] }> {
+  const bundled = (name: string) => join(bundleDir, `${slug(name)}.mjs`);
 
-  const cell = (value: number): string => (Number.isFinite(value) ? value.toFixed(4) : "");
-  const median = (library: string, scenario: string): number =>
-    percentile(results.get(keyFor(library, scenario))?.selfTimes ?? [], 0.5);
+  const largeScenarios: Scenario[] = largeShapes.map(({ commands, shape }) => {
+    const { args, stdout } = largeCommandLine(shape);
+    return { name: `${commands} commands`, group: "large", args, expected: { status: 0, stdout } };
+  });
 
-  header.push("baseline_self_med");
-  row.push(cell(median("baseline", baselineScenario)));
+  await Promise.all([
+    bundle(fileURLToPath(baselineAdapter), bundled("baseline")),
+    bundle(fileURLToPath(completionAdapter), bundled("completion")),
+    ...adapters.map(([library, url]) => bundle(fileURLToPath(url), bundled(library))),
+    ...[...largeGenerators].flatMap(([library, generate]) =>
+      largeShapes.map(({ shape }, i) =>
+        bundle(
+          join(benchDir, `large-${slug(library)}-${i}.mjs`),
+          bundled(`large-${library}-${i}`),
+          generate(shape),
+        ),
+      ),
+    ),
+  ]);
 
-  for (const [scenario] of [...scenarios, ...ownScenarios]) {
-    header.push(`${slug(scenario)}_clo4-cli_self_med`);
-    row.push(cell(median("@clo4/cli", scenario)));
+  const jobs: Job[] = [{ library: "baseline", scenario: baselineScenario, bundle: bundled("baseline") }];
+  for (const [library] of adapters) {
+    for (const scenario of scenarios) {
+      jobs.push({ library, scenario, bundle: bundled(library) });
+    }
   }
-
-  // Geomeans include the baseline's time; subtract baseline_self_med to leave
-  // it out.
-  for (const [library] of measuredLibraries) {
-    header.push(`geomean_${slug(library)}`);
-    row.push(cell(geometricMean(scenarios.map(([scenario]) => median(library, scenario)))));
-  }
-
-  // Append metadata so the existing CI history remains compatible.
-  header.push("concurrency");
-  row.push(String(concurrency));
-
-  return `${header.join(",")}\n${row.join(",")}\n`;
-}
-
-async function bundleAdapters(outDir: string): Promise<Library[]> {
-  return Promise.all(
-    adapters.map(async ([library, scriptUrl]) => {
-      const output = join(outDir, `${slug(library)}.mjs`);
-      await rolldownBuild({
-        input: fileURLToPath(scriptUrl),
-        platform: "node",
-        logLevel: "silent",
-        transform: { target: "es2022" },
-        output: {
-          file: output,
-          format: "esm",
-          codeSplitting: false,
-          sourcemap: false,
-          // Every adapter is minified, as a CLI shipped to users would be.
-          minify: true,
-        },
+  for (const [library] of adapters) {
+    if (largeGenerators.has(library)) {
+      largeScenarios.forEach((scenario, i) => {
+        jobs.push({ library, scenario, bundle: bundled(`large-${library}-${i}`) });
       });
-      return [library, output] as const;
-    }),
-  );
+    }
+  }
+  jobs.push({ library: ours, scenario: completionScenario, bundle: bundled("completion") });
+
+  return { jobs, libraries: adapters.map(([library]) => library), largeScenarios };
 }
 
 /**
- * Run each scenario that has an expected result once per library, and return
- * a description of every mismatch.
+ * Bundle `input` to `output`, minified, as a CLI shipped to users would be.
+ * With `source`, `input` is a path that needn't exist and `source` is its
+ * contents, so a generated adapter's imports resolve from the bench directory.
+ */
+async function bundle(input: string, output: string, source?: string): Promise<void> {
+  await rolldownBuild({
+    input,
+    platform: "node",
+    logLevel: "silent",
+    transform: { target: "es2022" },
+    plugins:
+      source === undefined
+        ? []
+        : [
+            {
+              name: "generated-adapter",
+              resolveId: (id) => (id === input ? input : null),
+              load: (id) => (id === input ? source : null),
+            },
+          ],
+    output: {
+      file: output,
+      format: "esm",
+      codeSplitting: false,
+      sourcemap: false,
+      minify: true,
+    },
+  });
+}
+
+/** Each library and scenario once, in the order the jobs list them. */
+function uniqueJobs(jobs: readonly Job[]): Job[] {
+  const seen = new Set<string>();
+  return jobs.filter((job) => {
+    const key = keyFor(job.library, job.scenario.name);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+/** What the run ran on and with, for comparing runs in a history file. */
+function runInfo(samples: number, warmup: number, concurrency: number) {
+  return {
+    timestamp: new Date().toISOString(),
+    commit: process.env.GITHUB_SHA ?? "local",
+    node: process.version,
+    cpu: cpus()[0]?.model ?? "unknown",
+    samples,
+    warmup,
+    concurrency,
+  };
+}
+
+/** Each library and scenario's measurements, in milliseconds. */
+function resultRecords(results: Map<string, Bucket>, jobs: readonly Job[]) {
+  return uniqueJobs(jobs).map(({ library, scenario }) => {
+    const bucket = results.get(keyFor(library, scenario.name));
+    const self = bucket?.selfTimes ?? [];
+    return {
+      library,
+      scenario: scenario.name,
+      group: scenario.group,
+      self: { p10: percentile(self, 0.1), p50: percentile(self, 0.5), p90: percentile(self, 0.9) },
+      stdio: percentile(bucket?.stdioTimes ?? [], 0.5),
+      total: percentile(bucket?.totalTimes ?? [], 0.5),
+      n: self.length,
+      missing: bucket?.missing ?? 0,
+      statuses: Object.fromEntries(bucket?.statuses ?? []),
+    };
+  });
+}
+
+/**
+ * Run each job that has an expected result once, and return a description of
+ * every mismatch.
  */
 async function checkOutputs(
-  measuredLibraries: readonly Library[],
+  jobs: readonly Job[],
   interrupt: InterruptController,
   concurrency: number,
   timingDir: string,
 ): Promise<string[]> {
   const failures: string[] = [];
-  const checks = measuredLibraries.flatMap(([library, bundle]) =>
-    scenarios.flatMap(([scenario, args, expected]) =>
-      expected === undefined ? [] : [{ library, bundle, scenario, args, expected }],
-    ),
-  );
-  await forEachConcurrent(
-    checks,
-    concurrency,
-    async ({ library, bundle, scenario, args, expected }, slot) => {
-      const result = await runOnce(bundle, args, interrupt, join(timingDir, `timing-${slot}.txt`));
-      if (result.status !== expected.status) {
-        failures.push(`${library}, ${scenario}: exited ${result.status}, expected ${expected.status}`);
-      } else if (expected.stdout !== undefined && result.stdout !== expected.stdout) {
-        failures.push(
-          `${library}, ${scenario}: printed ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(expected.stdout)}`,
-        );
-      }
-    },
-  );
+  const checks = uniqueJobs(jobs).filter((job) => job.scenario.expected !== undefined);
+  await forEachConcurrent(checks, concurrency, async ({ library, bundle, scenario }, slot) => {
+    const expected = scenario.expected!;
+    const result = await runOnce(bundle, scenario.args, interrupt, join(timingDir, `timing-${slot}.txt`));
+    if (result.status !== expected.status) {
+      failures.push(`${library}, ${scenario.name}: exited ${result.status}, expected ${expected.status}`);
+    } else if (expected.stdout !== undefined && result.stdout !== expected.stdout) {
+      failures.push(
+        `${library}, ${scenario.name}: printed ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(expected.stdout)}`,
+      );
+    }
+  });
   return failures;
 }
 
@@ -469,6 +582,7 @@ async function runOnce(
       resolve({
         total: performance.now() - start,
         self: Number.NaN,
+        stdio: Number.NaN,
         status: basename(error.name),
         stdout,
       });
@@ -485,15 +599,16 @@ async function runOnce(
         return;
       }
 
-      let self = Number.NaN;
+      let timing = { self: Number.NaN, stdio: Number.NaN };
       try {
-        self = Number.parseFloat(readFileSync(timingFile, "utf8"));
+        timing = JSON.parse(readFileSync(timingFile, "utf8")) as typeof timing;
       } catch {
         // Child exited before writing a timing sample.
       }
       resolve({
         total: performance.now() - start,
-        self,
+        self: timing.self,
+        stdio: timing.stdio,
         status: code ?? signal ?? "signal",
         stdout,
       });
@@ -509,6 +624,7 @@ function bucketFor(results: Map<string, Bucket>, library: string, scenario: stri
   }
   const bucket: Bucket = {
     selfTimes: [],
+    stdioTimes: [],
     totalTimes: [],
     statuses: new Map(),
     missing: 0,
@@ -521,6 +637,7 @@ function recordResult(bucket: Bucket, result: RunResult): void {
   bucket.totalTimes.push(result.total);
   if (Number.isFinite(result.self)) {
     bucket.selfTimes.push(result.self);
+    bucket.stdioTimes.push(result.stdio);
   } else {
     bucket.missing += 1;
   }
@@ -540,6 +657,7 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
       fmt(percentile(self, 0.5)),
       fmt(percentile(self, 0.1)),
       fmt(percentile(self, 0.9)),
+      fmt(percentile(bucket?.stdioTimes ?? [], 0.5)),
       fmt(percentile(total, 0.5)),
       String(total.length),
       bucket !== undefined && bucket.missing > 0
@@ -549,51 +667,100 @@ function printRow(bucket: Bucket | undefined, library: string, scenario: string)
   );
 }
 
+interface GroupComparison {
+  group: Group;
+  scenarios: string[];
+  /** The time to load an empty bundle, left out of the ratios. */
+  baseline: number;
+  ours: { geomean: number; stdio: number };
+  libraries: {
+    library: string;
+    geomean: number;
+    stdio: number;
+    difference: number;
+    low: number;
+    high: number;
+    result: string;
+  }[];
+}
+
 /**
- * Compare each library with @clo4/cli by the geometric mean of its scenario
- * medians. The interval comes from resampling each scenario's measurements
- * (a bootstrap): when it includes zero, the run can't tell the two apart.
- * Ratios leave out the baseline's time, the cost of importing any file, which
- * every library pays and which would otherwise pull every ratio towards 1.
+ * Compare each of `libraries` with @clo4/cli by the geometric mean of its
+ * medians on `groupScenarios`. The interval comes from resampling each
+ * scenario's measurements (a bootstrap): when it includes zero, the run can't
+ * tell the two apart. Ratios leave out `baseline`, the cost of importing any
+ * file, which every library pays and which would otherwise pull every ratio
+ * towards 1.
  */
-function printComparison(results: Map<string, Bucket>, measuredLibraries: readonly Library[]): void {
+function compareGroup(
+  results: Map<string, Bucket>,
+  group: Group,
+  groupScenarios: readonly Scenario[],
+  libraries: readonly string[],
+  baseline: number,
+): GroupComparison {
   const random = mulberry32(0x5eed);
   const resamples = 1000;
   const samplesFor = (library: string): number[][] =>
-    scenarios.map(([scenario]) => results.get(keyFor(library, scenario))?.selfTimes ?? []);
+    groupScenarios.map((s) => results.get(keyFor(library, s.name))?.selfTimes ?? []);
   const geomeanOfMedians = (cells: readonly (readonly number[])[]): number =>
     geometricMean(cells.map((cell) => percentile(cell, 0.5)));
   const resampledGeomeans = (cells: readonly (readonly number[])[]): number[] =>
     Array.from({ length: resamples }, () =>
       geomeanOfMedians(cells.map((cell) => cell.map(() => cell[Math.floor(random() * cell.length)]))),
     );
+  const stdioMean = (library: string): number =>
+    groupScenarios.reduce(
+      (sum, s) => sum + percentile(results.get(keyFor(library, s.name))?.stdioTimes ?? [], 0.5),
+      0,
+    ) / groupScenarios.length;
 
-  const baseline = percentile(results.get(keyFor("baseline", baselineScenario))?.selfTimes ?? [], 0.5);
-  const ourCells = samplesFor("@clo4/cli");
+  const ourCells = samplesFor(ours);
   const ourMean = geomeanOfMedians(ourCells);
   const ourResampled = resampledGeomeans(ourCells);
 
-  console.log("");
-  console.log("Comparison with @clo4/cli (geometric mean of scenario medians; lower is better)");
-  console.log(`@clo4/cli: ${fmt(ourMean)}`);
-  console.log(formatComparisonRow(["library", "geomean", "difference (95% interval)", "result"]));
-  console.log(formatComparisonRow(["-------", "-------", "-------------------------", "------"]));
+  return {
+    group,
+    scenarios: groupScenarios.map((s) => s.name),
+    baseline,
+    ours: { geomean: ourMean, stdio: stdioMean(ours) },
+    libraries: libraries
+      .filter((library) => library !== ours)
+      .map((library) => {
+        const mean = geomeanOfMedians(samplesFor(library));
+        const differences = resampledGeomeans(samplesFor(library)).map(
+          (value, index) => value - ourResampled[index],
+        );
+        const low = percentile(differences, 0.025);
+        const high = percentile(differences, 0.975);
+        return {
+          library,
+          geomean: mean,
+          stdio: stdioMean(library),
+          difference: mean - ourMean,
+          low,
+          high,
+          result: comparisonText(ourMean - baseline, mean - baseline, low, high),
+        };
+      }),
+  };
+}
 
-  for (const [library] of measuredLibraries) {
-    if (library === "@clo4/cli") {
-      continue;
-    }
-    const cells = samplesFor(library);
-    const mean = geomeanOfMedians(cells);
-    const differences = resampledGeomeans(cells).map((value, index) => value - ourResampled[index]);
-    const low = percentile(differences, 0.025);
-    const high = percentile(differences, 0.975);
+function printComparison(title: string, comparison: GroupComparison): void {
+  const count = comparison.scenarios.length;
+  console.log("");
+  console.log(`${title} (${count} ${count === 1 ? "scenario" : "scenarios"})`);
+  console.log(`@clo4/cli: ${fmt(comparison.ours.geomean)}, stdio ${fmt(comparison.ours.stdio)}`);
+  console.log(formatComparisonRow(["library", "geomean", "stdio", "difference (95% interval)", "result"]));
+  console.log(formatComparisonRow(["-------", "-------", "-----", "-------------------------", "------"]));
+  for (const row of comparison.libraries) {
     console.log(
       formatComparisonRow([
-        library,
-        fmt(mean),
-        `${signed(mean - ourMean)} (${signed(low)} to ${signed(high)})`,
-        comparisonText(ourMean - baseline, mean - baseline, low, high),
+        row.library,
+        fmt(row.geomean),
+        fmt(row.stdio),
+        `${signed(row.difference)} (${signed(row.low)} to ${signed(row.high)})`,
+        row.result,
       ]),
     );
   }
@@ -617,6 +784,11 @@ function comparisonText(ours: number, other: number, low: number, high: number):
     return `@clo4/cli slower (${(1 / ratio).toFixed(1)}x)`;
   }
   return other > ours ? "@clo4/cli faster" : "@clo4/cli slower";
+}
+
+/** The median `self` time of `library` on `scenario`, or NaN if it wasn't run. */
+function median(results: Map<string, Bucket>, library: string, scenario: string): number {
+  return percentile(results.get(keyFor(library, scenario))?.selfTimes ?? [], 0.5);
 }
 
 function signed(value: number): string {
@@ -690,12 +862,12 @@ function readConcurrency(raw: string | undefined): number {
 }
 
 function formatRow(cells: readonly string[]): string {
-  const widths = [19, 24, 10, 10, 10, 10, 4, 24];
+  const widths = [19, 24, 10, 10, 10, 10, 10, 4, 24];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 
 function formatComparisonRow(cells: readonly string[]): string {
-  const widths = [19, 10, 32, 28];
+  const widths = [19, 10, 10, 32, 28];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 
