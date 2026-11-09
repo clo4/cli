@@ -229,7 +229,9 @@ async function runBenchmark({ samples, warmup, concurrency, csvOut }: BenchOptio
       if (concurrency > 1) {
         console.log("Concurrent processes share CPU resources; compare with runs at the same concurrency.");
       }
-      console.log("Each adapter is bundled with its library before timing, and bundling isn't timed.");
+      console.log(
+        "Each adapter is bundled with its library and minified before timing, and bundling isn't timed.",
+      );
       console.log("Every round runs each library and scenario once, in a new random order.");
       console.log(
         "`self` runs from just before the bundle is imported to the process's exit event. It includes",
@@ -354,6 +356,8 @@ async function bundleAdapters(outDir: string): Promise<Library[]> {
           format: "esm",
           codeSplitting: false,
           sourcemap: false,
+          // Every adapter is minified, as a CLI shipped to users would be.
+          minify: true,
         },
       });
       return [library, output] as const;
