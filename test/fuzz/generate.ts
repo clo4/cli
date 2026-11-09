@@ -2,6 +2,7 @@
 // seeded generator, so a seed and case number reproduce a failure exactly.
 
 import type { Action, Arg, Option, Spec, Subcommand } from "../../src/types.js";
+import { asArray } from "../../src/util.js";
 
 export interface Random {
   next(): number;
@@ -112,16 +113,32 @@ export interface GenerateOptions {
    * of their own, so the spec is otherwise the same as without them.
    */
   defaults?: boolean;
+  /**
+   * Make some subcommands persistent. Like defaults, these come from a random
+   * generator of their own, so the spec is otherwise the same as without them.
+   */
+  persistentSubcommands?: boolean;
+  /** Make some subcommands hidden, from the same generator as `persistentSubcommands`. */
+  hiddenSubcommands?: boolean;
 }
 
 // Odd values too, so a default that looks like an option or `--` can't change
 // how anything else reads.
 const DEFAULT_VALUES = ["d", "", "-v", "--", "build"];
 
+// How often a subcommand is persistent or hidden, and how often a command line
+// starts with a walk down the spec. At these rates, about 5% of command lines
+// enter a persistent subcommand from below its parent, about 5% enter a hidden
+// one, and three in four have no walk.
+const PERSISTENT_RATE = 0.2;
+const HIDDEN_RATE = 0.15;
+const WALK_RATE = 0.25;
+
 /** Create a generator of random specs and command lines from one seed. */
 export function generator(seed: number, options: GenerateOptions = {}) {
   const r = random(seed);
   const defaults = random(seed ^ 0x5eed);
+  const kinds = random(seed ^ 0x5ab5);
   let actionCount = 0;
 
   const action = (): Action => {
@@ -144,6 +161,17 @@ export function generator(seed: number, options: GenerateOptions = {}) {
       return one();
     }
     return Array.from({ length: 1 + r.int(3) }, one);
+  };
+
+  // Both draws happen whichever options are on, so turning one on doesn't
+  // change which subcommands the other picks.
+  const subcommandKind = () => {
+    const persistent = kinds.chance(PERSISTENT_RATE);
+    const hidden = kinds.chance(HIDDEN_RATE);
+    return {
+      ...(options.persistentSubcommands && persistent ? { isPersistent: true } : {}),
+      ...(options.hiddenSubcommands && hidden ? { hidden: true } : {}),
+    };
   };
 
   const names = (pool: readonly string[]) =>
@@ -216,6 +244,7 @@ export function generator(seed: number, options: GenerateOptions = {}) {
     if (depth < 3 && r.chance(0.6)) {
       c.subcommands = Array.from({ length: 1 + r.int(4) }, () => ({
         name: names(SUBCOMMAND_NAMES),
+        ...subcommandKind(),
         ...command(depth + 1),
       }));
     }
@@ -223,6 +252,30 @@ export function generator(seed: number, options: GenerateOptions = {}) {
   };
 
   const spec = (): Spec => ({ name: "fuzz", ...command(0) }) as Spec;
+
+  /**
+   * The exact names of a few nested subcommands from the top of `s`, then
+   * sometimes the name of a persistent subcommand of a command above the last
+   * one. Without a walk, few command lines get below a persistent
+   * subcommand's parent to name it there.
+   */
+  const walk = (s: Spec): string[] => {
+    const names: string[] = [];
+    const path: (Spec | Subcommand)[] = [s];
+    let command: Spec | Subcommand = s;
+    while (command.subcommands && kinds.chance(0.8)) {
+      command = kinds.pick(command.subcommands);
+      names.push(kinds.pick(asArray(command.name)));
+      path.push(command);
+    }
+    const inherited = path
+      .slice(0, -1)
+      .flatMap((above) => (above.subcommands ?? []).filter((sub) => sub.isPersistent));
+    if (inherited.length > 0 && kinds.chance(0.6)) {
+      names.push(kinds.pick(asArray(kinds.pick(inherited).name)));
+    }
+    return names;
+  };
 
   /** A command line for `s`, mostly made of names from the spec itself. */
   const input = (s: Spec): string[] => {
@@ -277,7 +330,8 @@ export function generator(seed: number, options: GenerateOptions = {}) {
       return r.pick(["-", "+"]) + Array.from({ length: 1 + r.int(3) }, () => r.pick(chars)).join("");
     };
 
-    return Array.from({ length: r.int(7) }, token);
+    const tokens = Array.from({ length: r.int(7) }, token);
+    return options.persistentSubcommands && kinds.chance(WALK_RATE) ? [...walk(s), ...tokens] : tokens;
   };
 
   return { spec, input, random: r };

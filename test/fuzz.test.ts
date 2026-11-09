@@ -5,7 +5,7 @@
 // `pnpm fuzz` runs this file and test/fuzz-diff.test.ts. Raise FUZZ_CASES for
 // a longer search, e.g. `FUZZ_CASES=200000 pnpm fuzz`.
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { completeRuntime } from "../src/completion.js";
 import { ParseError } from "../src/errors.js";
@@ -15,9 +15,14 @@ import type { NextToken } from "../src/parse.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import * as Testing from "../src/testing.js";
 import { asArray, getMinArgs } from "../src/util.js";
-import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
+import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
+import type { GenerateOptions } from "./fuzz/generate.js";
 import { attempt } from "./fuzz/snapshot.js";
+
+vi.setConfig({ testTimeout: TIMEOUT });
+
+const shapes: GenerateOptions = { persistentSubcommands: true, hiddenSubcommands: true };
 
 /** What the directives should be after following `path`, worked out separately from the parser. */
 function expectedDirectives(path: readonly (Spec | Subcommand)[]): Directives {
@@ -46,13 +51,34 @@ function expectedDirectives(path: readonly (Spec | Subcommand)[]): Directives {
   return expected;
 }
 
-function invalidPath(path: readonly (Spec | Subcommand)[], spec: Spec): string | null {
+/**
+ * Why `path` isn't one the parser can follow on `input`, or null. Each command
+ * after the spec is a subcommand of the one before it, or a persistent
+ * subcommand of a command further up. A persistent subcommand entered from
+ * below its parent, or a hidden one, only matches its exact name, so one of
+ * its names is an input token.
+ */
+function invalidPath(
+  path: readonly (Spec | Subcommand)[],
+  spec: Spec,
+  input: readonly string[],
+): string | null {
   if (path[0] !== spec) {
     return "path doesn't start at the spec";
   }
   for (let i = 1; i < path.length; i++) {
-    if (!path[i - 1].subcommands?.includes(path[i] as Subcommand)) {
-      return `path[${i}] isn't a subcommand of path[${i - 1}]`;
+    const command = path[i] as Subcommand;
+    const own = path[i - 1].subcommands?.includes(command) ?? false;
+    if (!own) {
+      if (!command.isPersistent) {
+        return `path[${i}] isn't a subcommand of path[${i - 1}], and isn't persistent`;
+      }
+      if (!path.slice(0, i - 1).some((above) => above.subcommands?.includes(command))) {
+        return `path[${i}] isn't a subcommand of any command before it on the path`;
+      }
+    }
+    if ((!own || command.hidden) && !asArray(command.name).some((name) => input.includes(name))) {
+      return `path[${i}] matched without its exact name`;
     }
   }
   return null;
@@ -86,7 +112,7 @@ function violation(spec: Spec, input: string[]): string | null {
   }
 
   const path = next.path as readonly (Spec | Subcommand)[];
-  const badPath = invalidPath(path, spec);
+  const badPath = invalidPath(path, spec, input);
   if (badPath) {
     return badPath;
   }
@@ -129,7 +155,7 @@ function violation(spec: Spec, input: string[]): string | null {
   if (!(error instanceof ParseError)) {
     return `parse threw ${error.name}: ${error.message}`;
   }
-  const errorPath = invalidPath(error.context.path as readonly (Spec | Subcommand)[], spec);
+  const errorPath = invalidPath(error.context.path as readonly (Spec | Subcommand)[], spec, input);
   if (errorPath) {
     return `error ${errorPath}`;
   }
@@ -138,7 +164,7 @@ function violation(spec: Spec, input: string[]): string | null {
 
 test("readNext and parse keep their invariants on random specs", () => {
   for (const n of caseNumbers()) {
-    const gen = generator(caseSeed(n));
+    const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
     const input = gen.input(spec);
     if (violation(spec, input) === null) {
@@ -310,7 +336,7 @@ type CommandPathLike = readonly { name: Spec["name"] | Subcommand["name"] }[];
 
 test("defaults only add to what the user typed", () => {
   for (const n of caseNumbers()) {
-    const gen = generator(caseSeed(n), { defaults: true });
+    const gen = generator(caseSeed(n), { ...shapes, defaults: true });
     const spec = gen.spec();
     const input = gen.input(spec);
     if (defaultsViolation(spec, input) === null) {
@@ -324,7 +350,7 @@ test("defaults only add to what the user typed", () => {
 test("completion never throws on random specs", async () => {
   // Completion is slower and async, so it gets a tenth of the cases.
   for (const n of caseNumbers(10)) {
-    const gen = generator(caseSeed(n));
+    const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
     const before = gen.input(spec);
     const partial = gen.input(spec)[0] ?? "";
@@ -382,7 +408,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
 
 test("completion only offers options and subcommands the parser reads as such", async () => {
   for (const n of caseNumbers()) {
-    const gen = generator(caseSeed(n));
+    const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
     const input = gen.input(spec);
     if ((await offeredButMisread(spec, input)) === null) {

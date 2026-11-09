@@ -11,6 +11,13 @@ export const SEED = Number(process.env.FUZZ_SEED ?? 1);
 const CASES = Number(process.env.FUZZ_CASES ?? 3000);
 const ONLY = process.env.FUZZ_CASE === undefined ? undefined : Number(process.env.FUZZ_CASE);
 
+/**
+ * How long each fuzz test may take, in milliseconds: vitest's 5 seconds for
+ * the default 3000 cases, and longer in proportion for more cases. The
+ * default run takes under 0.3 seconds a test.
+ */
+export const TIMEOUT = Math.max(5000, (5000 * CASES) / 3000);
+
 /** The case numbers to run. With `every`, only every nth case runs, unless FUZZ_CASE picks one. */
 export function caseNumbers(every = 1): number[] {
   if (ONLY !== undefined) {

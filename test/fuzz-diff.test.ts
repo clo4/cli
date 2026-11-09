@@ -12,15 +12,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test, vi } from "vitest";
 
 import { usage } from "../src/subcommands.js";
 import { parse, readNext } from "../src/parse.js";
 import type { Action, Spec } from "../src/types.js";
-import { caseNumbers, caseSeed, report } from "./fuzz/cases.js";
+import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import { attempt, difference, nextDifference } from "./fuzz/snapshot.js";
 import type { AnyNextToken } from "./fuzz/snapshot.js";
+
+vi.setConfig({ testTimeout: TIMEOUT });
 
 const ref = process.env.FUZZ_AGAINST;
 const dir = ref ? mkdtempSync(join(tmpdir(), "clo4-cli-fuzz-")) : "";
@@ -48,6 +50,29 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   // Specs only get defaults when the other version has them, since an older
   // parser ignores them and would differ on every one.
   const theirsHasDefaults = typeof theirs.parse([], { name: "x" }).defaults === "function";
+  // The same goes for persistent subcommands, and for hidden subcommands that
+  // only match their exact name.
+  const pathLength = (input: string[], spec: Spec) => {
+    const outcome = attempt(theirs.parse, input, spec);
+    return outcome.ok ? outcome.result.path.length : 0;
+  };
+  const persistentSpec: Spec = {
+    name: "x",
+    subcommands: [
+      { name: "a", subcommands: [{ name: "b" }] },
+      { name: "p", isPersistent: true },
+    ],
+  };
+  const hiddenSpec: Spec = {
+    name: "x",
+    parserDirectives: { subcommandsMatchUniquePrefix: true },
+    subcommands: [{ name: "hidden", hidden: true }],
+  };
+  const shapes = {
+    defaults: theirsHasDefaults,
+    persistentSubcommands: pathLength(["a", "p"], persistentSpec) === 3,
+    hiddenSubcommands: pathLength(["h"], hiddenSpec) !== 2,
+  };
   const differs = (spec: Spec, input: string[], partial: string) => {
     const diff = difference(
       attempt(parse, input, spec),
@@ -67,7 +92,7 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   };
 
   for (const n of caseNumbers()) {
-    const gen = generator(caseSeed(n), { emptySeparators: true, defaults: theirsHasDefaults });
+    const gen = generator(caseSeed(n), { emptySeparators: true, ...shapes });
     const spec = gen.spec();
     const input = gen.input(spec);
     const partial = gen.input(spec)[0] ?? "";
