@@ -57,6 +57,8 @@ export interface NextToken {
   value: { option: Option; arg: Arg | undefined; required: boolean } | null;
   /** The argument the token fills if it isn't an option, subcommand or value. */
   arg: Arg | undefined;
+  /** The arguments of the current command so far. */
+  args: readonly string[];
   /**
    * The partial token, if the parser reads it as an option with a value
    * attached. `prefix` is everything before the value.
@@ -601,6 +603,7 @@ class Scanner implements TokenReader {
         required: count < min,
       },
       arg: open ? undefined : argAt(asArray(command.args), this.args.length),
+      args: [...this.args],
     };
   }
 

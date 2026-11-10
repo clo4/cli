@@ -14,7 +14,7 @@
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, print } from "./util.js";
-import { printUsageError } from "./help.js";
+import { followHelpNames, helpCommand, printUsageError } from "./help.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 
@@ -200,6 +200,9 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
     if (arg) {
       candidates.push(...(await argValues(arg, tokens, req.partial)));
     }
+    if (!next.value && next.path[next.path.length - 1].action === helpCommand.action) {
+      candidates.push(...helpNameCandidates(next));
+    }
   }
   for (const { command, names } of next.subcommands) {
     if (command.hidden) {
@@ -214,6 +217,36 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   }
   if (wantOptions) {
     candidates.push(...optionCandidates(next));
+  }
+  return candidates;
+}
+
+/**
+ * The names a help command can take next: the subcommands of the command its
+ * earlier names lead to. A copy of `helpCommand` is recognised by its action.
+ */
+function helpNameCandidates(next: NextToken): Candidate[] {
+  const target = followHelpNames(next.path, next.args);
+  const command = target.path[target.path.length - 1];
+  if (target.unknown || target.read < next.args.length || !command.subcommands) {
+    return [];
+  }
+  // The parser reads a name of one of these as that subcommand, and the
+  // subcommand loop offers it as one.
+  const taken = new Set(next.subcommands.flatMap(({ names }) => names));
+  const self = next.path[next.path.length - 1];
+  const candidates: Candidate[] = [];
+  for (const { command: subcommand, names } of target.scope.subcommands()) {
+    // Help reads an inherited copy of itself as the end of the names.
+    if (subcommand.hidden || (subcommand === self && !command.subcommands.includes(self))) {
+      continue;
+    }
+    const description = firstLine(subcommand.description);
+    for (const name of names) {
+      if (!taken.has(name)) {
+        candidates.push({ value: name, description });
+      }
+    }
   }
   return candidates;
 }
@@ -268,34 +301,30 @@ function renderRuntimeShim(spec: Spec, shell: Shell): string {
   const id = sanitize(spec.name);
   const name = spec.name;
   if (shell === "bash") {
-    return [
-      `_${id}_complete() {`,
-      `  local bin="\${COMP_WORDS[0]}"`,
-      `  command -v "$bin" >/dev/null 2>&1 || return`,
-      `  local cur="\${COMP_WORDS[COMP_CWORD]}"`,
-      `  local out`,
-      `  out="$("$bin" completion complete --gate-options -- "\${COMP_WORDS[@]:1:COMP_CWORD-1}" "$cur" 2>/dev/null | cut -f1)"`,
-      `  local IFS=$'\\n'`,
-      `  COMPREPLY=( $(compgen -W "$out" -- "$cur") )`,
-      `}`,
-      `complete -F _${id}_complete ${shQuote(name)}`,
-    ].join("\n");
+    return `_${id}_complete() {
+  local bin="\${COMP_WORDS[0]}"
+  command -v "$bin" >/dev/null 2>&1 || return
+  local cur="\${COMP_WORDS[COMP_CWORD]}"
+  local out
+  out="$(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --gate-options -- "\${COMP_WORDS[@]:1:COMP_CWORD-1}" "$cur" 2>/dev/null | cut -f1)"
+  local IFS=$'\\n'
+  COMPREPLY=( $(compgen -W "$out" -- "$cur") )
+}
+complete -F _${id}_complete ${shQuote(name)}`;
   }
   if (shell === "zsh") {
-    return [
-      `#compdef ${name}`,
-      `_${id}_complete() {`,
-      `  local bin="$words[1]"`,
-      `  command -v "$bin" >/dev/null 2>&1 || return`,
-      `  local -a lines`,
-      `  lines=( "\${(@f)$("$bin" completion complete -- "\${words[2,CURRENT-1]}" "\${words[CURRENT]}" 2>/dev/null)}" )`,
-      `  local -a disp`,
-      `  local line`,
-      `  for line in $lines; do disp+=( "\${line//$'\\t'/:}" ); done`,
-      `  _describe -t values ${shQuote(name)} disp`,
-      `}`,
-      `_${id}_complete "$@"`,
-    ].join("\n");
+    return `#compdef ${name}
+_${id}_complete() {
+  local bin="$words[1]"
+  command -v "$bin" >/dev/null 2>&1 || return
+  local -a lines
+  lines=( "\${(@f)$(SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete -- "\${words[2,CURRENT-1]}" "\${words[CURRENT]}" 2>/dev/null)}" )
+  local -a disp
+  local line
+  for line in $lines; do disp+=( "\${line//$'\\t'/:}" ); done
+  _describe -t values ${shQuote(name)} disp
+}
+_${id}_complete "$@"`;
   }
   if (shell === "powershell") {
     // PowerShell doesn't filter or quote a native command's candidates, so the
@@ -304,38 +333,43 @@ function renderRuntimeShim(spec: Spec, shell: Shell): string {
     // so an empty word is passed as --empty-word. The word is passed and
     // matched without the quote it was opened with.
     const stringAst = "[System.Management.Automation.Language.StringConstantExpressionAst]";
-    return [
-      `Register-ArgumentCompleter -Native -CommandName ${psQuote(name)} -ScriptBlock {`,
-      `  param($wordToComplete, $commandAst, $cursorPosition)`,
-      `  $elements = $commandAst.CommandElements`,
-      `  $first = $elements[0]`,
-      `  $bin = if ($first -is ${stringAst}) { $first.Value } else { $first.Extent.Text }`,
-      `  if (-not (Get-Command $bin -ErrorAction SilentlyContinue)) { return }`,
-      `  $partial = $wordToComplete`,
-      `  if ($partial.StartsWith("'")) { $partial = $partial.Substring(1).TrimEnd("'").Replace("''", "'") }`,
-      `  elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1).TrimEnd('"') }`,
-      `  $arguments = @('completion', 'complete', '--gate-options')`,
-      `  if ($partial -eq '') { $arguments += '--empty-word' }`,
-      `  $arguments += '--'`,
-      `  for ($i = 1; $i -lt $elements.Count; $i++) {`,
-      `    $element = $elements[$i]`,
-      `    if ($element.Extent.EndOffset -ge $cursorPosition) { break }`,
-      `    if ($element -is ${stringAst}) {`,
-      `      $arguments += $element.Value`,
-      `    } else {`,
-      `      $arguments += $element.Extent.Text`,
-      `    }`,
-      `  }`,
-      `  if ($partial -ne '') { $arguments += $partial }`,
-      `  & $bin @arguments 2>$null | ForEach-Object {`,
-      '    $value, $description = $_ -split "`t", 2',
-      `    if (-not $value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) { return }`,
-      "    $text = if ($value -match '[\\s''\"`$&|;,(){}<>@#]') { \"'$($value.Replace(\"'\", \"''\"))'\" } else { $value }",
-      `    if (-not $description) { $description = $value }`,
-      `    [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $description)`,
-      `  }`,
-      `}`,
-    ].join("\n");
+    return `Register-ArgumentCompleter -Native -CommandName ${psQuote(name)} -ScriptBlock {
+  param($wordToComplete, $commandAst, $cursorPosition)
+  $elements = $commandAst.CommandElements
+  $first = $elements[0]
+  $bin = if ($first -is ${stringAst}) { $first.Value } else { $first.Extent.Text }
+  if (-not (Get-Command $bin -ErrorAction SilentlyContinue)) { return }
+  $partial = $wordToComplete
+  if ($partial.StartsWith("'")) { $partial = $partial.Substring(1).TrimEnd("'").Replace("''", "'") }
+  elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1).TrimEnd('"') }
+  $arguments = @('completion', 'complete', '--gate-options')
+  if ($partial -eq '') { $arguments += '--empty-word' }
+  $arguments += '--'
+  for ($i = 1; $i -lt $elements.Count; $i++) {
+    $element = $elements[$i]
+    if ($element.Extent.EndOffset -ge $cursorPosition) { break }
+    if ($element -is ${stringAst}) {
+      $arguments += $element.Value
+    } else {
+      $arguments += $element.Extent.Text
+    }
+  }
+  if ($partial -ne '') { $arguments += $partial }
+  $previous = $env:SHELL_COMPLETION_GENERATOR
+  $env:SHELL_COMPLETION_GENERATOR = 'powershell'
+  try {
+    $lines = & $bin @arguments 2>$null
+  } finally {
+    $env:SHELL_COMPLETION_GENERATOR = $previous
+  }
+  $lines | ForEach-Object {
+    $value, $description = $_ -split "\`t", 2
+    if (-not $value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) { return }
+    $text = if ($value -match '[\\s''"\`$&|;,(){}<>@#]') { "'$($value.Replace("'", "''"))'" } else { $value }
+    if (-not $description) { $description = $value }
+    [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $description)
+  }
+}`;
   }
   if (shell === "nushell") {
     // Nushell has one completer for every external command, so the script
@@ -346,53 +380,51 @@ function renderRuntimeShim(spec: Spec, shell: Shell): string {
     // returns, so the script does both.
     const previous = `$__${id}_previous_completer`;
     const names = ["", ".exe", ".cmd", ".bat"].map((extension) => nuQuote(name + extension)).join(" ");
-    return [
-      `let __${id}_previous_completer = $env.config.completions.external.completer?`,
-      `$env.config.completions.external.completer = {|spans|`,
-      `  let words = $spans | each {|span|`,
-      `    let quote = $span | str substring 0..0`,
-      `    if $quote in ["'", '"', '\`'] { $span | str substring 1.. | str trim --right --char $quote } else { $span }`,
-      `  }`,
-      `  let command = $words.0`,
-      `  if ($command | path basename) not-in [${names}] {`,
-      `    return (if ${previous} != null { do ${previous} $spans })`,
-      `  }`,
-      `  if (which $command | is-empty) { return }`,
-      `  let args = $words | skip 1`,
-      `  let partial = $args | last | default ""`,
-      `  ^$command completion complete --gate-options -- ...$args`,
-      `    | complete`,
-      `    | get stdout`,
-      `    | lines`,
-      `    | each {|line|`,
-      `      let parts = $line | split row "\\t"`,
-      `      { value: $parts.0, description: ($parts | get 1? | default "") }`,
-      `    }`,
-      `    | where { $in.value | str starts-with --ignore-case $partial }`,
-      "    | update value {|candidate|",
-      "      let value = $candidate.value",
-      '      if ($value !~ "[\\\\s\'\\"`$|;#()\\\\[\\\\]{}]") {',
-      "        $value",
-      '      } else if ($value | str contains "\'") {',
-      "        $value | to json",
-      "      } else {",
-      "        $\"'($value)'\"",
-      "      }",
-      "    }",
-      `}`,
-    ].join("\n");
+    return `let __${id}_previous_completer = $env.config.completions.external.completer?
+$env.config.completions.external.completer = {|spans|
+  let words = $spans | each {|span|
+    let quote = $span | str substring 0..0
+    if $quote in ["'", '"', '\`'] { $span | str substring 1.. | str trim --right --char $quote } else { $span }
+  }
+  let command = $words.0
+  if ($command | path basename) not-in [${names}] {
+    return (if ${previous} != null { do ${previous} $spans })
+  }
+  if (which $command | is-empty) { return }
+  let args = $words | skip 1
+  let partial = $args | last | default ""
+  $env.SHELL_COMPLETION_GENERATOR = 'nushell'
+  ^$command completion complete --gate-options -- ...$args
+    | complete
+    | get stdout
+    | lines
+    | each {|line|
+      let parts = $line | split row "\\t"
+      { value: $parts.0, description: ($parts | get 1? | default "") }
+    }
+    | where { $in.value | str starts-with --ignore-case $partial }
+    | update value {|candidate|
+      let value = $candidate.value
+      if ($value !~ "[\\\\s'\\"\`$|;#()\\\\[\\\\]{}]") {
+        $value
+      } else if ($value | str contains "'") {
+        $value | to json
+      } else {
+        $"'($value)'"
+      }
+    }
+}`;
   }
   // fish
-  return [
-    `function __${id}_complete`,
-    `  set -l toks (commandline -opc)`,
-    `  set -l cur (commandline -ct)`,
-    `  set -l bin $toks[1]`,
-    `  command -q -- $bin; or test -x "$bin"; or return`,
-    `  $bin completion complete --gate-options -- $toks[2..-1] $cur 2>/dev/null`,
-    `end`,
-    `complete -c ${fishQuote(name)} -f -a '(__${id}_complete)'`,
-  ].join("\n");
+  return `function __${id}_complete
+  set -l toks (commandline -opc)
+  set -l cur (commandline -ct)
+  set -l bin $toks[1]
+  command -q -- $bin; or test -x "$bin"; or return
+  set -lx SHELL_COMPLETION_GENERATOR fish
+  $bin completion complete --gate-options -- $toks[2..-1] $cur 2>/dev/null
+end
+complete -c ${fishQuote(name)} -f -a '(__${id}_complete)'`;
 }
 
 // }}}

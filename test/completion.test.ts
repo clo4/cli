@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { completeRuntime, completion, getCompletion } from "../src/completion.js";
+import type { Shell } from "../src/completion.js";
+import { helpCommand } from "../src/help.js";
 import { run } from "../src/index.js";
 import { parse } from "../src/parse.js";
-import type { Spec } from "../src/types.js";
+import type { Spec, Subcommand } from "../src/types.js";
 import { captureConsole, expectIncludes, expectNotIncludes } from "./helpers.js";
 
 const fixture: Spec = {
@@ -800,4 +802,158 @@ test("runtime: gateOptions offers dashed suggestions after '--', where they're a
   // Once options must stop, too.
   const stopped: Spec = { ...spec, parserDirectives: { optionsMustPrecedeArguments: true } };
   expect(values(await resolve(stopped, ["a"], "-", true))).toEqual(["-1", "-2", "3"]);
+});
+
+// ---------------------------------------------------------------------------
+// Completing the names after `help`
+// ---------------------------------------------------------------------------
+
+const helpFixture = (help: Subcommand): Spec => ({
+  name: "demo",
+  options: [{ name: ["-h", "--help"], isPersistent: true }],
+  subcommands: [
+    help,
+    {
+      name: ["build", "b"],
+      description: "Build inputs",
+      args: { name: "inputs", isVariadic: true },
+      options: [{ name: "--out", args: { name: "dir" } }],
+    },
+    {
+      name: "remote",
+      description: "Manage remotes",
+      subcommands: [{ name: ["remove", "rm"] }, { name: "ghost", hidden: true }],
+    },
+    { name: "secret", hidden: true },
+  ],
+});
+
+test("runtime: help offers the subcommands of its parent", async () => {
+  const v = values(await resolve(helpFixture(helpCommand), ["help"], ""));
+  expect(v).toEqual(expect.arrayContaining(["help", "build", "b", "remote", "-h", "--help"]));
+  expect(v).not.toContain("secret");
+});
+
+test("runtime: help offers the subcommands of the command its names lead to", async () => {
+  const spec = helpFixture(helpCommand);
+  const remote = await resolve(spec, ["help", "remote"], "");
+  expect(values(remote)).toEqual(expect.arrayContaining(["remove", "rm"]));
+  expect(values(remote)).not.toContain("ghost");
+  expect(values(remote)).not.toContain("build");
+  expect(remote.find((c) => c.value === "remove")).toBeDefined();
+  expect(values(await resolve(spec, ["help", "build"], ""))).toEqual(["-h", "--help"]);
+  expect(values(await resolve(spec, ["help", "remote", "remove"], ""))).toEqual(["-h", "--help"]);
+  expect(values(await resolve(spec, ["help", "nope"], ""))).toEqual(["-h", "--help"]);
+});
+
+test("runtime: help's subcommand names carry their descriptions", async () => {
+  const candidates = await resolve(helpFixture(helpCommand), ["help"], "b");
+  expect(candidates).toContainEqual({ value: "build", description: "Build inputs" });
+});
+
+test("runtime: a persistent help command offers the subcommands of the command it's used in", async () => {
+  const spec = helpFixture({ ...helpCommand, isPersistent: true });
+  const v = values(await resolve(spec, ["remote", "help"], ""));
+  expect(v).toEqual(expect.arrayContaining(["remove", "rm", "-h", "--help"]));
+  expect(v).not.toContain("build");
+  // Help reads its own name here as the end of the names, so it isn't offered.
+  expect(values(await resolve(spec, ["help", "remote"], ""))).not.toContain("help");
+});
+
+test("runtime: gateOptions offers help's subcommand names until the word starts with a dash", async () => {
+  const spec = helpFixture(helpCommand);
+  const v = values(await resolve(spec, ["help"], "", true));
+  expect(v).toContain("build");
+  expect(v).not.toContain("--help");
+  expect(values(await resolve(spec, ["help"], "--h", true))).toEqual(["-h", "--help"]);
+});
+
+test("runtime: a help command with a copied action still completes names", async () => {
+  const spec = helpFixture({ ...helpCommand, description: "Show help" });
+  expect(values(await resolve(spec, ["help"], ""))).toContain("remote");
+});
+
+// ---------------------------------------------------------------------------
+// The environment variable the shims set
+// ---------------------------------------------------------------------------
+
+test("every shim sets SHELL_COMPLETION_GENERATOR to the shell's name for the CLI", () => {
+  expectIncludes(
+    getCompletion(fixture, "bash"),
+    `SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete`,
+  );
+  expectIncludes(getCompletion(fixture, "zsh"), `SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete`);
+  expectIncludes(getCompletion(fixture, "fish"), "set -lx SHELL_COMPLETION_GENERATOR fish");
+  expectIncludes(getCompletion(fixture, "powershell"), "$env:SHELL_COMPLETION_GENERATOR = 'powershell'");
+  expectIncludes(getCompletion(fixture, "nushell"), "$env.SHELL_COMPLETION_GENERATOR = 'nushell'");
+});
+
+/** Whether `command` runs on this machine. */
+function hasShell(command: string): boolean {
+  try {
+    execFileSync(command, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Run `args` with `shell`, after writing the shim to `$DIR/shim` and a fake
+ * `forge` to `$DIR` that offers SHELL_COMPLETION_GENERATOR's value as its only
+ * candidate. The shell starts without the variable set.
+ */
+function runWithShim(shell: Shell & ("bash" | "fish" | "nushell"), args: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "clo4-cli-env-"));
+  try {
+    writeFileSync(join(dir, "forge"), `#!/bin/sh\nprintf '%s\\n' "\${SHELL_COMPLETION_GENERATOR:-unset}"\n`, {
+      mode: 0o755,
+    });
+    writeFileSync(join(dir, "shim"), getCompletion(fixture, shell));
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+    delete env.SHELL_COMPLETION_GENERATOR;
+    const command = shell === "nushell" ? "nu" : shell;
+    return execFileSync(
+      command,
+      args.map((arg) => arg.replaceAll("$DIR", dir)),
+      { env, encoding: "utf8" },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Each of these prints the candidates, then the variable's value after completing.
+test.skipIf(!hasShell("bash") || process.platform === "win32")("the bash shim sets the variable", () => {
+  const script = [
+    "source $DIR/shim",
+    "COMP_WORDS=(forge ''); COMP_CWORD=1",
+    "_forge_complete",
+    'echo "${COMPREPLY[*]}"',
+    'echo "${SHELL_COMPLETION_GENERATOR:-unset}"',
+  ].join("\n");
+  expect(runWithShim("bash", ["--norc", "-c", script])).toBe("bash\nunset\n");
+});
+
+test.skipIf(!hasShell("fish") || process.platform === "win32")("the fish shim sets the variable", () => {
+  const script = [
+    "source $DIR/shim",
+    // `commandline` only works in an interactive shell, so this asks fish to
+    // complete the line instead of calling the function.
+    "complete -C 'forge '",
+    "set -q SHELL_COMPLETION_GENERATOR; and echo $SHELL_COMPLETION_GENERATOR; or echo unset",
+  ].join("\n");
+  expect(runWithShim("fish", ["--no-config", "-c", script])).toBe("fish\nunset\n");
+});
+
+test.skipIf(!hasShell("nu") || process.platform === "win32")("the Nushell shim sets the variable", () => {
+  const script = [
+    "source $DIR/shim",
+    "let complete = $env.config.completions.external.completer",
+    "do $complete ['forge' ''] | get value | append ($env.SHELL_COMPLETION_GENERATOR? | default unset) | to json -r",
+  ].join("\n");
+  expect(JSON.parse(runWithShim("nushell", ["--no-config-file", "-c", script]))).toEqual([
+    "nushell",
+    "unset",
+  ]);
 });

@@ -608,7 +608,7 @@ options: [CLI.help],
 subcommands: [CLI.helpCommand, CLI.completion, /* your commands */],
 ```
 
-Running `demo --help` displays help for the top-level command. Both `demo build --help` and `demo help build` display help for the `build` subcommand. For nested subcommands, include the full command path: `demo help remote add`.
+Running `demo --help` displays help for the top-level command. Both `demo build --help` and `demo help build` display help for the `build` subcommand. For nested subcommands, include the full command path: `demo help remote add`. Shell completion offers subcommand names after `help`, so `demo help remote <Tab>` lists the subcommands of `remote`.
 
 The built-ins are plain objects. To customise one, copy it with object spread: `{ ...CLI.help, description: "Show help" }`. Setting `isPersistent: true` on `CLI.helpCommand` makes it available within descendant commands, so `demo build help` displays help for `build`.
 
@@ -657,6 +657,14 @@ options: [
 Static suggestions and generator results can be strings or `{ name, description }` objects. A generator receives the words after the program name, ending with the partial value being completed. For `--target=prod`, its last token is `"prod"`. An argument can have multiple generators by supplying an array.
 
 Each completion request starts a new CLI process. The completion resolver follows the parser's rules for option scope, conflicts and repeat limits. Put application initialisation inside actions to avoid running it on completion requests.
+
+The completion scripts set `SHELL_COMPLETION_GENERATOR` to the shell's name, such as `bash` or `nushell`, while the CLI answers a completion request. Code that runs before `CLI.run` can check it to skip work that completion doesn't need:
+
+```ts
+if (!process.env.SHELL_COMPLETION_GENERATOR) {
+  await loadPlugins();
+}
+```
 
 <details>
 <summary>Install shell completion</summary>
