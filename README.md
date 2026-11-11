@@ -753,9 +753,9 @@ Three other options disable individual checks:
 - `allowShadowingPersistentOptions`: a subcommand can replace an inherited option.
 - `allowMatchingSubcommandPrefixAndArgs`: a command can combine positional arguments with subcommands matched by prefix.
 
-All four default to `false`. `namingStyle: "function"` uses assertion names in step-based test output.
+All four default to `false`. `namingStyle: "function"` uses check names such as `assertNamesReadBack` in step-based test output.
 
-The testing entry point also exports `test` as an alias of `testSpec`, the individual assertions, and their [types and options](src/testing.ts).
+The testing entry point also exports `test` as an alias of `testSpec`, and the [types of its options](src/testing.ts).
 
 <hr>
 </details>

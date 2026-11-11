@@ -1,6 +1,48 @@
 import { expect } from "vitest";
 
+import { testSpec } from "../src/testing.js";
+import type { Subcommand } from "../src/types.js";
 import { output } from "../src/util.js";
+
+/**
+ * Runs the spec checks with these function-style step names on `spec`, through
+ * `testSpec`, and skips the rest. Resolves with the first error one of them
+ * throws, or undefined when they all pass. Throws when `testSpec` has no step
+ * with one of the names, so a typo can't make a check look like it passed.
+ */
+export async function specCheckError(names: readonly string[], spec: Subcommand): Promise<unknown> {
+  const steps: string[] = [];
+  const errors: unknown[] = [];
+  await testSpec(spec, { namingStyle: "function" })({
+    async step(name, fn) {
+      steps.push(name);
+      if (!names.includes(name)) {
+        return;
+      }
+      try {
+        await fn();
+      } catch (error) {
+        errors.push(error);
+      }
+    },
+  });
+  const unknown = names.filter((name) => !steps.includes(name));
+  if (unknown.length > 0) {
+    throw new Error(`testSpec has no spec check named ${unknown.join(", ")}`);
+  }
+  return errors[0];
+}
+
+/**
+ * Runs the spec check with this function-style step name on `spec`, through
+ * `testSpec`, and skips the rest. Rejects with the error the check throws.
+ */
+export async function runSpecCheck(name: string, spec: Subcommand): Promise<void> {
+  const error = await specCheckError([name], spec);
+  if (error !== undefined) {
+    throw error;
+  }
+}
 
 export function map<V>(record: Record<string, V>): Map<string, V> {
   return new Map(Object.entries(record));

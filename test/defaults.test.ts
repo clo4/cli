@@ -3,9 +3,8 @@ import { expect, test } from "vitest";
 import { getHelp } from "../src/help.js";
 import { run } from "../src/index.js";
 import { parse } from "../src/parse.js";
-import { assertDefaultsCanBeUsed, assertDescriptionLineLengthUnder69 } from "../src/testing.js";
 import type { ActionInit, Spec } from "../src/types.js";
-import { captureConsole, expectIncludes, map } from "./helpers.js";
+import { captureConsole, expectIncludes, map, runSpecCheck } from "./helpers.js";
 
 async function actionInit(spec: Spec, argv: string[]): Promise<ActionInit> {
   let init: ActionInit | undefined;
@@ -244,25 +243,28 @@ test("help leaves out the Arguments section when there's nothing to add to usage
   expect(getHelp([grouping])).not.toContain("Arguments:");
 });
 
-test("assertDescriptionLineLengthUnder69 checks positional argument descriptions", () => {
+test("assertDescriptionLineLengthUnder69 checks positional argument descriptions", async () => {
   const spec = (description: string): Spec => ({ name: "serve", args: { name: "dir", description } });
-  assertDescriptionLineLengthUnder69(spec("x".repeat(68)));
-  expect(() => assertDescriptionLineLengthUnder69(spec("x".repeat(69)))).toThrow(
+  await runSpecCheck("assertDescriptionLineLengthUnder69", spec("x".repeat(68)));
+  await expect(runSpecCheck("assertDescriptionLineLengthUnder69", spec("x".repeat(69)))).rejects.toThrow(
     "argument dir has a description line over 68 characters",
   );
 });
 
-test("defaults: assertDefaultsCanBeUsed", () => {
-  assertDefaultsCanBeUsed({ name: "test", args: [{}, { isOptional: true, default: "x" }] });
-  assertDefaultsCanBeUsed({
+test("defaults: assertDefaultsCanBeUsed", async () => {
+  await runSpecCheck("assertDefaultsCanBeUsed", {
+    name: "test",
+    args: [{}, { isOptional: true, default: "x" }],
+  });
+  await runSpecCheck("assertDefaultsCanBeUsed", {
     name: "test",
     args: [{ isOptional: true, default: "x" }, { isOptional: true }],
   });
-  assertDefaultsCanBeUsed({
+  await runSpecCheck("assertDefaultsCanBeUsed", {
     name: "test",
     args: [{ isOptional: true }, { isOptional: true, default: "x" }],
   });
-  assertDefaultsCanBeUsed({
+  await runSpecCheck("assertDefaultsCanBeUsed", {
     name: "test",
     options: [
       { name: "--o", args: [{ default: "x" }, { default: "y" }, {}] },
@@ -270,19 +272,19 @@ test("defaults: assertDefaultsCanBeUsed", () => {
       { name: "--q", isRequired: true, args: { isOptional: true, default: "x" } },
     ],
   });
-  expect(() => assertDefaultsCanBeUsed({ name: "test", args: { name: "a", default: "x" } })).toThrow(
-    "argument a has a default, but it's required",
-  );
-  expect(() =>
-    assertDefaultsCanBeUsed({
+  await expect(
+    runSpecCheck("assertDefaultsCanBeUsed", { name: "test", args: { name: "a", default: "x" } }),
+  ).rejects.toThrow("argument a has a default, but it's required");
+  await expect(
+    runSpecCheck("assertDefaultsCanBeUsed", {
       name: "test",
       options: [{ name: "--o", args: [{}, { name: "b", default: "x" }] }],
     }),
-  ).toThrow("the argument at index 0 has none");
-  expect(() =>
-    assertDefaultsCanBeUsed({
+  ).rejects.toThrow("the argument at index 0 has none");
+  await expect(
+    runSpecCheck("assertDefaultsCanBeUsed", {
       name: "test",
       options: [{ name: "--o", isRequired: true, args: { default: "x" } }],
     }),
-  ).toThrow("has a default, but the option is required");
+  ).rejects.toThrow("has a default, but the option is required");
 });

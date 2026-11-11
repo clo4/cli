@@ -4,37 +4,38 @@ import { help, helpCommand } from "../src/help.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import { parse } from "../src/parse.js";
 import * as Testing from "../src/testing.js";
+import { runSpecCheck } from "./helpers.js";
 
 test("testing: run testSpec on helpCommand", async () => {
   await expect(Testing.testSpec(helpCommand)()).resolves.toBeUndefined();
 });
 
-test("testing: assertOptionsHaveLocallyUniqueNames", () => {
-  Testing.assertOptionsHaveLocallyUniqueNames({ name: "test" });
-  Testing.assertOptionsHaveLocallyUniqueNames({
+test("testing: assertOptionsHaveLocallyUniqueNames", async () => {
+  await runSpecCheck("assertOptionsHaveLocallyUniqueNames", { name: "test" });
+  await runSpecCheck("assertOptionsHaveLocallyUniqueNames", {
     name: "test",
     options: [{ name: "one" }],
   });
-  Testing.assertOptionsHaveLocallyUniqueNames({
+  await runSpecCheck("assertOptionsHaveLocallyUniqueNames", {
     name: "test",
     options: [{ name: "one" }, { name: "two" }],
   });
-  expect(() =>
-    Testing.assertOptionsHaveLocallyUniqueNames({
+  await expect(
+    runSpecCheck("assertOptionsHaveLocallyUniqueNames", {
       name: "test",
       options: [{ name: "one" }, { name: "one" }],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionsHaveLocallyUniqueNames({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionsHaveLocallyUniqueNames", {
       name: "test",
       options: [{ name: ["one", "one"] }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertOptionsHaveDifferentNamesFromParents", () => {
-  const check = Testing.assertOptionsHaveDifferentNamesFromParents;
+test("testing: assertOptionsHaveDifferentNamesFromParents", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertOptionsHaveDifferentNamesFromParents", spec);
   const withChild = (parent: Option, child: Option): Spec => ({
     name: "test",
     options: [parent],
@@ -42,47 +43,51 @@ test("testing: assertOptionsHaveDifferentNamesFromParents", () => {
   });
 
   // Different options with exactly the same names
-  expect(() => check(withChild({ name: "-C", args: {} }, { name: "-C" }))).toThrow();
-  expect(() => check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["--cd", "-C"] }))).toThrow();
-  expect(() =>
+  await expect(check(withChild({ name: "-C", args: {} }, { name: "-C" }))).rejects.toThrow();
+  await expect(
+    check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["--cd", "-C"] })),
+  ).rejects.toThrow();
+  await expect(
     check({
       name: "test",
       options: [{ name: "-C", args: {} }],
       subcommands: [{ name: "mid", subcommands: [{ name: "leaf", options: [{ name: "-C" }] }] }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 
   // Every name of the parent's option is the child's too
-  expect(() => check(withChild({ name: "-C", args: { name: "dir" } }, { name: ["-C", "-D"] }))).toThrow(
+  await expect(
+    check(withChild({ name: "-C", args: { name: "dir" } }, { name: ["-C", "-D"] })),
+  ).rejects.toThrow(
     "Option `test sub -C|-D` (index 0) has every name of a different option, `test -C`, so the parent's value can't be read. Add a name that only the parent's option uses.",
   );
   // Every name of the child's option is the parent's too
-  expect(() => check(withChild({ name: ["-C", "--cd"], args: {} }, { name: "-C" }))).toThrow(
+  await expect(check(withChild({ name: ["-C", "--cd"], args: {} }, { name: "-C" }))).rejects.toThrow(
     "Option `test sub -C` (index 0) only has names of a different option, `test -C|--cd`, so it can't tell whether it was used. Add a name that only the subcommand's option uses.",
   );
   // Same structure doesn't make options with different names one option
-  expect(() => check(withChild({ name: "--verbose" }, { name: ["-v", "--verbose"] }))).toThrow();
+  await expect(check(withChild({ name: "--verbose" }, { name: ["-v", "--verbose"] }))).rejects.toThrow();
 
   // Each option has a name of its own
-  check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["-C", "--moved"] }));
-  check(withChild({ name: "-a" }, { name: "-b" }));
+  await check(withChild({ name: ["-C", "--cd"], args: {} }, { name: ["-C", "--moved"] }));
+  await check(withChild({ name: "-a" }, { name: "-b" }));
 
   // Identical options
   const constant: Option = { name: ["-v", "--verbose"], description: "Print more." };
-  check(withChild(constant, constant));
-  check(withChild(constant, { ...constant }));
-  check(withChild(constant, { ...constant, name: ["--verbose", "-v"] }));
-  check(withChild(help, help));
-  check(withChild({ name: "--help", action() {} }, { name: "--help", action() {} }));
-  check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tag" } }));
+  await check(withChild(constant, constant));
+  await check(withChild(constant, { ...constant }));
+  await check(withChild(constant, { ...constant, name: ["--verbose", "-v"] }));
+  await check(withChild(help, help));
+  await check(withChild({ name: "--help", action() {} }, { name: "--help", action() {} }));
+  await check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tag" } }));
 
   // Persistent parents belong to assertOptionsDoNotShadowPersistentOptions
-  check(withChild({ name: "-C", isPersistent: true, args: {} }, { name: "-C" }));
+  await check(withChild({ name: "-C", isPersistent: true, args: {} }, { name: "-C" }));
 
   // Same shape except for a property that changes the meaning
-  expect(() =>
+  await expect(
     check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tags" } })),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
 test("testing: testSpec rejects a clash with a parent option", async () => {
@@ -98,33 +103,33 @@ test("testing: testSpec rejects a clash with a parent option", async () => {
   await expect(Testing.testSpec(spec)()).rejects.toThrow(/same names/);
 });
 
-test("testing: assertSubcommandsHaveLocallyUniqueNames", () => {
-  Testing.assertSubcommandsHaveLocallyUniqueNames({ name: "test" });
-  Testing.assertSubcommandsHaveLocallyUniqueNames({
+test("testing: assertSubcommandsHaveLocallyUniqueNames", async () => {
+  await runSpecCheck("assertSubcommandsHaveLocallyUniqueNames", { name: "test" });
+  await runSpecCheck("assertSubcommandsHaveLocallyUniqueNames", {
     name: "test",
     subcommands: [{ name: "one" }, { name: "two" }],
   });
-  expect(() =>
-    Testing.assertSubcommandsHaveLocallyUniqueNames({
+  await expect(
+    runSpecCheck("assertSubcommandsHaveLocallyUniqueNames", {
       name: "test",
       subcommands: [{ name: "one" }, { name: "one" }],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertSubcommandsHaveLocallyUniqueNames({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertSubcommandsHaveLocallyUniqueNames", {
       name: "test",
       subcommands: [{ name: ["one", "one"] }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertOptionsDoNotShadowPersistentOptions", () => {
-  Testing.assertOptionsDoNotShadowPersistentOptions({ name: "test" });
-  Testing.assertOptionsDoNotShadowPersistentOptions({
+test("testing: assertOptionsDoNotShadowPersistentOptions", async () => {
+  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", { name: "test" });
+  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
     name: "test",
     options: [{ name: "one", isPersistent: true }, { name: "two" }],
   });
-  Testing.assertOptionsDoNotShadowPersistentOptions({
+  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
     name: "test",
     options: [{ name: "one", isPersistent: true }],
     subcommands: [
@@ -134,12 +139,12 @@ test("testing: assertOptionsDoNotShadowPersistentOptions", () => {
       },
     ],
   });
-  Testing.assertOptionsDoNotShadowPersistentOptions({
+  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
     name: "test",
     options: [{ name: "one", isPersistent: true }, { name: "one" }],
   });
-  expect(() =>
-    Testing.assertOptionsDoNotShadowPersistentOptions({
+  await expect(
+    runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
       name: "test",
       options: [{ name: "one", isPersistent: true }],
       subcommands: [
@@ -149,16 +154,16 @@ test("testing: assertOptionsDoNotShadowPersistentOptions", () => {
         },
       ],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertRepeatableOptionsArePositiveIntegers", () => {
-  Testing.assertRepeatableOptionsArePositiveIntegers({ name: "test" });
-  Testing.assertRepeatableOptionsArePositiveIntegers({
+test("testing: assertRepeatableOptionsArePositiveIntegers", async () => {
+  await runSpecCheck("assertRepeatableOptionsArePositiveIntegers", { name: "test" });
+  await runSpecCheck("assertRepeatableOptionsArePositiveIntegers", {
     name: "test",
     options: [{ name: "one" }, { name: "two", isRepeatable: 2 }, { name: "three", isRepeatable: 2 }],
   });
-  Testing.assertRepeatableOptionsArePositiveIntegers({
+  await runSpecCheck("assertRepeatableOptionsArePositiveIntegers", {
     name: "test",
     options: [{ name: "one", isRepeatable: true }],
     subcommands: [
@@ -169,18 +174,18 @@ test("testing: assertRepeatableOptionsArePositiveIntegers", () => {
     ],
   });
   for (const isRepeatable of [0, 1, -1, NaN, Infinity, 2.1]) {
-    expect(() =>
-      Testing.assertRepeatableOptionsArePositiveIntegers({
+    await expect(
+      runSpecCheck("assertRepeatableOptionsArePositiveIntegers", {
         name: "test",
         options: [{ name: "one", isRepeatable }],
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   }
 });
 
-test("testing: assertRequiredArgumentsDoNotFollowOptionalArguments", () => {
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({ name: "test" });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+test("testing: assertRequiredArgumentsDoNotFollowOptionalArguments", async () => {
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", { name: "test" });
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     options: [
       { name: "one" },
@@ -191,43 +196,43 @@ test("testing: assertRequiredArgumentsDoNotFollowOptionalArguments", () => {
       { name: "four", args: [{ isOptional: true }, { isOptional: true }] },
     ],
   });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     args: {},
   });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     args: { isOptional: true },
   });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     args: [{}, {}],
   });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     args: [{}, { isOptional: true }],
   });
-  Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
     name: "test",
     args: [{ isOptional: true }, { isOptional: true }],
   });
-  expect(() =>
-    Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  await expect(
+    runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
       name: "test",
       args: [{ isOptional: true }, {}],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertRequiredArgumentsDoNotFollowOptionalArguments({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
       name: "test",
       options: [{ name: "one", args: [{ isOptional: true }, {}] }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertOptionArgSeparatorsHaveCharacters", () => {
-  Testing.assertOptionArgSeparatorsHaveCharacters({ name: "test" });
-  Testing.assertOptionArgSeparatorsHaveCharacters({
+test("testing: assertOptionArgSeparatorsHaveCharacters", async () => {
+  await runSpecCheck("assertOptionArgSeparatorsHaveCharacters", { name: "test" });
+  await runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
     name: "test",
     parserDirectives: { optionArgSeparators: ":" },
     subcommands: [
@@ -241,20 +246,20 @@ test("testing: assertOptionArgSeparatorsHaveCharacters", () => {
       },
     ],
   });
-  expect(() =>
-    Testing.assertOptionArgSeparatorsHaveCharacters({
+  await expect(
+    runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
       name: "test",
       parserDirectives: { optionArgSeparators: "" },
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionArgSeparatorsHaveCharacters({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
       name: "test",
       parserDirectives: { optionArgSeparators: [":", ""] },
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionArgSeparatorsHaveCharacters({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
       name: "test",
       subcommands: [
         {
@@ -263,9 +268,9 @@ test("testing: assertOptionArgSeparatorsHaveCharacters", () => {
         },
       ],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionArgSeparatorsHaveCharacters({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
       name: "test",
       subcommands: [
         {
@@ -274,19 +279,19 @@ test("testing: assertOptionArgSeparatorsHaveCharacters", () => {
         },
       ],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertPlusMinusOptionsTakeOneArg", () => {
-  Testing.assertPlusMinusOptionsTakeOneArg({ name: "test" });
-  Testing.assertPlusMinusOptionsTakeOneArg({
+test("testing: assertNamesReadBack checks options named + or -", async () => {
+  await runSpecCheck("assertNamesReadBack", { name: "test" });
+  await runSpecCheck("assertNamesReadBack", {
     name: "test",
     options: [
       { name: "+", args: {} },
       { name: "-", args: {} },
     ],
   });
-  Testing.assertPlusMinusOptionsTakeOneArg({
+  await runSpecCheck("assertNamesReadBack", {
     name: "test",
     parserDirectives: { flagsArePosixNoncompliant: true },
     options: [{ name: "+" }, { name: "-" }],
@@ -298,18 +303,18 @@ test("testing: assertPlusMinusOptionsTakeOneArg", () => {
     { name: "-", args: [{}, { isOptional: true }] },
     { name: "-", args: { isVariadic: true } },
   ] satisfies Option[]) {
-    expect(() =>
-      Testing.assertPlusMinusOptionsTakeOneArg({
+    await expect(
+      runSpecCheck("assertNamesReadBack", {
         name: "test",
         options: [option],
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   }
 });
 
-test("testing: assertNamesHaveNoExtraWhitespace", () => {
-  Testing.assertNamesHaveNoExtraWhitespace({ name: "test" });
-  Testing.assertNamesHaveNoExtraWhitespace({
+test("testing: assertNamesHaveNoExtraWhitespace", async () => {
+  await runSpecCheck("assertNamesHaveNoExtraWhitespace", { name: "test" });
+  await runSpecCheck("assertNamesHaveNoExtraWhitespace", {
     name: "test",
     options: [{ name: "--option", args: { name: "arg" } }],
     args: { name: "no space" },
@@ -332,16 +337,16 @@ test("testing: assertNamesHaveNoExtraWhitespace", () => {
       subcommands: [{ name: "example", options: [{ name: " -o" }] }],
     },
   ] satisfies Spec[]) {
-    expect(() => Testing.assertNamesHaveNoExtraWhitespace(spec)).toThrow();
+    await expect(runSpecCheck("assertNamesHaveNoExtraWhitespace", spec)).rejects.toThrow();
   }
 });
 
-test("testing: assertEverythingHasDescription", () => {
-  Testing.assertEverythingHasDescription({
+test("testing: assertEverythingHasDescription", async () => {
+  await runSpecCheck("assertEverythingHasDescription", {
     name: "test",
     description: "test",
   });
-  Testing.assertEverythingHasDescription({
+  await runSpecCheck("assertEverythingHasDescription", {
     name: "test",
     description: "test",
     options: [{ name: "--option", description: "test", args: { name: "arg" } }],
@@ -355,19 +360,19 @@ test("testing: assertEverythingHasDescription", () => {
       },
     ],
   });
-  expect(() => Testing.assertEverythingHasDescription({ name: "test" })).toThrow();
-  expect(() =>
-    Testing.assertEverythingHasDescription({
+  await expect(runSpecCheck("assertEverythingHasDescription", { name: "test" })).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertEverythingHasDescription", {
       name: "test",
       description: "test",
       options: [{ name: "test" }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertDescriptionLineLengthUnder69", () => {
-  Testing.assertDescriptionLineLengthUnder69({ name: "test" });
-  Testing.assertDescriptionLineLengthUnder69({
+test("testing: assertDescriptionLineLengthUnder69", async () => {
+  await runSpecCheck("assertDescriptionLineLengthUnder69", { name: "test" });
+  await runSpecCheck("assertDescriptionLineLengthUnder69", {
     name: "test",
     description: "test",
     options: [{ name: "--option", description: "test", args: { name: "arg" } }],
@@ -381,38 +386,38 @@ test("testing: assertDescriptionLineLengthUnder69", () => {
       },
     ],
   });
-  Testing.assertDescriptionLineLengthUnder69({
+  await runSpecCheck("assertDescriptionLineLengthUnder69", {
     name: "test",
     description: "a".repeat(68),
   });
-  expect(() =>
-    Testing.assertDescriptionLineLengthUnder69({
+  await expect(
+    runSpecCheck("assertDescriptionLineLengthUnder69", {
       name: "test",
       description: "a".repeat(69),
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertDescriptionLineLengthUnder69({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertDescriptionLineLengthUnder69", {
       name: "test",
       options: [{ name: "test", description: "a".repeat(69) }],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertDescriptionLineLengthUnder69({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertDescriptionLineLengthUnder69", {
       name: "test",
       subcommands: [{ name: "test", description: "a".repeat(69) }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertRequiresSeparatorTakesOneArg", () => {
-  Testing.assertRequiresSeparatorTakesOneArg({ name: "test" });
-  // It only checks options that require a separator.
-  Testing.assertRequiresSeparatorTakesOneArg({
+test("testing: assertNamesReadBack checks options that require a separator", async () => {
+  await runSpecCheck("assertNamesReadBack", { name: "test" });
+  // Without a required separator, an option can take several values.
+  await runSpecCheck("assertNamesReadBack", {
     name: "test",
-    options: [{ name: "option" }, { name: "--o", args: {} }, { name: "--o2", args: [{}, {}] }],
+    options: [{ name: "--option" }, { name: "--o", args: {} }, { name: "--o2", args: [{}, {}] }],
   });
-  Testing.assertRequiresSeparatorTakesOneArg({
+  await runSpecCheck("assertNamesReadBack", {
     name: "test",
     options: [
       { name: "--one", requiresSeparator: true, args: {} },
@@ -432,27 +437,27 @@ test("testing: assertRequiresSeparatorTakesOneArg", () => {
     },
   ];
   for (const option of options) {
-    expect(() =>
-      Testing.assertRequiresSeparatorTakesOneArg({
+    await expect(
+      runSpecCheck("assertNamesReadBack", {
         name: "test",
         options: [option],
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   }
 });
 
-test("testing: assertCommonOptionsArePersistent", () => {
-  Testing.assertCommonOptionsArePersistent({ name: "test" });
-  Testing.assertCommonOptionsArePersistent({
+test("testing: assertCommonOptionsArePersistent", async () => {
+  await runSpecCheck("assertCommonOptionsArePersistent", { name: "test" });
+  await runSpecCheck("assertCommonOptionsArePersistent", {
     name: "test",
     options: [{ name: "option" }],
   });
-  Testing.assertCommonOptionsArePersistent({
+  await runSpecCheck("assertCommonOptionsArePersistent", {
     name: "test",
     options: [{ name: "a" }],
     subcommands: [{ name: "subcommand", options: [{ name: "b" }] }],
   });
-  Testing.assertCommonOptionsArePersistent({
+  await runSpecCheck("assertCommonOptionsArePersistent", {
     name: "test",
     options: [{ name: "a" }],
     subcommands: [
@@ -462,12 +467,12 @@ test("testing: assertCommonOptionsArePersistent", () => {
       },
     ],
   });
-  Testing.assertCommonOptionsArePersistent({
+  await runSpecCheck("assertCommonOptionsArePersistent", {
     name: "test",
     options: [{ name: "a", isPersistent: true }],
     subcommands: [{ name: "subcommand" }],
   });
-  Testing.assertCommonOptionsArePersistent({
+  await runSpecCheck("assertCommonOptionsArePersistent", {
     name: "test",
     options: [{ name: "a" }],
     subcommands: [
@@ -478,8 +483,8 @@ test("testing: assertCommonOptionsArePersistent", () => {
       },
     ],
   });
-  expect(() =>
-    Testing.assertCommonOptionsArePersistent({
+  await expect(
+    runSpecCheck("assertCommonOptionsArePersistent", {
       name: "test",
       options: [{ name: "a" }],
       subcommands: [
@@ -487,10 +492,10 @@ test("testing: assertCommonOptionsArePersistent", () => {
         { name: "another", options: [{ name: "a" }] },
       ],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
   // Options with the same names in another order are the same option.
-  expect(() =>
-    Testing.assertCommonOptionsArePersistent({
+  await expect(
+    runSpecCheck("assertCommonOptionsArePersistent", {
       name: "test",
       options: [{ name: ["a", "b"] }],
       subcommands: [
@@ -498,9 +503,9 @@ test("testing: assertCommonOptionsArePersistent", () => {
         { name: "another", options: [{ name: ["a", "b"] }] },
       ],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertCommonOptionsArePersistent({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertCommonOptionsArePersistent", {
       name: "test",
       options: [{ name: "a" }],
       subcommands: [
@@ -511,23 +516,23 @@ test("testing: assertCommonOptionsArePersistent", () => {
         },
       ],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertOptionNameReferencesExist", () => {
-  Testing.assertOptionNameReferencesExist({ name: "test" });
-  Testing.assertOptionNameReferencesExist({
+test("testing: assertOptionNameReferencesExist", async () => {
+  await runSpecCheck("assertOptionNameReferencesExist", { name: "test" });
+  await runSpecCheck("assertOptionNameReferencesExist", {
     name: "test",
     options: [{ name: "a" }, { name: "b" }],
   });
-  Testing.assertOptionNameReferencesExist({
+  await runSpecCheck("assertOptionNameReferencesExist", {
     name: "test",
     options: [
       { name: "a", dependsOn: ["b"] },
       { name: "b", exclusiveOn: ["a"] },
     ],
   });
-  Testing.assertOptionNameReferencesExist({
+  await runSpecCheck("assertOptionNameReferencesExist", {
     name: "test",
     options: [{ name: "a", isPersistent: true }],
     subcommands: [
@@ -540,20 +545,20 @@ test("testing: assertOptionNameReferencesExist", () => {
       },
     ],
   });
-  expect(() =>
-    Testing.assertOptionNameReferencesExist({
+  await expect(
+    runSpecCheck("assertOptionNameReferencesExist", {
       name: "test",
       options: [{ name: "a", dependsOn: ["b"] }],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionNameReferencesExist({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionNameReferencesExist", {
       name: "test",
       options: [{ name: "a", exclusiveOn: ["b"] }],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionNameReferencesExist({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionNameReferencesExist", {
       name: "test",
       options: [{ name: "a" }],
       subcommands: [
@@ -563,9 +568,9 @@ test("testing: assertOptionNameReferencesExist", () => {
         },
       ],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertOptionNameReferencesExist({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertOptionNameReferencesExist", {
       name: "test",
       options: [{ name: "a" }],
       subcommands: [
@@ -575,29 +580,29 @@ test("testing: assertOptionNameReferencesExist", () => {
         },
       ],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertOptionNameReferencesExist checks a persistent option where it's used", () => {
+test("testing: assertOptionNameReferencesExist checks a persistent option where it's used", async () => {
   const spec = (reference: "dependsOn" | "exclusiveOn"): Subcommand => ({
     name: "test",
     options: [{ name: "--a", isPersistent: true, [reference]: ["--b"] }, { name: "--b" }],
     subcommands: [{ name: "sub" }],
   });
-  expect(() => Testing.assertOptionNameReferencesExist(spec("dependsOn"))).toThrow(
+  await expect(runSpecCheck("assertOptionNameReferencesExist", spec("dependsOn"))).rejects.toThrow(
     `In \`test sub\`, option \`test --a\` (index 0) depends on an option named "--b", which doesn't exist in its scope`,
   );
-  expect(() => Testing.assertOptionNameReferencesExist(spec("exclusiveOn"))).toThrow(
+  await expect(runSpecCheck("assertOptionNameReferencesExist", spec("exclusiveOn"))).rejects.toThrow(
     `In \`test sub\`, option \`test --a\` (index 0) is exclusive on an option named "--b", which doesn't exist in its scope`,
   );
   // The subcommand has its own '--b'.
-  Testing.assertOptionNameReferencesExist({
+  await runSpecCheck("assertOptionNameReferencesExist", {
     ...spec("dependsOn"),
     subcommands: [{ name: "sub", options: [{ name: "--b" }] }],
   });
 });
 
-test("testing: subcommand messages name the subcommand once, with its index", () => {
+test("testing: subcommand messages name the subcommand once, with its index", async () => {
   const spec: Subcommand = {
     name: "t",
     description: "root",
@@ -606,33 +611,33 @@ test("testing: subcommand messages name the subcommand once, with its index", ()
       { name: "bad ", description: "second" },
     ],
   };
-  expect(() => Testing.assertNamesHaveNoExtraWhitespace(spec)).toThrow(
+  await expect(runSpecCheck("assertNamesHaveNoExtraWhitespace", spec)).rejects.toThrow(
     "Subcommand `t bad ` (index 1) has a name with extra whitespace",
   );
-  expect(() => Testing.assertEverythingHasDescription({ ...spec, subcommands: [{ name: "a" }] })).toThrow(
-    "Subcommand `t a` (index 0) has no description",
-  );
+  await expect(
+    runSpecCheck("assertEverythingHasDescription", { ...spec, subcommands: [{ name: "a" }] }),
+  ).rejects.toThrow("Subcommand `t a` (index 0) has no description");
 });
 
-test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
-  Testing.assertPrefixMatchCommandsHaveNoArguments({ name: "test" });
-  Testing.assertPrefixMatchCommandsHaveNoArguments({
+test("testing: assertPrefixMatchCommandsHaveNoArguments", async () => {
+  await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", { name: "test" });
+  await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
     name: "test",
     parserDirectives: { subcommandsMatchUniquePrefix: true },
     subcommands: [{ name: "something" }, { name: "another" }],
   });
-  Testing.assertPrefixMatchCommandsHaveNoArguments({
+  await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
     name: "test",
     parserDirectives: { subcommandsMatchUniquePrefix: true },
     args: {},
   });
-  Testing.assertPrefixMatchCommandsHaveNoArguments({
+  await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
     name: "test",
     parserDirectives: { subcommandsMatchUniquePrefix: true },
     subcommands: [{ name: "test", args: { name: "args" } }],
   });
-  expect(() =>
-    Testing.assertPrefixMatchCommandsHaveNoArguments({
+  await expect(
+    runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
       name: "test",
       parserDirectives: { subcommandsMatchUniquePrefix: true },
       subcommands: [
@@ -643,19 +648,19 @@ test("testing: assertPrefixMatchCommandsHaveNoArguments", () => {
         },
       ],
     }),
-  ).toThrow();
-  expect(() =>
-    Testing.assertPrefixMatchCommandsHaveNoArguments({
+  ).rejects.toThrow();
+  await expect(
+    runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
       name: "test",
       parserDirectives: { subcommandsMatchUniquePrefix: true },
       args: { name: "test" },
       subcommands: [{ name: "test" }],
     }),
-  ).toThrow();
+  ).rejects.toThrow();
 });
 
-test("testing: assertPrefixMatchCommandsHaveNoArguments respects a subcommand turning prefix matching off", () => {
-  Testing.assertPrefixMatchCommandsHaveNoArguments({
+test("testing: assertPrefixMatchCommandsHaveNoArguments respects a subcommand turning prefix matching off", async () => {
+  await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
     name: "test",
     parserDirectives: { subcommandsMatchUniquePrefix: true },
     subcommands: [
@@ -691,10 +696,31 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
 });
 
 test("testing: testSpec supports function-style step names", async () => {
+  // Users see these names in their test output.
   const steps = await collectSteps(validSpec(), { namingStyle: "function" });
-  expect(steps).toContain("assertRequiredArgumentsDoNotFollowOptionalArguments");
-  expect(steps).toContain("assertPrefixMatchCommandsHaveNoArguments");
-  expect(steps).not.toContain("Required arguments don't follow optional arguments");
+  expect(steps).toEqual([
+    "assertRequiredArgumentsDoNotFollowOptionalArguments",
+    "assertDefaultsCanBeUsed",
+    "assertRepeatableOptionsArePositiveIntegers",
+    "assertOptionsHaveLocallyUniqueNames",
+    "assertOptionsDoNotShadowPersistentOptions",
+    "assertOptionsHaveDifferentNamesFromParents",
+    "assertSubcommandsHaveLocallyUniqueNames",
+    "assertNamesReadBack",
+    "assertOptionArgSeparatorsHaveCharacters",
+    "assertNamesHaveNoExtraWhitespace",
+    "assertEverythingHasDescription",
+    "assertDescriptionLineLengthUnder69",
+    "assertCommonOptionsArePersistent",
+    "assertOptionNameReferencesExist",
+    "assertPrefixMatchCommandsHaveNoArguments",
+  ]);
+});
+
+test("testing: runSpecCheck rejects a name testSpec has no check for", async () => {
+  await expect(runSpecCheck("assertPlusMinusOptionsTakeOneArg", validSpec())).rejects.toThrow(
+    "testSpec has no spec check named assertPlusMinusOptionsTakeOneArg",
+  );
 });
 
 test("testing: testSpec config skips optional checks", async () => {
@@ -754,7 +780,7 @@ test("testing: testSpec config skips optional checks", async () => {
   );
 });
 
-test("testing: test and testSpec are aliases", () => {
+test("testing: test and testSpec are aliases", async () => {
   expect(Testing.testSpec).toBe(Testing.test);
 });
 
@@ -781,33 +807,35 @@ async function collectSteps(spec: Spec, config: Testing.TestOptions = {}): Promi
   return steps;
 }
 
-test("testing: assertNamesReadBack says what the parser reads a name as", () => {
-  const check = Testing.assertNamesReadBack;
-  const fails = (spec: Spec) => {
+test("testing: assertNamesReadBack says what the parser reads a name as", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertNamesReadBack", spec);
+  const fails = async (spec: Spec) => {
     try {
-      check(spec);
+      await check(spec);
     } catch (error) {
       return (error as Error).message;
     }
     throw new Error("Expected the check to fail");
   };
-  check({ name: "test", options: [{ name: ["-v", "--verbose"] }, { name: "-", args: {} }] });
+  await check({ name: "test", options: [{ name: ["-v", "--verbose"] }, { name: "-", args: {} }] });
   // A name with the separator in it is split there.
-  expect(fails({ name: "test", options: [{ name: "--a=b" }] })).toBe(
+  expect(await fails({ name: "test", options: [{ name: "--a=b" }] })).toBe(
     "Option `test --a=b` (index 0) has the name '--a=b', but the parser reads it as an option that doesn't exist",
   );
-  expect(fails({ name: "test", options: [{ name: "--a" }, { name: "--a=b" }] })).toMatch(
+  expect(await fails({ name: "test", options: [{ name: "--a" }, { name: "--a=b" }] })).toMatch(
     /has the name '--a=b', but the parser reads it as the option `--a`$/,
   );
   // A long name with one dash is a chain of short options.
-  expect(fails({ name: "test", options: [{ name: "-a" }, { name: "-b" }, { name: "-ab" }] })).toMatch(
+  expect(await fails({ name: "test", options: [{ name: "-a" }, { name: "-b" }, { name: "-ab" }] })).toMatch(
     /has the name '-ab', but the parser reads it as the options `-a`, `-b`$/,
   );
-  expect(fails({ name: "test", options: [{ name: "build" }] })).toMatch(/reads it as an argument/);
-  expect(fails({ name: "test", options: [{ name: "--" }] })).toMatch(/reads it as the end of options, '--'$/);
+  expect(await fails({ name: "test", options: [{ name: "build" }] })).toMatch(/reads it as an argument/);
+  expect(await fails({ name: "test", options: [{ name: "--" }] })).toMatch(
+    /reads it as the end of options, '--'$/,
+  );
   // A subcommand wins over an option, in every command the option reaches.
   expect(
-    fails({
+    await fails({
       name: "test",
       options: [{ name: "--x", isPersistent: true }],
       subcommands: [{ name: "sub", subcommands: [{ name: "--x" }] }],
@@ -815,69 +843,72 @@ test("testing: assertNamesReadBack says what the parser reads a name as", () => 
   ).toMatch(
     /^In `test sub`, option `test --x` \(index 0\) has the name '--x', but the parser reads it as the subcommand `test sub --x`$/,
   );
-  expect(fails({ name: "test", subcommands: [{ name: "a" }, { name: ["b", "a"] }] })).toMatch(
+  expect(await fails({ name: "test", subcommands: [{ name: "a" }, { name: ["b", "a"] }] })).toMatch(
     /^Subcommand `test b\|a` \(index 1\) has the name 'a', but the parser reads it as the subcommand `test a`$/,
   );
 });
 
-test("testing: assertNamesReadBack checks that a required separator splits the option", () => {
-  const check = Testing.assertNamesReadBack;
-  check({ name: "test", options: [{ name: "--o", args: {}, requiresSeparator: true }] });
-  check({
+test("testing: assertNamesReadBack checks that a required separator splits the option", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertNamesReadBack", spec);
+  await check({ name: "test", options: [{ name: "--o", args: {}, requiresSeparator: true }] });
+  await check({
     name: "test",
     parserDirectives: { optionArgSeparators: ":" },
     options: [{ name: "--o", args: {}, requiresSeparator: ":" }],
   });
-  expect(() =>
+  await expect(
     check({
       name: "test",
       parserDirectives: { optionArgSeparators: ":" },
       options: [{ name: "--o", args: {}, requiresSeparator: "=" }],
     }),
-  ).toThrow(
+  ).rejects.toThrow(
     "Option `test --o` (index 0) is written '--o=<argument>', but '=' isn't one of the option arg separators there (':'). Add it to `parserDirectives.optionArgSeparators`.",
   );
-  expect(() =>
+  await expect(
     check({
       name: "test",
       parserDirectives: { optionArgSeparators: [] },
       options: [{ name: "--o", args: {}, requiresSeparator: true }],
     }),
-  ).toThrow(
+  ).rejects.toThrow(
     "Option `test --o` (index 0) is written '--o=<argument>', but '=' isn't one of the option arg separators there (none). Add it to `parserDirectives.optionArgSeparators`.",
   );
 });
 
-test("testing: assertNamesReadBack writes each option with every value it takes", () => {
-  const check = Testing.assertNamesReadBack;
-  check({
+test("testing: assertNamesReadBack writes each option with every value it takes", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertNamesReadBack", spec);
+  await check({
     name: "test",
     options: [
       { name: "-", args: { name: "n" } },
       { name: "+", args: { name: "n" } },
     ],
   });
-  check({ name: "test", options: [{ name: "--o", args: [{}, { isOptional: true }, { isVariadic: true }] }] });
+  await check({
+    name: "test",
+    options: [{ name: "--o", args: [{}, { isOptional: true }, { isVariadic: true }] }],
+  });
   // The value is one no short option starts with, so it can follow '-'.
-  check({ name: "test", options: [{ name: "-", args: {} }, { name: "-0" }, { name: "-1" }] });
+  await check({ name: "test", options: [{ name: "-", args: {} }, { name: "-0" }, { name: "-1" }] });
   // A value joined to the name is the option's only value.
-  expect(() =>
+  await expect(
     check({ name: "test", options: [{ name: "-", args: [{ name: "a" }, { name: "b" }] }] }),
-  ).toThrow(
+  ).rejects.toThrow(
     "Option `test -` (index 0) is written '-<a> <b>', but in '-0 0' the parser reads '0' as an argument",
   );
-  expect(() =>
+  await expect(
     check({ name: "test", options: [{ name: "+", args: { name: "n", isVariadic: true } }] }),
-  ).toThrow(
+  ).rejects.toThrow(
     "Option `test +` (index 0) is written '+<n>...', but in '+0 0' the parser reads '0' as an argument",
   );
-  expect(() =>
+  await expect(
     check({ name: "test", options: [{ name: "--o", args: [{}, {}], requiresSeparator: true }] }),
-  ).toThrow(
+  ).rejects.toThrow(
     "Option `test --o` (index 0) is written '--o=<argument> <argument>', but in '--o=0 0' the parser reads '0' as an argument",
   );
   // An option named '-' without arguments can't be used, since '-' alone is an argument.
-  expect(() => check({ name: "test", options: [{ name: "-" }] })).toThrow(
+  await expect(check({ name: "test", options: [{ name: "-" }] })).rejects.toThrow(
     "Option `test -` (index 0) has the name '-', but the parser reads it as an argument",
   );
 });
@@ -893,34 +924,37 @@ test("testing: test rejects an option name the parser splits at a separator", as
   await expect(Testing.test(spec)()).rejects.toThrow("has the name '--a=b'");
 });
 
-test("testing: option messages start by naming the option the same way", () => {
-  expect(() =>
-    Testing.assertRepeatableOptionsArePositiveIntegers({
+test("testing: option messages start by naming the option the same way", async () => {
+  await expect(
+    runSpecCheck("assertRepeatableOptionsArePositiveIntegers", {
       name: "t",
       options: [{ name: "-v", isRepeatable: 1 }],
     }),
-  ).toThrow(/^Option `t -v` \(index 0\) has its `isRepeatable` value set to 1/);
-  expect(() =>
-    Testing.assertOptionsDoNotShadowPersistentOptions({
+  ).rejects.toThrow(/^Option `t -v` \(index 0\) has its `isRepeatable` value set to 1/);
+  await expect(
+    runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
       name: "t",
       options: [{ name: "-v", isPersistent: true }],
       subcommands: [{ name: "sub", options: [{ name: "-q" }, { name: "-v" }] }],
     }),
-  ).toThrow(/^Option `t sub -v` \(index 1\) shadows the name of a persistent option, "-v"/);
-  expect(() =>
-    Testing.assertOptionsHaveDifferentNamesFromParents({
+  ).rejects.toThrow(/^Option `t sub -v` \(index 1\) shadows the name of a persistent option, "-v"/);
+  await expect(
+    runSpecCheck("assertOptionsHaveDifferentNamesFromParents", {
       name: "t",
       options: [{ name: "-C", args: {} }],
       subcommands: [{ name: "sub", options: [{ name: "-C" }] }],
     }),
-  ).toThrow(/^Option `t sub -C` \(index 0\) has the same names as a different option, `t -C`/);
-  expect(() =>
-    Testing.assertOptionNameReferencesExist({ name: "t", options: [{ name: "-a", dependsOn: ["-b"] }] }),
-  ).toThrow(/^Option `t -a` \(index 0\) depends on an option named "-b"/);
+  ).rejects.toThrow(/^Option `t sub -C` \(index 0\) has the same names as a different option, `t -C`/);
+  await expect(
+    runSpecCheck("assertOptionNameReferencesExist", {
+      name: "t",
+      options: [{ name: "-a", dependsOn: ["-b"] }],
+    }),
+  ).rejects.toThrow(/^Option `t -a` \(index 0\) depends on an option named "-b"/);
 });
 
-test("testing: assertNamesReadBack rejects names the parser reads as something else", () => {
-  const check = Testing.assertNamesReadBack;
+test("testing: assertNamesReadBack rejects names the parser reads as something else", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertNamesReadBack", spec);
   const sep = (requiresSeparator: true | string, isPersistent = false): Option => ({
     name: "--o",
     args: {},
@@ -942,7 +976,7 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
     { name: "test", parserDirectives: { optionArgSeparators: [":", "="] }, options: [sep(":")] },
   ];
   for (const spec of passes) {
-    check(spec);
+    await check(spec);
   }
 
   const fails: [Subcommand, string | RegExp][] = [
@@ -996,6 +1030,6 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
     ],
   ];
   for (const [spec, message] of fails) {
-    expect(() => check(spec)).toThrow(message);
+    await expect(check(spec)).rejects.toThrow(message);
   }
 });

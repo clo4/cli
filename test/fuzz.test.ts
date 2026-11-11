@@ -13,12 +13,12 @@ import type { Directives } from "../src/directives.js";
 import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
-import * as Testing from "../src/testing.js";
 import { asArray, getMinArgs } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import type { GenerateOptions } from "./fuzz/generate.js";
 import { attempt } from "./fuzz/snapshot.js";
+import { specCheckError } from "./helpers.js";
 
 vi.setConfig({ testTimeout: TIMEOUT });
 
@@ -363,19 +363,15 @@ test("completion never throws on random specs", async () => {
 });
 
 const specChecks = [
-  Testing.assertNamesReadBack,
-  Testing.assertOptionsHaveLocallyUniqueNames,
-  Testing.assertSubcommandsHaveLocallyUniqueNames,
+  "assertNamesReadBack",
+  "assertOptionsHaveLocallyUniqueNames",
+  "assertSubcommandsHaveLocallyUniqueNames",
 ];
 
 /** An option or subcommand that completion offers, but that the parser reads as something else. */
 async function offeredButMisread(spec: Spec, before: string[]): Promise<string | null> {
   // The parser can't read every option of a spec that the spec checker rejects.
-  try {
-    for (const check of specChecks) {
-      check(spec);
-    }
-  } catch {
+  if ((await specCheckError(specChecks, spec)) !== undefined) {
     return null;
   }
   const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));

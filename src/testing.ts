@@ -159,297 +159,6 @@ function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
   });
 }
 
-/** Asserts that required arguments do not come after an optional argument */
-export function assertRequiredArgumentsDoNotFollowOptionalArguments(spec: Subcommand): void {
-  forEachArgArray(spec, (args, path) => {
-    let remainingMustBeOptional = false;
-    let firstOptionalArgIndex: number | null = null;
-    for (const [index, arg] of args.entries()) {
-      if (remainingMustBeOptional) {
-        assert(
-          arg.isOptional,
-          `In ${namedArrayToString(...path)}, argument ${arg.name || index} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
-        );
-      } else if (arg.isOptional) {
-        remainingMustBeOptional = true;
-        firstOptionalArgIndex ??= index;
-      }
-    }
-  });
-}
-
-/**
- * Asserts that the parser can use every default. A positional argument with a
- * default must be optional. A required option argument's default is only used
- * when the option is left out, so every argument before it needs a default
- * too, and the option can't be required.
- */
-export function assertDefaultsCanBeUsed(spec: Subcommand): void {
-  forEachCommand(spec, ({ command, path }) => {
-    for (const [index, arg] of makeArray(command.args).entries()) {
-      assert(
-        arg.default === undefined || arg.isOptional,
-        `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a default, but it's required, so the default is never used`,
-      );
-    }
-  });
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere) {
-      return;
-    }
-    let firstWithout: number | null = null;
-    for (const [index, arg] of makeArray(option.args).entries()) {
-      if (arg.default === undefined) {
-        firstWithout ??= index;
-        continue;
-      }
-      if (arg.isOptional) {
-        continue;
-      }
-      const name = `${where}, argument ${arg.name || index} has a default, but`;
-      assert(!option.isRequired, `${name} the option is required, so the default is never used`);
-      assert(
-        firstWithout === null,
-        `${name} the argument at index ${firstWithout} has none, so the default is never used`,
-      );
-    }
-  });
-}
-
-/** Asserts that `isRepeatable` is only assigned a positive integer */
-export function assertRepeatableOptionsArePositiveIntegers(spec: Subcommand): void {
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere || typeof option.isRepeatable !== "number") {
-      return;
-    }
-    assert(
-      Number.isSafeInteger(option.isRepeatable),
-      `${where} has its \`isRepeatable\` value set to a number that is not an integer`,
-    );
-    assert(
-      !(option.isRepeatable < 1),
-      `${where} has its \`isRepeatable\` value set to a number below 1, which means it can't be used at all`,
-    );
-    assert(
-      option.isRepeatable !== 1,
-      `${where} has its \`isRepeatable\` value set to 1, which is no different that omitting the property entirely`,
-    );
-  });
-}
-
-/** Asserts that options have unique names in their scope */
-export function assertOptionsHaveLocallyUniqueNames(spec: Subcommand): void {
-  forEachCommand(spec, ({ path, own }) => {
-    const optionNames = new Set<string>();
-    for (const { option, index } of own) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          !optionNames.has(name),
-          `${describeOption(path, index)} has a non-unique name, '${name}'. Option names must be unique.`,
-        );
-        optionNames.add(name);
-      }
-    }
-  });
-}
-
-/** Asserts that options don't shadow a persistent option */
-export function assertOptionsDoNotShadowPersistentOptions(spec: Subcommand): void {
-  forEachCommand(spec, ({ path, own, inherited }) => {
-    for (const { option, index } of own) {
-      for (const name of makeArray(option.name)) {
-        assert(
-          !inherited.some((persistent) => makeArray(persistent.option.name).includes(name)),
-          `${describeOption(path, index)} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
-        );
-      }
-    }
-  });
-}
-
-/**
- * Asserts that when a subcommand's option and a different option on a parent
- * share a name, each of them has a name of its own.
- *
- * Parsed values are looked up by name, and an option sets every one of its
- * names when it's used. If every name of the parent's option is also the
- * subcommand's, using the subcommand's option replaces the parent's value, so
- * it can't be read. If every name of the subcommand's option is also the
- * parent's, its names hold the parent's value when it isn't used, so it can't
- * tell whether it was. Options with the same names are fine when they're
- * identical, such as an option kept in a constant, because the parser treats
- * them as one option.
- *
- * This skips persistent parent options, because
- * {@link assertOptionsDoNotShadowPersistentOptions} covers those and
- * `allowShadowingPersistentOptions` opts out of it.
- */
-export function assertOptionsHaveDifferentNamesFromParents(spec: Subcommand): void {
-  forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
-    if (!isDefinedHere) {
-      return;
-    }
-    const names = makeArray(option.name);
-    // A parent's non-persistent options aren't in this command's scope, so
-    // they're found on the parents themselves.
-    for (const parent of path.slice(0, -1)) {
-      for (const parentOption of makeArray(parent.options)) {
-        if (parentOption.isPersistent) {
-          continue;
-        }
-        const parentNames = makeArray(parentOption.name);
-        const other = namedArrayToString(parent, parentOption);
-        if (optionKey(parentOption) === optionKey(option)) {
-          assert(
-            isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 }),
-            `${where} has the same names as a different option, ${other}, so the parent's value can't be read. Add a name that only one of them uses.`,
-          );
-          continue;
-        }
-        assert(
-          !parentNames.every((name) => names.includes(name)),
-          `${where} has every name of a different option, ${other}, so the parent's value can't be read. Add a name that only the parent's option uses.`,
-        );
-        assert(
-          !names.every((name) => parentNames.includes(name)),
-          `${where} only has names of a different option, ${other}, so it can't tell whether it was used. Add a name that only the subcommand's option uses.`,
-        );
-      }
-    }
-  });
-}
-
-/** Asserts that subcommands don't share a name with a sibling subcommand */
-export function assertSubcommandsHaveLocallyUniqueNames(spec: Subcommand): void {
-  forEachCommand(spec, ({ command, path }) => {
-    const names = new Set<string>();
-    for (const [index, subcommand] of makeArray(command.subcommands).entries()) {
-      for (const name of makeArray(subcommand.name)) {
-        assert(
-          !names.has(name),
-          `The subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has a non-unique name, ${repr(name)}. Subcommand names must be unique among the subcommands in the same array.`,
-        );
-        names.add(name);
-      }
-    }
-  });
-}
-
-/**
- * Asserts that no option arg separator is an empty string
- */
-export function assertOptionArgSeparatorsHaveCharacters(spec: Subcommand): void {
-  forEachCommand(spec, ({ command, path }) => {
-    const separators = makeArray(command.parserDirectives?.optionArgSeparators);
-    for (const [sepIndex, separator] of separators.entries()) {
-      assert(
-        separator !== "",
-        `${describeCommand(path)} has an empty string for an option arg separator at index ${sepIndex}. If you wanted to disable option arg separators, use an empty array.`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that the parser reads options named "+" or "-" the way they're
- * written, which needs them to take one argument.
- *
- * @deprecated {@link assertNamesReadBack} checks this for every option.
- */
-export function assertPlusMinusOptionsTakeOneArg(spec: Subcommand): void {
-  assertOptionFormsReadBack(spec, (_, name) => name === "-" || name === "+");
-}
-
-/**
- * Asserts that names do not have leading or trailing whitespace
- */
-export function assertNamesHaveNoExtraWhitespace(spec: Subcommand): void {
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere) {
-      return;
-    }
-    for (const name of makeArray(option.name)) {
-      assert(name === name.trim(), `${where} has a name with extra whitespace`);
-    }
-  });
-  forEachCommand(spec, ({ command, path }) => {
-    for (const name of makeArray(command.name)) {
-      assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
-    }
-  });
-  forEachArgArray(spec, (args, path) => {
-    for (const [index, arg] of makeArray(args).entries()) {
-      for (const name of makeArray(arg.name)) {
-        assert(
-          name === name.trim(),
-          `Arg in ${namedArrayToString(...path)} (at index ${index}) has a name with extra whitespace`,
-        );
-      }
-    }
-  });
-}
-
-/**
- * Asserts that everything has a description
- */
-export function assertEverythingHasDescription(spec: Subcommand): void {
-  assert(spec.description, `Spec has no description`);
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (isDefinedHere) {
-      assert(option.description, `${where} has no description`);
-    }
-  });
-  forEachCommand(spec, ({ command, path }) => {
-    assert(command.description, `${describeCommand(path)} has no description`);
-  });
-}
-
-/**
- * Asserts that descriptions have line length < 69
- */
-export function assertDescriptionLineLengthUnder69(spec: Subcommand): void {
-  if (spec.description) {
-    assert(
-      spec.description.split("\n").every((line) => line.length <= 68),
-      `Spec has a description line over 68 characters`,
-    );
-  }
-  forEachOption(spec, ({ option, isDefinedHere, where }) => {
-    if (!isDefinedHere || !option.description) {
-      return;
-    }
-    assert(
-      option.description.split("\n").every((line) => line.length <= 68),
-      `${where} has a description line over 68 characters`,
-    );
-  });
-  forEachCommand(spec, ({ command, path }) => {
-    if (command.description) {
-      assert(
-        command.description.split("\n").every((line) => line.length <= 68),
-        `${describeCommand(path)} has a description line over 68 characters`,
-      );
-    }
-    // Help lists positional arguments with their descriptions.
-    for (const [index, arg] of makeArray(command.args).entries()) {
-      assert(
-        !arg.description || arg.description.split("\n").every((line) => line.length <= 68),
-        `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a description line over 68 characters`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that the parser reads options with `requiresSeparator` the way
- * they're written, which needs them to take at most one argument.
- *
- * @deprecated {@link assertNamesReadBack} checks this for every option.
- */
-export function assertRequiresSeparatorTakesOneArg(spec: Subcommand): void {
-  assertOptionFormsReadBack(spec, (option) => Boolean(option.requiresSeparator));
-}
-
 /**
  * What the parser read a token as, for a message. `path` is the command the
  * token came after.
@@ -480,7 +189,7 @@ function readsAs(reading: TokenReading, option: Option): boolean {
 
 /**
  * The tokens that reach the last command on `path`, using each command's first
- * name. {@link assertNamesReadBack} checks subcommand names from the root down
+ * name. The names-read-back check reads subcommand names from the root down
  * before options, so each of these is a name the parser reads.
  */
 function tokensTo(path: readonly Subcommand[]): string[] {
@@ -522,10 +231,10 @@ function writeForm(option: Option, form: OptionForm, value: string): string[] {
 }
 
 /**
- * Asserts that the parser reads each name of the options that `include`
- * picks the way the name is written. See {@link assertNamesReadBack}.
+ * Asserts that the parser reads each name of every option the way the name is
+ * written. The names-read-back check runs this after it checks subcommands.
  */
-function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, name: string) => boolean) {
+function assertOptionFormsReadBack(spec: Subcommand) {
   const root = spec as Spec;
   forEachOption(spec, ({ option, where, scope, path }) => {
     const before = tokensTo(path);
@@ -533,9 +242,6 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
     // A name that another option shadows is that option's to check.
     const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
     for (const form of scope.forms(option, names)) {
-      if (!include(option, form.name)) {
-        continue;
-      }
       const tokens = writeForm(option, form, value);
       const reader = tokenReader(root);
       for (const token of before) {
@@ -573,101 +279,6 @@ function assertOptionFormsReadBack(spec: Subcommand, include: (option: Option, n
         );
       }
     }
-  });
-}
-
-/**
- * Asserts that the parser reads every name the way it's written: each name of
- * a subcommand enters that subcommand, and each name of an option uses that
- * option, at every command the option can be used in. Each option is also
- * written the way help shows it, with every value it takes, and the parser has
- * to read all of those values as the option's.
- */
-export function assertNamesReadBack(spec: Subcommand): void {
-  const root = spec as Spec;
-  forEachCommand(spec, ({ command, path }) => {
-    const before = tokensTo(path);
-    for (const subcommand of makeArray(command.subcommands)) {
-      for (const name of makeArray(subcommand.name)) {
-        const reading = readToken(root, before, name);
-        if (reading.kind === "subcommand" && reading.command === subcommand) {
-          continue;
-        }
-        assert(
-          false,
-          `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
-        );
-      }
-    }
-  });
-  assertOptionFormsReadBack(spec, () => true);
-}
-
-export function assertCommonOptionsArePersistent(spec: Subcommand): void {
-  const failures: [string, string][] = [];
-  forEachCommand(spec, ({ command, path }) => {
-    if (!command.subcommands) {
-      return;
-    }
-    // This command's options that every command below it defines too.
-    let common = makeArray(command.options);
-    forEachCommand(command, ({ command: below }) => {
-      const keys = makeArray(below.options).map(optionKey);
-      common = common.filter((option) => keys.includes(optionKey(option)));
-    });
-    for (const option of common) {
-      const key = optionKey(option);
-      if (!failures.some(([failed]) => failed === key)) {
-        failures.push([key, namedArrayToString(...path, option)]);
-      }
-    }
-  });
-  assert(
-    failures.length === 0,
-    `The following options were also defined by all subcommands. Instead, define the option once, and use \`isPersistent: true\` to persist it across all subcommands.
-${failures.map(([, line]) => " * " + line).join("\n")}
-`,
-  );
-}
-
-/**
- * Asserts that references to other options by name actually refer to options
- * that exist in scope, at every command the option can be used in
- */
-export function assertOptionNameReferencesExist(spec: Subcommand): void {
-  forEachOption(spec, ({ option, where, scope }) => {
-    for (const name of makeArray(option.dependsOn)) {
-      assert(
-        scope.resolve(name) !== null,
-        `${where} depends on an option named ${repr(name)}, which doesn't exist in its scope`,
-      );
-    }
-    for (const name of makeArray(option.exclusiveOn)) {
-      assert(
-        scope.resolve(name) !== null,
-        `${where} is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
-      );
-    }
-  });
-}
-
-/**
- * Asserts that commands that will match subcommands by prefix do not take arguments
- */
-export function assertPrefixMatchCommandsHaveNoArguments(spec: Subcommand): void {
-  forEachCommand(spec, ({ command, path, scope }) => {
-    // The scope is at this command, so this is the setting that decides how
-    // its own subcommands are matched.
-    if (!scope.directives.subcommandsMatchUniquePrefix) {
-      return;
-    }
-
-    assert(
-      !(command.subcommands && command.args),
-      `The command ${namedArrayToString(
-        ...path,
-      )} has at least one argument and subcommand, but matches subcommands based on unique prefixes. To fix this, use \`parserDirectives: { subcommandsMatchUniquePrefix: false }\``,
-    );
   });
 }
 
@@ -729,6 +340,414 @@ async function runStep(
   await fn();
 }
 
+/** One spec check. `test` runs the checks in table order. */
+interface SpecCheck {
+  /** The step name with `namingStyle: "sentence"`. */
+  sentence: string;
+  /**
+   * The step name with `namingStyle: "function"`. Users see it in their test
+   * output, so it stays the same between releases.
+   */
+  name: string;
+  /** The option that turns the check off when it's true. */
+  skippedBy?: Exclude<keyof TestOptions, "namingStyle">;
+  /** Throws an error that says what's wrong when the spec fails the check. */
+  check(spec: Subcommand): void;
+}
+
+const specChecks: readonly SpecCheck[] = [
+  {
+    sentence: "Required arguments don't follow optional arguments",
+    name: "assertRequiredArgumentsDoNotFollowOptionalArguments",
+    check(spec) {
+      forEachArgArray(spec, (args, path) => {
+        let remainingMustBeOptional = false;
+        let firstOptionalArgIndex: number | null = null;
+        for (const [index, arg] of args.entries()) {
+          if (remainingMustBeOptional) {
+            assert(
+              arg.isOptional,
+              `In ${namedArrayToString(...path)}, argument ${arg.name || index} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
+            );
+          } else if (arg.isOptional) {
+            remainingMustBeOptional = true;
+            firstOptionalArgIndex ??= index;
+          }
+        }
+      });
+    },
+  },
+  {
+    /*
+     * A positional argument with a default must be optional. A required option
+     * argument's default is only used when the option is left out, so every
+     * argument before it needs a default too, and the option can't be required.
+     */
+    sentence: "The parser can use every default",
+    name: "assertDefaultsCanBeUsed",
+    check(spec) {
+      forEachCommand(spec, ({ command, path }) => {
+        for (const [index, arg] of makeArray(command.args).entries()) {
+          assert(
+            arg.default === undefined || arg.isOptional,
+            `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a default, but it's required, so the default is never used`,
+          );
+        }
+      });
+      forEachOption(spec, ({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere) {
+          return;
+        }
+        let firstWithout: number | null = null;
+        for (const [index, arg] of makeArray(option.args).entries()) {
+          if (arg.default === undefined) {
+            firstWithout ??= index;
+            continue;
+          }
+          if (arg.isOptional) {
+            continue;
+          }
+          const name = `${where}, argument ${arg.name || index} has a default, but`;
+          assert(!option.isRequired, `${name} the option is required, so the default is never used`);
+          assert(
+            firstWithout === null,
+            `${name} the argument at index ${firstWithout} has none, so the default is never used`,
+          );
+        }
+      });
+    },
+  },
+  {
+    sentence: "Repeatable options that are numbers are integers greater than 1",
+    name: "assertRepeatableOptionsArePositiveIntegers",
+    check(spec) {
+      forEachOption(spec, ({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere || typeof option.isRepeatable !== "number") {
+          return;
+        }
+        assert(
+          Number.isSafeInteger(option.isRepeatable),
+          `${where} has its \`isRepeatable\` value set to a number that is not an integer`,
+        );
+        assert(
+          !(option.isRepeatable < 1),
+          `${where} has its \`isRepeatable\` value set to a number below 1, which means it can't be used at all`,
+        );
+        assert(
+          option.isRepeatable !== 1,
+          `${where} has its \`isRepeatable\` value set to 1, which is no different that omitting the property entirely`,
+        );
+      });
+    },
+  },
+  {
+    sentence: "Options have locally unique names",
+    name: "assertOptionsHaveLocallyUniqueNames",
+    check(spec) {
+      forEachCommand(spec, ({ path, own }) => {
+        const optionNames = new Set<string>();
+        for (const { option, index } of own) {
+          for (const name of makeArray(option.name)) {
+            assert(
+              !optionNames.has(name),
+              `${describeOption(path, index)} has a non-unique name, '${name}'. Option names must be unique.`,
+            );
+            optionNames.add(name);
+          }
+        }
+      });
+    },
+  },
+  {
+    sentence: "Options don't shadow persistent options",
+    name: "assertOptionsDoNotShadowPersistentOptions",
+    skippedBy: "allowShadowingPersistentOptions",
+    check(spec) {
+      forEachCommand(spec, ({ path, own, inherited }) => {
+        for (const { option, index } of own) {
+          for (const name of makeArray(option.name)) {
+            assert(
+              !inherited.some((persistent) => makeArray(persistent.option.name).includes(name)),
+              `${describeOption(path, index)} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
+            );
+          }
+        }
+      });
+    },
+  },
+  {
+    /*
+     * When a subcommand's option and a different option on a parent share a
+     * name, each of them needs a name of its own.
+     *
+     * Parsed values are looked up by name, and an option sets every one of its
+     * names when it's used. If every name of the parent's option is also the
+     * subcommand's, using the subcommand's option replaces the parent's value,
+     * so it can't be read. If every name of the subcommand's option is also the
+     * parent's, its names hold the parent's value when it isn't used, so it
+     * can't tell whether it was. Options with the same names are fine when
+     * they're identical, such as an option kept in a constant, because the
+     * parser treats them as one option.
+     *
+     * This skips persistent parent options. The check that options don't
+     * shadow persistent options covers those, and
+     * `allowShadowingPersistentOptions` turns that check off.
+     */
+    sentence: "Different options on a subcommand and its parents have different names",
+    name: "assertOptionsHaveDifferentNamesFromParents",
+    check(spec) {
+      forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
+        if (!isDefinedHere) {
+          return;
+        }
+        const names = makeArray(option.name);
+        // A parent's non-persistent options aren't in this command's scope, so
+        // they're found on the parents themselves.
+        for (const parent of path.slice(0, -1)) {
+          for (const parentOption of makeArray(parent.options)) {
+            if (parentOption.isPersistent) {
+              continue;
+            }
+            const parentNames = makeArray(parentOption.name);
+            const other = namedArrayToString(parent, parentOption);
+            if (optionKey(parentOption) === optionKey(option)) {
+              assert(
+                isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 }),
+                `${where} has the same names as a different option, ${other}, so the parent's value can't be read. Add a name that only one of them uses.`,
+              );
+              continue;
+            }
+            assert(
+              !parentNames.every((name) => names.includes(name)),
+              `${where} has every name of a different option, ${other}, so the parent's value can't be read. Add a name that only the parent's option uses.`,
+            );
+            assert(
+              !names.every((name) => parentNames.includes(name)),
+              `${where} only has names of a different option, ${other}, so it can't tell whether it was used. Add a name that only the subcommand's option uses.`,
+            );
+          }
+        }
+      });
+    },
+  },
+  {
+    sentence: "Subcommands have locally unique names",
+    name: "assertSubcommandsHaveLocallyUniqueNames",
+    check(spec) {
+      forEachCommand(spec, ({ command, path }) => {
+        const names = new Set<string>();
+        for (const [index, subcommand] of makeArray(command.subcommands).entries()) {
+          for (const name of makeArray(subcommand.name)) {
+            assert(
+              !names.has(name),
+              `The subcommand ${namedArrayToString(...path, subcommand)} (index ${index}) has a non-unique name, ${repr(name)}. Subcommand names must be unique among the subcommands in the same array.`,
+            );
+            names.add(name);
+          }
+        }
+      });
+    },
+  },
+  {
+    /*
+     * Each name of a subcommand enters that subcommand, and each name of an
+     * option uses that option, at every command the option can be used in.
+     * Each option is also written the way help shows it, with every value it
+     * takes, and the parser has to read all of those values as the option's.
+     */
+    sentence: "The parser reads every option and subcommand the way it's written",
+    name: "assertNamesReadBack",
+    check(spec) {
+      const root = spec as Spec;
+      forEachCommand(spec, ({ command, path }) => {
+        const before = tokensTo(path);
+        for (const subcommand of makeArray(command.subcommands)) {
+          for (const name of makeArray(subcommand.name)) {
+            const reading = readToken(root, before, name);
+            if (reading.kind === "subcommand" && reading.command === subcommand) {
+              continue;
+            }
+            assert(
+              false,
+              `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
+            );
+          }
+        }
+      });
+      assertOptionFormsReadBack(spec);
+    },
+  },
+  {
+    sentence: "Option arg separators are not an empty string",
+    name: "assertOptionArgSeparatorsHaveCharacters",
+    check(spec) {
+      forEachCommand(spec, ({ command, path }) => {
+        const separators = makeArray(command.parserDirectives?.optionArgSeparators);
+        for (const [sepIndex, separator] of separators.entries()) {
+          assert(
+            separator !== "",
+            `${describeCommand(path)} has an empty string for an option arg separator at index ${sepIndex}. If you wanted to disable option arg separators, use an empty array.`,
+          );
+        }
+      });
+    },
+  },
+  {
+    sentence: "Names have no extra leading or trailing whitespace",
+    name: "assertNamesHaveNoExtraWhitespace",
+    check(spec) {
+      forEachOption(spec, ({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere) {
+          return;
+        }
+        for (const name of makeArray(option.name)) {
+          assert(name === name.trim(), `${where} has a name with extra whitespace`);
+        }
+      });
+      forEachCommand(spec, ({ command, path }) => {
+        for (const name of makeArray(command.name)) {
+          assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
+        }
+      });
+      forEachArgArray(spec, (args, path) => {
+        for (const [index, arg] of makeArray(args).entries()) {
+          for (const name of makeArray(arg.name)) {
+            assert(
+              name === name.trim(),
+              `Arg in ${namedArrayToString(...path)} (at index ${index}) has a name with extra whitespace`,
+            );
+          }
+        }
+      });
+    },
+  },
+  {
+    sentence: "Everything has a description",
+    name: "assertEverythingHasDescription",
+    skippedBy: "allowNoDescription",
+    check(spec) {
+      assert(spec.description, `Spec has no description`);
+      forEachOption(spec, ({ option, isDefinedHere, where }) => {
+        if (isDefinedHere) {
+          assert(option.description, `${where} has no description`);
+        }
+      });
+      forEachCommand(spec, ({ command, path }) => {
+        assert(command.description, `${describeCommand(path)} has no description`);
+      });
+    },
+  },
+  {
+    sentence: "Each line in descriptions is less than or equal to 68 characters",
+    name: "assertDescriptionLineLengthUnder69",
+    skippedBy: "allowLongDescriptionLines",
+    check(spec) {
+      if (spec.description) {
+        assert(
+          spec.description.split("\n").every((line) => line.length <= 68),
+          `Spec has a description line over 68 characters`,
+        );
+      }
+      forEachOption(spec, ({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere || !option.description) {
+          return;
+        }
+        assert(
+          option.description.split("\n").every((line) => line.length <= 68),
+          `${where} has a description line over 68 characters`,
+        );
+      });
+      forEachCommand(spec, ({ command, path }) => {
+        if (command.description) {
+          assert(
+            command.description.split("\n").every((line) => line.length <= 68),
+            `${describeCommand(path)} has a description line over 68 characters`,
+          );
+        }
+        // Help lists positional arguments with their descriptions.
+        for (const [index, arg] of makeArray(command.args).entries()) {
+          assert(
+            !arg.description || arg.description.split("\n").every((line) => line.length <= 68),
+            `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a description line over 68 characters`,
+          );
+        }
+      });
+    },
+  },
+  {
+    sentence: "Common options are not defined on every subcommand",
+    name: "assertCommonOptionsArePersistent",
+    check(spec) {
+      const failures: [string, string][] = [];
+      forEachCommand(spec, ({ command, path }) => {
+        if (!command.subcommands) {
+          return;
+        }
+        // This command's options that every command below it defines too.
+        let common = makeArray(command.options);
+        forEachCommand(command, ({ command: below }) => {
+          const keys = makeArray(below.options).map(optionKey);
+          common = common.filter((option) => keys.includes(optionKey(option)));
+        });
+        for (const option of common) {
+          const key = optionKey(option);
+          if (!failures.some(([failed]) => failed === key)) {
+            failures.push([key, namedArrayToString(...path, option)]);
+          }
+        }
+      });
+      assert(
+        failures.length === 0,
+        `The following options were also defined by all subcommands. Instead, define the option once, and use \`isPersistent: true\` to persist it across all subcommands.
+${failures.map(([, line]) => " * " + line).join("\n")}
+`,
+      );
+    },
+  },
+  {
+    // This checks each option at every command it can be used in.
+    sentence: "References to other options by name are valid",
+    name: "assertOptionNameReferencesExist",
+    check(spec) {
+      forEachOption(spec, ({ option, where, scope }) => {
+        for (const name of makeArray(option.dependsOn)) {
+          assert(
+            scope.resolve(name) !== null,
+            `${where} depends on an option named ${repr(name)}, which doesn't exist in its scope`,
+          );
+        }
+        for (const name of makeArray(option.exclusiveOn)) {
+          assert(
+            scope.resolve(name) !== null,
+            `${where} is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
+          );
+        }
+      });
+    },
+  },
+  {
+    sentence: "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
+    name: "assertPrefixMatchCommandsHaveNoArguments",
+    skippedBy: "allowMatchingSubcommandPrefixAndArgs",
+    check(spec) {
+      forEachCommand(spec, ({ command, path, scope }) => {
+        // The scope is at this command, so this is the setting that decides how
+        // its own subcommands are matched.
+        if (!scope.directives.subcommandsMatchUniquePrefix) {
+          return;
+        }
+
+        assert(
+          !(command.subcommands && command.args),
+          `The command ${namedArrayToString(
+            ...path,
+          )} has at least one argument and subcommand, but matches subcommands based on unique prefixes. To fix this, use \`parserDirectives: { subcommandsMatchUniquePrefix: false }\``,
+        );
+      });
+    },
+  },
+];
+
 /**
  * Validate your CLI in your test suite
  *
@@ -737,111 +756,11 @@ async function runStep(
  * wrong.
  */
 export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestContextLike) => Promise<void> {
-  const {
-    allowShadowingPersistentOptions = false,
-    allowNoDescription = false,
-    allowLongDescriptionLines = false,
-    allowMatchingSubcommandPrefixAndArgs = false,
-    namingStyle = "sentence",
-  } = options;
-  const checks: [
-    sentence: string,
-    functionName: string,
-    check: (spec: Subcommand) => void,
-    enabled: boolean,
-  ][] = [
-    [
-      "Required arguments don't follow optional arguments",
-      "assertRequiredArgumentsDoNotFollowOptionalArguments",
-      assertRequiredArgumentsDoNotFollowOptionalArguments,
-      true,
-    ],
-    ["The parser can use every default", "assertDefaultsCanBeUsed", assertDefaultsCanBeUsed, true],
-    [
-      "Repeatable options that are numbers are integers greater than 1",
-      "assertRepeatableOptionsArePositiveIntegers",
-      assertRepeatableOptionsArePositiveIntegers,
-      true,
-    ],
-    [
-      "Options have locally unique names",
-      "assertOptionsHaveLocallyUniqueNames",
-      assertOptionsHaveLocallyUniqueNames,
-      true,
-    ],
-    [
-      "Options don't shadow persistent options",
-      "assertOptionsDoNotShadowPersistentOptions",
-      assertOptionsDoNotShadowPersistentOptions,
-      !allowShadowingPersistentOptions,
-    ],
-    [
-      "Different options on a subcommand and its parents have different names",
-      "assertOptionsHaveDifferentNamesFromParents",
-      assertOptionsHaveDifferentNamesFromParents,
-      true,
-    ],
-    [
-      "Subcommands have locally unique names",
-      "assertSubcommandsHaveLocallyUniqueNames",
-      assertSubcommandsHaveLocallyUniqueNames,
-      true,
-    ],
-    [
-      "The parser reads every option and subcommand the way it's written",
-      "assertNamesReadBack",
-      assertNamesReadBack,
-      true,
-    ],
-    [
-      "Option arg separators are not an empty string",
-      "assertOptionArgSeparatorsHaveCharacters",
-      assertOptionArgSeparatorsHaveCharacters,
-      true,
-    ],
-    [
-      "Names have no extra leading or trailing whitespace",
-      "assertNamesHaveNoExtraWhitespace",
-      assertNamesHaveNoExtraWhitespace,
-      true,
-    ],
-    [
-      "Everything has a description",
-      "assertEverythingHasDescription",
-      assertEverythingHasDescription,
-      !allowNoDescription,
-    ],
-    [
-      "Each line in descriptions is less than or equal to 68 characters",
-      "assertDescriptionLineLengthUnder69",
-      assertDescriptionLineLengthUnder69,
-      !allowLongDescriptionLines,
-    ],
-    [
-      "Common options are not defined on every subcommand",
-      "assertCommonOptionsArePersistent",
-      assertCommonOptionsArePersistent,
-      true,
-    ],
-    [
-      "References to other options by name are valid",
-      "assertOptionNameReferencesExist",
-      assertOptionNameReferencesExist,
-      true,
-    ],
-    [
-      "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
-      "assertPrefixMatchCommandsHaveNoArguments",
-      assertPrefixMatchCommandsHaveNoArguments,
-      !allowMatchingSubcommandPrefixAndArgs,
-    ],
-  ];
+  const { namingStyle = "sentence" } = options;
+  const checks = specChecks.filter(({ skippedBy }) => !(skippedBy && options[skippedBy]));
   return async (t) => {
-    for (const [sentence, functionName, check, enabled] of checks) {
-      if (!enabled) {
-        continue;
-      }
-      await runStep(t, namingStyle === "function" ? functionName : sentence, () => check(spec));
+    for (const { sentence, name, check } of checks) {
+      await runStep(t, namingStyle === "function" ? name : sentence, () => check(spec));
     }
   };
 }

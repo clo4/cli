@@ -19,28 +19,8 @@ test("public API stays minimal and namespace-friendly", () => {
   expect(typeof CLI.completion).toBe("object");
 });
 
-test("the testing entrypoint exports the spec checks and test", () => {
-  expect(Object.keys(Testing).sort()).toEqual([
-    "assertCommonOptionsArePersistent",
-    "assertDefaultsCanBeUsed",
-    "assertDescriptionLineLengthUnder69",
-    "assertEverythingHasDescription",
-    "assertNamesHaveNoExtraWhitespace",
-    "assertNamesReadBack",
-    "assertOptionArgSeparatorsHaveCharacters",
-    "assertOptionNameReferencesExist",
-    "assertOptionsDoNotShadowPersistentOptions",
-    "assertOptionsHaveDifferentNamesFromParents",
-    "assertOptionsHaveLocallyUniqueNames",
-    "assertPlusMinusOptionsTakeOneArg",
-    "assertPrefixMatchCommandsHaveNoArguments",
-    "assertRepeatableOptionsArePositiveIntegers",
-    "assertRequiredArgumentsDoNotFollowOptionalArguments",
-    "assertRequiresSeparatorTakesOneArg",
-    "assertSubcommandsHaveLocallyUniqueNames",
-    "test",
-    "testSpec",
-  ]);
+test("the testing entrypoint exports test and testSpec", () => {
+  expect(Object.keys(Testing).sort()).toEqual(["test", "testSpec"]);
 });
 
 test("package exports stay limited to runtime and testing entrypoints", async () => {
