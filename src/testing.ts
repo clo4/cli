@@ -6,7 +6,7 @@
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
-import { CommandScope, optionKey } from "./scope.js";
+import { CommandScope, loadAll, optionKey } from "./scope.js";
 import type { OptionForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
@@ -759,6 +759,7 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   const { namingStyle = "sentence" } = options;
   const checks = specChecks.filter(({ skippedBy }) => !(skippedBy && options[skippedBy]));
   return async (t) => {
+    await loadAll(spec);
     for (const { sentence, name, check } of checks) {
       await runStep(t, namingStyle === "function" ? name : sentence, () => check(spec));
     }

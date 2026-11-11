@@ -1,7 +1,7 @@
 import type { ActionInit, Spec } from "./types.js";
 import { getHelp, printUsageError } from "./help.js";
 import { ParseError } from "./errors.js";
-import { parse } from "./parse.js";
+import { parseOrWait } from "./parse.js";
 import { printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
 
@@ -21,13 +21,14 @@ export function run(spec: Spec, args?: readonly string[]): Promise<number> {
   // would in an async function.
   try {
     const input = args === undefined ? defaultArgs() : args;
-    let result: ParseResult;
+    let result: ParseResult | Promise<ParseResult>;
     try {
-      result = parse(input, spec);
+      result = parseOrWait(input, spec);
     } catch (error: unknown) {
       return Promise.resolve(reportParseError(error));
     }
-    return runAction(result);
+    // Only a `loadSpec` that returned a promise makes the parse wait.
+    return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -74,10 +75,10 @@ function exitStatus(exitCode: number | void): number {
 function reportParseError(error: unknown): number {
   if (error instanceof ParseError) {
     printUsageError(error.context.path, error.message, error.didYouMean);
-  } else {
-    printError(`${error}`);
+    return 1;
   }
-  return 1;
+  // Anything else came from a `loadSpec`.
+  return reportThrown(error);
 }
 
 function reportThrown(error: unknown): number {

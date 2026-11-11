@@ -100,7 +100,7 @@ export interface ActionInit {
 }
 
 /** A top-level command. */
-export interface Spec extends Omit<Subcommand, "name"> {
+export interface Spec extends Omit<Subcommand, "name" | "loadSpec"> {
   /** Name of the CLI. */
   name: string;
 }
@@ -171,6 +171,21 @@ export interface Subcommand {
   action?: Action;
 
   /**
+   * Give the rest of this command when a command line enters it, so a large
+   * CLI only builds the commands it uses. The body is merged into this
+   * command the first time the parser, help or completion enters it, and
+   * `loadSpec` is never called again.
+   *
+   * Return the body itself to stay synchronous, or a promise of it to load
+   * it from another file with `import()`. Parsing only waits when a command
+   * on the command line returns a promise.
+   *
+   * What a parent needs to know stays on the command: its `name`,
+   * `description`, `hidden` and `isPersistent`.
+   */
+  loadSpec?: () => CommandBody | Promise<CommandBody>;
+
+  /**
    * This property never exists. It prevents accidental structural assignment
    * between options and subcommands.
    *
@@ -178,6 +193,12 @@ export interface Subcommand {
    */
   [kind]?: "Subcommand";
 }
+
+/**
+ * The part of a command that `loadSpec` gives once the command is entered:
+ * everything except what its parent reads before then.
+ */
+export type CommandBody = Omit<Subcommand, "name" | "description" | "hidden" | "isPersistent" | "loadSpec">;
 
 /** A option that modifies or overrides command execution. */
 export interface Option {

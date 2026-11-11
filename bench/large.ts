@@ -4,6 +4,9 @@
  * and `options` options that take a value. Running a command prints
  * `run:<group>:<command>:<argument>:<value of --o1>`.
  *
+ * @clo4/cli has two more generators, which put each group's commands behind a
+ * `loadSpec`: one in the same file and one in a file per group.
+ *
  * Only the libraries below have a generator. citty's commands are functions
  * that citty calls only for the command that runs. The other libraries build
  * every command when the CLI starts.
@@ -26,29 +29,58 @@ export function largeCommandLine(shape: LargeShape): { args: string[]; stdout: s
   return { args: [group, command, "in", "--o1", "val"], stdout: `run:${group}:${command}:in:val\n` };
 }
 
-const clo4: Generate = ({ groups, commands, options }) => `
-import { help, run } from "../dist/index.js";
-process.exitCode = await run({
-  name: "forge", description: "Big CLI.", options: [help],
-  subcommands: [
-${range(groups)
-  .map(
-    (g) => `    { name: "g${g}", description: "Group ${g}.", requiresSubcommand: true, subcommands: [
-${range(commands)
-  .map(
-    (c) => `      { name: "c${c}", description: "Command ${g}.${c}.", args: { name: "input" },
+/** One of the @clo4/cli commands. */
+const clo4Command = (g: number, c: number, options: number): string =>
+  `      { name: "c${c}", description: "Command ${g}.${c}.", args: { name: "input" },
         options: [${range(options)
           .map((o) => `{ name: "--o${o}", description: "Option ${o}.", args: { name: "v" } }`)
           .join(", ")}],
-        action({ args, options }) { console.log(\`run:g${g}:c${c}:\${args[0]}:\${options.get("--o1")}\`); } },`,
-  )
+        action({ args, options }) { console.log(\`run:g${g}:c${c}:\${args[0]}:\${options.get("--o1")}\`); } },`;
+
+/** The properties a @clo4/cli group has besides its name and description. */
+const clo4GroupBody = (g: number, { commands, options }: LargeShape): string =>
+  `requiresSubcommand: true, subcommands: [
+${range(commands)
+  .map((c) => clo4Command(g, c, options))
   .join("\n")}
-    ] },`,
-  )
+    ]`;
+
+/** The @clo4/cli CLI, with `group` writing each group after its name and description. */
+const clo4Cli = (shape: LargeShape, group: (g: number) => string, before = ""): string => `
+import { help, run } from "../dist/index.js";
+${before}process.exitCode = await run({
+  name: "forge", description: "Big CLI.", options: [help],
+  subcommands: [
+${range(shape.groups)
+  .map((g) => `    { name: "g${g}", description: "Group ${g}.", ${group(g)} },`)
   .join("\n")}
   ],
 });
 `;
+
+const clo4: Generate = (shape) => clo4Cli(shape, (g) => clo4GroupBody(g, shape));
+
+/** The @clo4/cli CLI with each group's commands behind a `loadSpec` in the same file. */
+export const clo4LoadSpec: Generate = (shape) =>
+  clo4Cli(shape, (g) => `loadSpec: () => ({ ${clo4GroupBody(g, shape)} })`);
+
+/**
+ * The @clo4/cli CLI with each group's commands in a file of their own, which
+ * `loadSpec` imports. Returns the entry's source, then each group file's
+ * source by the path the entry imports it from.
+ */
+export function clo4LoadSpecFiles(shape: LargeShape): { entry: string; files: Map<string, string> } {
+  const files = new Map<string, string>();
+  for (const g of range(shape.groups)) {
+    files.set(`./large-group-${g}.mjs`, `export default { ${clo4GroupBody(g, shape)} };`);
+  }
+  const entry = clo4Cli(
+    shape,
+    (g) => `loadSpec: () => import("./large-group-${g}.mjs").then(body)`,
+    "const body = (module) => module.default;\n",
+  );
+  return { entry, files };
+}
 
 const sade: Generate = ({ groups, commands, options }) => `
 import sade from "sade";

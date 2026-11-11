@@ -1,14 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism, cpus, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 
 import { build as rolldownBuild } from "rolldown";
 
 import * as CLI from "../src/index.js";
-import { largeCommandLine, largeGenerators } from "./large.js";
+import { clo4LoadSpec, clo4LoadSpecFiles, largeCommandLine, largeGenerators } from "./large.js";
 import type { LargeShape } from "./large.js";
 
 type Adapter = readonly [library: string, scriptUrl: URL];
@@ -176,6 +176,15 @@ const largeShapes: readonly { commands: string; shape: LargeShape }[] = [
   { commands: "100", shape: { groups: 10, commands: 10, options: 6 } },
   { commands: "1,000", shape: { groups: 50, commands: 20, options: 6 } },
 ];
+
+/**
+ * The large CLIs again for @clo4/cli alone, with each group's commands behind
+ * a `loadSpec`. They're rows of their own, outside the comparison, like completion.
+ */
+const loadSpecKinds = [
+  { key: "body", title: "loadSpec in one file" },
+  { key: "import", title: "loadSpec, a file per group" },
+] as const;
 
 const baselineScenario: Scenario = { name: "process startup", group: "command", args: [] };
 
@@ -388,7 +397,19 @@ async function prepareJobs(
     return { name: `${commands} commands`, group: "large", args, expected: { status: 0, stdout } };
   });
 
+  const loadSpecBundle = (kind: string, i: number) =>
+    kind === "import"
+      ? join(bundleDir, `large-load-import-${i}`, "entry.mjs")
+      : bundled(`large-load-body-${i}`);
+
   await Promise.all([
+    ...largeShapes.flatMap(({ shape }, i) => {
+      const { entry, files } = clo4LoadSpecFiles(shape);
+      return [
+        bundle(join(benchDir, `large-load-body-${i}.mjs`), loadSpecBundle("body", i), clo4LoadSpec(shape)),
+        bundle(join(benchDir, "entry.mjs"), loadSpecBundle("import", i), entry, files),
+      ];
+    }),
     bundle(fileURLToPath(baselineAdapter), bundled("baseline")),
     bundle(fileURLToPath(completionAdapter), bundled("completion")),
     ...adapters.map(([library, url]) => bundle(fileURLToPath(url), bundled(library))),
@@ -416,6 +437,15 @@ async function prepareJobs(
       });
     }
   }
+  for (const { key, title } of loadSpecKinds) {
+    largeScenarios.forEach((scenario, i) => {
+      jobs.push({
+        library: ours,
+        scenario: { ...scenario, name: `${scenario.name}, ${title}` },
+        bundle: loadSpecBundle(key, i),
+      });
+    });
+  }
   jobs.push({ library: ours, scenario: completionScenario, bundle: bundled("completion") });
 
   return { jobs, libraries: adapters.map(([library]) => library), largeScenarios };
@@ -425,8 +455,15 @@ async function prepareJobs(
  * Bundle `input` to `output`, minified, as a CLI shipped to users would be.
  * With `source`, `input` is a path that needn't exist and `source` is its
  * contents, so a generated adapter's imports resolve from the bench directory.
+ * With `files`, the adapter imports each of those paths with `import()`, and
+ * `output` gets a chunk beside it for each one.
  */
-async function bundle(input: string, output: string, source?: string): Promise<void> {
+async function bundle(
+  input: string,
+  output: string,
+  source?: string,
+  files?: ReadonlyMap<string, string>,
+): Promise<void> {
   await rolldownBuild({
     input,
     platform: "node",
@@ -438,14 +475,17 @@ async function bundle(input: string, output: string, source?: string): Promise<v
         : [
             {
               name: "generated-adapter",
-              resolveId: (id) => (id === input ? input : null),
-              load: (id) => (id === input ? source : null),
+              resolveId: (id) => (id === input || files?.has(id) ? id : null),
+              load: (id) => (id === input ? source : (files?.get(id) ?? null)),
             },
           ],
     output: {
-      file: output,
+      // Chunks are named .mjs too, so Node doesn't parse each one twice to
+      // find out whether it's a module.
+      ...(files
+        ? { dir: dirname(output), entryFileNames: basename(output), chunkFileNames: "[name]-[hash].mjs" }
+        : { file: output, codeSplitting: false }),
       format: "esm",
-      codeSplitting: false,
       sourcemap: false,
       minify: true,
     },
@@ -874,7 +914,7 @@ function readConcurrency(raw: string | undefined): number {
 }
 
 function formatRow(cells: readonly string[]): string {
-  const widths = [19, 24, 10, 10, 10, 10, 10, 4, 24];
+  const widths = [19, 42, 10, 10, 10, 10, 10, 4, 24];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 

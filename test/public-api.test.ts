@@ -45,6 +45,7 @@ test("the entrypoints export these types", async () => {
     "Action",
     "ActionInit",
     "Arg",
+    "CommandBody",
     "CommandPath",
     "Generator",
     "NonEmptyArray",

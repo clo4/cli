@@ -8,6 +8,8 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Command**: Any node in a spec, the root included. A **subcommand** is a command below another one.
 
+**Command body**: Everything about a subcommand except what its parent reads before entering it, which is its name, description, and whether it's hidden or persistent. A subcommand's `loadSpec` gives its body when a command line enters it.
+
 **Path**: The commands from the root to the selected one.
 
 **Option**: A named token a command accepts, optionally followed by values. Help output calls these flags. _Avoid_: flag (outside help output)

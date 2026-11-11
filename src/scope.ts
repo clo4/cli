@@ -1,4 +1,4 @@
-import type { Option, Spec, Subcommand } from "./types.js";
+import type { CommandBody, Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
 import { NoSubcommand } from "./subcommands.js";
@@ -123,8 +123,13 @@ export class CommandScope {
     return scope;
   }
 
-  /** Move to `command`, a subcommand of the current one. */
-  enter(command: Spec | Subcommand): void {
+  /**
+   * Move to `command`, a subcommand of the current one. A command with a
+   * `loadSpec` gets its body first, unless `load` is false. If the body is a
+   * promise, so is the result, and the scope can't be asked anything until it
+   * settles.
+   */
+  enter(command: Spec | Subcommand, load = true): Promise<void> | null {
     const parentSubcommands = this.command.subcommands;
     if (parentSubcommands) {
       // Nearest first, so these go in front of the ones inherited from above.
@@ -136,7 +141,14 @@ export class CommandScope {
       }
     }
     this.command = command;
+    if ((command as Subcommand).loadSpec !== undefined && load) {
+      const loading = loadBody(command as Subcommand);
+      if (loading) {
+        return loading.then(() => this.select(command));
+      }
+    }
     this.select(command);
+    return null;
   }
 
   /** Take the argument limits, options and directives of `command`, the new current command. */
@@ -519,6 +531,39 @@ export class CommandScope {
     }
     return null;
   }
+}
+
+/**
+ * Call `command`'s `loadSpec` and merge the body into the command, so every
+ * reader of the spec sees one loaded command from then on. Returns a promise
+ * only if `loadSpec` did. It's a function of its own so that a cold parse of a
+ * spec without `loadSpec` doesn't compile it.
+ */
+export function loadBody(command: Subcommand): Promise<void> | null {
+  const body = command.loadSpec!();
+  if (typeof (body as Promise<CommandBody>).then === "function") {
+    return Promise.resolve(body).then((loaded) => mergeBody(command, loaded));
+  }
+  mergeBody(command, body as CommandBody);
+  return null;
+}
+
+/**
+ * Load the body of every command below `command` that has a `loadSpec`, so the
+ * spec checks see the whole CLI.
+ */
+export async function loadAll(command: Spec | Subcommand): Promise<void> {
+  for (const subcommand of command.subcommands ?? []) {
+    if (subcommand.loadSpec !== undefined) {
+      await loadBody(subcommand);
+    }
+    await loadAll(subcommand);
+  }
+}
+
+function mergeBody(command: Subcommand, body: CommandBody): void {
+  command.loadSpec = undefined;
+  Object.assign(command, body);
 }
 
 const optionKeys = new WeakMap<Option, string>();

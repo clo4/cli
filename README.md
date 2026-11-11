@@ -467,6 +467,8 @@ A command without an action prints its help. Set `hidden: true` to leave a comma
 
 Setting `requiresSubcommand: true` on a command prevents it from accepting positional arguments. When no subcommand is supplied, the command's action runs if defined; otherwise, it displays help.
 
+A CLI with dozens of commands can [load each command when it's used](#loading-commands-on-demand).
+
 <br>
 
 ### Global options
@@ -1000,6 +1002,62 @@ The benchmark runs seven tasks, including help output, nested commands and argum
 For each library, the score is the geometric mean of its seven task medians, minus the cost of loading an empty bundle. The table compares those scores. “Roughly equivalent” means the difference was below 0.25 ms, or the 95% bootstrap interval for the difference included zero.
 
 </details>
+
+### Loading commands on demand
+
+A spec is built in full every time the CLI starts, even though one run uses one command. Give a subcommand a `loadSpec` function and the rest of that command is built only when a command line enters it:
+
+```ts
+subcommands: [
+  {
+    name: "remote",
+    description: "Manage remotes.",
+    loadSpec: () => import("./remote.ts").then((module) => module.default),
+  },
+],
+```
+
+```ts
+// remote.ts
+import type { CommandBody } from "@clo4/cli";
+
+export default {
+  requiresSubcommand: true,
+  subcommands: [
+    { name: "add", description: "Add a remote.", args: { name: "url" }, action: addRemote },
+    { name: "list", description: "List remotes.", action: listRemotes },
+  ],
+} satisfies CommandBody;
+```
+
+The command keeps its `name`, `description`, `hidden` and `isPersistent`, because its parent's help and completion show it before it loads. Everything else goes in the body: `args`, `options`, `subcommands`, `action`, `requiresSubcommand` and `parserDirectives`. A subcommand in a body can have a `loadSpec` of its own.
+
+`loadSpec` runs once, the first time the parser, help or completion enters the command. `demo remote add`, `demo remote --help`, `demo help remote` and pressing Tab after `demo remote` all load `remote` and nothing else. `demo --help` loads nothing.
+
+`loadSpec` can also return the body directly, which keeps the command in the same file and the parser synchronous:
+
+```ts
+loadSpec: () => ({ requiresSubcommand: true, subcommands: [/* ... */] }),
+```
+
+Write the `import()` in your own file with a literal path, as above, so a bundler can find the file and emit it as a separate chunk.
+
+`testSpec` loads every command before it checks the spec.
+
+#### When loading on demand is faster
+
+Loading from another file costs about 0.3 ms, the time Node takes to read one more file. It's faster than building the whole spec from about 50 commands up, which is also about when a spec gets easier to maintain as a file per command group. Returning the body from the same file is faster from about 25 commands, and costs 0.03 ms below that.
+
+These times are for running one command of a bundled CLI whose commands each take 6 options, on an Apple M3 Pro. They leave out Node's own startup and the time it spends setting up stdout.
+
+| Commands | No `loadSpec` | Body from the same file | Body from a file per group |
+| -------- | ------------- | ----------------------- | -------------------------- |
+| 10       | 1.5 ms        | 1.6 ms                  | 1.8 ms                     |
+| 50       | 1.9 ms        | 1.9 ms                  | 1.9 ms                     |
+| 100      | 2.3 ms        | 2.1 ms                  | 1.9 ms                     |
+| 1,000    | 12.6 ms       | 7.5 ms                  | 2.1 ms                     |
+
+The benchmark's large CLIs have a row for each form.
 
 [← Parser settings](#parser-settings) · [↑ Contents](#contents) · [API and compatibility →](#api-and-compatibility)
 

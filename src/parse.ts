@@ -320,6 +320,19 @@ class Scanner implements TokenReader {
    */
   problem: (() => ParseError) | null = null;
 
+  /**
+   * The body of the command just entered, if its `loadSpec` returned a
+   * promise. Nothing can be read until it settles, and whoever waits for it
+   * sets this back to null.
+   */
+  pending: Promise<void> | null = null;
+
+  /**
+   * Whether entering a command loads its body. {@link readNext} turns it off
+   * to read the word being completed, which nothing follows.
+   */
+  loads = true;
+
   // The first argument past the command's limit, or a subcommand that didn't
   // match. It's only an error once the whole line is read, because an option
   // action like --help allows it.
@@ -652,7 +665,7 @@ class Scanner implements TokenReader {
       this.endOption();
       this.open = noOpenOption;
       this.path.push(meaning.command);
-      this.scope.enter(meaning.command);
+      this.pending = this.scope.enter(meaning.command, this.loads);
       return meaning;
     }
 
@@ -720,16 +733,22 @@ class Scanner implements TokenReader {
     }
   }
 
-  /** See {@link readHelpNames}. Call it on a new scanner for the root of `path`. */
-  readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
+  /**
+   * See {@link readHelpNamesOrWait}. Call it on a new scanner for the root of
+   * `path`. `from` is for carrying on after a wait, at that name.
+   */
+  readHelpNames(path: CommandPath, names: readonly string[], from = -1): HelpNames | Promise<HelpNames> {
     const help = path[path.length - 1];
-    for (let i = 1; i < path.length - 1; i++) {
-      this.path.push(path[i]);
-      this.scope.enter(path[i]);
+    if (from < 0) {
+      for (let i = 1; i < path.length - 1; i++) {
+        this.path.push(path[i]);
+        this.scope.enter(path[i]);
+      }
+      // The parser read the names as arguments of help, so none is an option.
+      this.optionsAllowed = false;
+      from = 0;
     }
-    // The parser read the names as arguments of help, so none is an option.
-    this.optionsAllowed = false;
-    for (let i = 0; i < names.length; i++) {
+    for (let i = from; i < names.length; i++) {
       const own = this.scope.command.subcommands;
       const reading = this.read(names[i]);
       if (reading.kind !== "subcommand") {
@@ -743,6 +762,11 @@ class Scanner implements TokenReader {
       if (reading.command === help && !own?.includes(help)) {
         this.path.pop();
         return { path: this.path, error: null, subcommands: [] };
+      }
+      const pending = this.pending;
+      if (pending) {
+        this.pending = null;
+        return pending.then(() => this.readHelpNames(path, names, i + 1));
       }
     }
     const subcommands = this.scope.subcommands();
@@ -778,20 +802,58 @@ export function tokenReader(spec: Spec): TokenReader {
 }
 
 /**
+ * Throw if `value` had to wait for a `loadSpec` that returned a promise.
+ * {@link parse} and {@link readNext} use this to stay synchronous.
+ */
+function unlessWaiting<T>(value: T | Promise<T>): T {
+  if (value instanceof Promise) {
+    // The caller can't wait for it, so it mustn't become an unhandled rejection.
+    value.catch(() => {});
+    throw new Error("A loadSpec returned a promise, so this command line can't be read synchronously");
+  }
+  return value;
+}
+
+/**
  * Work out what the token after `before` can be, and how the parser reads
  * `partial`: whether it's an option, and if so, whether it has a value
  * attached. Reads leniently, so a line that's wrong at the moment still has
- * an answer. Completion is built on this.
+ * an answer. Completion is built on this. The result is a promise only if a
+ * command on the line had a body to wait for.
  */
+export function readNextOrWait(
+  spec: Spec,
+  before: readonly string[],
+  partial: string,
+): NextToken | Promise<NextToken> {
+  return readNextFrom(new Scanner(spec), before, 0, partial);
+}
+
+/** {@link readNextOrWait}, for a spec whose `loadSpec`s return no promises. */
 export function readNext(spec: Spec, before: readonly string[], partial: string): NextToken {
-  const s = new Scanner(spec);
-  for (const token of before) {
-    s.read(token);
+  return unlessWaiting(readNextOrWait(spec, before, partial));
+}
+
+function readNextFrom(
+  s: Scanner,
+  before: readonly string[],
+  from: number,
+  partial: string,
+): NextToken | Promise<NextToken> {
+  for (let i = from; i < before.length; i++) {
+    s.read(before[i]);
+    const pending = s.pending;
+    if (pending) {
+      s.pending = null;
+      return pending.then(() => readNextFrom(s, before, i + 1, partial));
+    }
   }
   const next = s.next();
   let attached: NextToken["attached"] = null;
   let partialIsOption = false;
   if (partial !== "" && next.optionsAllowed) {
+    // Nothing follows the partial token, so a command it names isn't loaded.
+    s.loads = false;
     const reading = s.read(partial);
     partialIsOption =
       reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
@@ -812,7 +874,7 @@ export function readNext(spec: Spec, before: readonly string[], partial: string)
 /**
  * Say what the parser reads `token` as when it comes after `before`. Reads
  * leniently, like {@link readNext}. To read every token of a line, use
- * {@link tokenReader}.
+ * {@link tokenReader}. Every command on the line has to be loaded already.
  */
 export function readToken(spec: Spec, before: readonly string[], token: string): TokenReading {
   const s = new Scanner(spec);
@@ -828,10 +890,19 @@ export function readToken(spec: Spec, before: readonly string[], token: string):
  * the parser doesn't read as a subcommand. That name is an error where the
  * parser reports it as an unknown or ambiguous command. Otherwise help ignores
  * it and the names after it, so `cli help completion zsh` prints the help of
- * `completion`.
+ * `completion`. The result is a promise only if one of the commands had a
+ * body to wait for.
  */
-export function readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
+export function readHelpNamesOrWait(
+  path: CommandPath,
+  names: readonly string[],
+): HelpNames | Promise<HelpNames> {
   return new Scanner(path[0]).readHelpNames(path, names);
+}
+
+/** {@link readHelpNamesOrWait}, for a spec whose `loadSpec`s return no promises. */
+export function readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
+  return unlessWaiting(readHelpNamesOrWait(path, names));
 }
 
 /**
@@ -839,17 +910,43 @@ export function readHelpNames(path: CommandPath, names: readonly string[]): Help
  *
  * This returns a `ParseResult`, which contains the array of
  * subcommands used, the provided options, the arguments, and the action to
- * run.
+ * run. It returns a promise of one only if a command on the line had a
+ * `loadSpec` that returned a promise.
  *
- * If parsing fails, this function throws.
+ * If parsing fails, this function throws, or the promise rejects. `s` and
+ * `from` are for carrying on after a wait, with the scanner that read the
+ * tokens before `from`.
  */
-export function parse(input: readonly string[], spec: Spec): ParseResult {
-  const s = new Scanner(spec);
-  for (let i = 0; i < input.length; i++) {
+export function parseOrWait(
+  input: readonly string[],
+  spec: Spec,
+  s = new Scanner(spec),
+  from = 0,
+): ParseResult | Promise<ParseResult> {
+  for (let i = from; i < input.length; i++) {
     s.read(input[i]);
-    if (s.problem) {
-      throw s.problem();
+    if (s.problem || s.pending) {
+      return stop(s, input, spec, i + 1);
     }
   }
   return s.finish();
+}
+
+/** {@link parseOrWait}, for a spec whose `loadSpec`s return no promises. */
+export function parse(input: readonly string[], spec: Spec): ParseResult {
+  return unlessWaiting(parseOrWait(input, spec));
+}
+
+/**
+ * Throw the scanner's problem, or else wait for the body it's loading and
+ * parse the rest of `input` from `next`. It's a function of its own so that a
+ * cold parse that never stops doesn't compile it.
+ */
+function stop(s: Scanner, input: readonly string[], spec: Spec, next: number): Promise<ParseResult> {
+  if (s.problem) {
+    throw s.problem();
+  }
+  const pending = s.pending!;
+  s.pending = null;
+  return pending.then(() => parseOrWait(input, spec, s, next));
 }

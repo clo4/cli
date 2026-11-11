@@ -1,9 +1,10 @@
-import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
+import type { ActionInit, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { readHelpNames } from "./parse.js";
+import { readHelpNamesOrWait } from "./parse.js";
+import type { HelpNames } from "./parse.js";
 import { addDefaults, asArray, print, printError } from "./util.js";
 
 // Help uses plain loops instead of array callbacks. V8 compiles each function
@@ -64,15 +65,22 @@ export const helpCommand: Subcommand = {
     isVariadic: true,
   },
   action({ path, args, help }) {
-    const target = readHelpNames(path, args);
-    if (target.error) {
-      printUsageError(target.path, target.error.message, target.error.didYouMean);
-      return 1;
-    }
-    print(help({ path: target.path }));
-    return 0;
+    const target = readHelpNamesOrWait(path, args);
+    return target instanceof Promise
+      ? target.then((loaded) => printHelpNames(loaded, help))
+      : printHelpNames(target, help);
   },
 };
+
+/** Print the help of the command the help command's names led to, or the error they ended in. */
+function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
+  if (target.error) {
+    printUsageError(target.path, target.error.message, target.error.didYouMean);
+    return 1;
+  }
+  print(help({ path: target.path }));
+  return 0;
+}
 
 /** A persistent help option that prints help for the selected command. */
 export const help: Option = {

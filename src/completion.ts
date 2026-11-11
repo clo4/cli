@@ -4,7 +4,7 @@
  * The `completion` subcommand prints a short script for a supported shell. On
  * every Tab, that script runs the CLI's hidden `completion complete` command
  * with the command line typed so far. The CLI then works out the candidates
- * with the parser's own `readNext`, so completion always matches what the parser
+ * with the parser's own `readNextOrWait`, so completion always matches what the parser
  * accepts at that position: subcommands, options with their
  * relationship rules, and argument values from `template`, `suggestions` and
  * `generators`.
@@ -15,7 +15,7 @@
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, output, print } from "./util.js";
 import { helpCommand, printUsageError } from "./help.js";
-import { readHelpNames, readNext } from "./parse.js";
+import { readHelpNamesOrWait, readNextOrWait } from "./parse.js";
 import type { NextToken } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
@@ -172,11 +172,11 @@ export interface CompletionRequest {
 
 /**
  * Resolve completion candidates for a partial command line. The parser works
- * out what the word can be with {@link readNext}, and this offers candidates
+ * out what the word can be with {@link readNextOrWait}, and this offers candidates
  * for each of those.
  */
 export async function completeRuntime(req: CompletionRequest): Promise<Candidate[]> {
-  const next = readNext(req.spec, req.before, req.partial);
+  const next = await readNextOrWait(req.spec, req.before, req.partial);
   const tokens = [...req.before];
 
   // The word is an option with a value attached, like `--mode=fa`.
@@ -204,7 +204,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
       candidates.push(...(await argValues(arg, tokens, req.partial)));
     }
     if (!next.value && next.path[next.path.length - 1].action === helpCommand.action) {
-      candidates.push(...helpNameCandidates(next));
+      candidates.push(...(await helpNameCandidates(next)));
     }
   }
   for (const { command, names } of next.subcommands) {
@@ -225,15 +225,16 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
 }
 
 /**
- * The names a help command can take next, which {@link readHelpNames} works
+ * The names a help command can take next, which {@link readHelpNamesOrWait} works
  * out. A copy of `helpCommand` is recognised by its action.
  */
-function helpNameCandidates(next: NextToken): Candidate[] {
+async function helpNameCandidates(next: NextToken): Promise<Candidate[]> {
   // The parser reads a name of one of these as that subcommand, so help never
   // sees it, and the subcommand loop offers it.
   const taken = new Set(next.subcommands.flatMap(({ names }) => names));
   const candidates: Candidate[] = [];
-  for (const { command: subcommand, names } of readHelpNames(next.path, next.args).subcommands) {
+  for (const { command: subcommand, names } of (await readHelpNamesOrWait(next.path, next.args))
+    .subcommands) {
     if (subcommand.hidden) {
       continue;
     }

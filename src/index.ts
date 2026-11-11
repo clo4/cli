@@ -2,6 +2,7 @@ export type {
   Action,
   ActionInit,
   Arg,
+  CommandBody,
   CommandPath,
   Generator,
   NonEmptyArray,
