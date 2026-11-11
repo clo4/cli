@@ -1,10 +1,10 @@
-import type { Arg, CommandPath, Option, NonEmptyArray, Subcommand } from "./types.js";
+import type { Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
 import type { OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import type { NoSubcommand } from "./subcommands.js";
-import { addDefaults, asArray, getMaxArgs, print, printError } from "./util.js";
+import { readHelpNames } from "./parse.js";
+import { addDefaults, asArray, print, printError } from "./util.js";
 
 // Help uses plain loops instead of array callbacks. V8 compiles each function
 // the first time it's called, and a CLI prints help at most once a run, so
@@ -49,11 +49,11 @@ export function printUsageError(
 /**
  * A subcommand that prints help for its parent, or for the command the names
  * after it lead to from there, so `cli help a b` prints the help of `cli a b`.
- * It reads names until one isn't a subcommand. A token where the command takes
- * arguments, or where it has no subcommands, ends the names, so
- * `cli help completion zsh` prints the help of `completion`. Any other token
- * is an unknown command. Add `{ ...helpCommand, isPersistent: true }` instead
- * to make `cli a b help` work too.
+ * It reads the names the way the parser reads them in place of `help`. The
+ * first name that isn't a subcommand ends the names, so `cli help completion
+ * zsh` prints the help of `completion`. Help reports that name as an unknown
+ * command where the parser would. Add `{ ...helpCommand, isPersistent: true }`
+ * instead to make `cli a b help` work too.
  */
 export const helpCommand: Subcommand = {
   name: "help",
@@ -64,60 +64,15 @@ export const helpCommand: Subcommand = {
     isVariadic: true,
   },
   action({ path, args, help }) {
-    const target = followHelpNames(path, args);
-    if (target.unknown) {
-      const { message, didYouMean } = target.unknown.reason();
-      printUsageError(target.path, message, didYouMean);
+    const target = readHelpNames(path, args);
+    if (target.error) {
+      printUsageError(target.path, target.error.message, target.error.didYouMean);
       return 1;
     }
     print(help({ path: target.path }));
     return 0;
   },
 };
-
-/** Where the names after a help command lead. See {@link followHelpNames}. */
-export interface HelpTarget {
-  /** The commands from the root to the one whose help prints. */
-  path: [Subcommand, ...Subcommand[]];
-  /** The scope of the last command on `path`. */
-  scope: CommandScope;
-  /** How many of the names led to a command. Help ignores the names after them. */
-  read: number;
-  /** Why a name named no command, if help has to report it as unknown. */
-  unknown: NoSubcommand | null;
-}
-
-/**
- * Follow the `names` after the help command that ends `path`, matching each
- * one the way the parser would have matched it in place of `help`.
- */
-export function followHelpNames(path: CommandPath, names: readonly string[]): HelpTarget {
-  const self = path[path.length - 1];
-  const helpPath = path.slice(0, -1) as unknown as [Subcommand, ...Subcommand[]];
-  const scope = CommandScope.at(helpPath);
-  let read = 0;
-  for (; read < names.length; read++) {
-    const command = helpPath[helpPath.length - 1];
-    if (!command.subcommands) {
-      break;
-    }
-    const match = scope.matchSubcommand(names[read]);
-    // With a persistent help command, `cli help a help` is `cli a help`.
-    if (match.command === self && !command.subcommands.includes(self)) {
-      break;
-    }
-    if (match.command) {
-      helpPath.push(match.command);
-      scope.enter(match.command);
-      continue;
-    }
-    if (!command.requiresSubcommand && getMaxArgs(command.args) > 0) {
-      break;
-    }
-    return { path: helpPath, scope, read, unknown: match };
-  }
-  return { path: helpPath, scope, read, unknown: null };
-}
 
 /** A persistent help option that prints help for the selected command. */
 export const help: Option = {

@@ -14,8 +14,8 @@
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, print } from "./util.js";
-import { followHelpNames, helpCommand, printUsageError } from "./help.js";
-import { readNext } from "./parse.js";
+import { helpCommand, printUsageError } from "./help.js";
+import { readHelpNames, readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
@@ -222,23 +222,16 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
 }
 
 /**
- * The names a help command can take next: the subcommands of the command its
- * earlier names lead to. A copy of `helpCommand` is recognised by its action.
+ * The names a help command can take next, which {@link readHelpNames} works
+ * out. A copy of `helpCommand` is recognised by its action.
  */
 function helpNameCandidates(next: NextToken): Candidate[] {
-  const target = followHelpNames(next.path, next.args);
-  const command = target.path[target.path.length - 1];
-  if (target.unknown || target.read < next.args.length || !command.subcommands) {
-    return [];
-  }
-  // The parser reads a name of one of these as that subcommand, and the
-  // subcommand loop offers it as one.
+  // The parser reads a name of one of these as that subcommand, so help never
+  // sees it, and the subcommand loop offers it.
   const taken = new Set(next.subcommands.flatMap(({ names }) => names));
-  const self = next.path[next.path.length - 1];
   const candidates: Candidate[] = [];
-  for (const { command: subcommand, names } of target.scope.subcommands()) {
-    // Help reads an inherited copy of itself as the end of the names.
-    if (subcommand.hidden || (subcommand === self && !command.subcommands.includes(self))) {
+  for (const { command: subcommand, names } of readHelpNames(next.path, next.args).subcommands) {
+    if (subcommand.hidden) {
       continue;
     }
     const description = firstLine(subcommand.description);

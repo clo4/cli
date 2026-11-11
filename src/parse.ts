@@ -251,6 +251,19 @@ function unusedDefaults(scope: CommandScope, name: string): string[] | undefined
   return values.length > 0 ? values : undefined;
 }
 
+/** Where the names after a help command lead. See {@link readHelpNames}. */
+export interface HelpNames {
+  /** The commands from the root to the one whose help prints. */
+  path: CommandPath;
+  /** The error help reports if a name is an unknown or ambiguous command. */
+  error: ParseError | null;
+  /**
+   * The subcommands the next name can lead to, hidden ones included, each
+   * with the names that still refer to it. Empty once the names have ended.
+   */
+  subcommands: readonly LiveSubcommand[];
+}
+
 /** Reads a command line one token at a time. See {@link tokenReader}. */
 export interface TokenReader {
   /** Read the next token of the line, and say what it was read as. */
@@ -706,6 +719,45 @@ class Scanner implements TokenReader {
       });
     }
   }
+
+  /** See {@link readHelpNames}. Call it on a new scanner for the root of `path`. */
+  readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
+    const help = path[path.length - 1];
+    for (let i = 1; i < path.length - 1; i++) {
+      this.path.push(path[i]);
+      this.scope.enter(path[i]);
+    }
+    // The parser read the names as arguments of help, so none is an option.
+    this.optionsAllowed = false;
+    for (let i = 0; i < names.length; i++) {
+      const own = this.scope.command.subcommands;
+      const reading = this.read(names[i]);
+      if (reading.kind !== "subcommand") {
+        // Where the command has no subcommands of its own, the parser reports
+        // a name it has no room for as too many arguments. Help prints the
+        // command's help instead.
+        const error = this.tooManyArgs?.() ?? null;
+        return { path: this.path, error: error instanceof TooManyArguments ? null : error, subcommands: [] };
+      }
+      // With a persistent help command, `cli help a help` is `cli a help`.
+      if (reading.command === help && !own?.includes(help)) {
+        this.path.pop();
+        return { path: this.path, error: null, subcommands: [] };
+      }
+    }
+    const subcommands = this.scope.subcommands();
+    if (this.scope.command.subcommands?.includes(help)) {
+      return { path: this.path, error: null, subcommands };
+    }
+    // An inherited copy of help ends the names, so it leads nowhere new.
+    const next: LiveSubcommand[] = [];
+    for (let i = 0; i < subcommands.length; i++) {
+      if (subcommands[i].command !== help) {
+        next.push(subcommands[i]);
+      }
+    }
+    return { path: this.path, error: null, subcommands: next };
+  }
 }
 
 /** The argument at `index`, reusing a final variadic argument. */
@@ -768,6 +820,18 @@ export function readToken(spec: Spec, before: readonly string[], token: string):
     s.read(earlier);
   }
   return s.read(token);
+}
+
+/**
+ * Read `names`, the arguments of the help command that ends `path`, the way
+ * the parser reads them in place of `help`. The names end at the first one
+ * the parser doesn't read as a subcommand. That name is an error where the
+ * parser reports it as an unknown or ambiguous command. Otherwise help ignores
+ * it and the names after it, so `cli help completion zsh` prints the help of
+ * `completion`.
+ */
+export function readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
+  return new Scanner(path[0]).readHelpNames(path, names);
 }
 
 /**

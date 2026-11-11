@@ -860,6 +860,19 @@ test("runtime: a persistent help command offers the subcommands of the command i
   expect(values(await resolve(spec, ["help", "remote"], ""))).not.toContain("help");
 });
 
+test("runtime: help offers the persistent subcommands the command its names lead to inherits", async () => {
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      { name: "status", description: "Show the status", isPersistent: true },
+      { name: "leaf", description: "A leaf" },
+      helpCommand,
+    ],
+  };
+  const candidates = await resolve(spec, ["help", "leaf"], "");
+  expect(candidates).toEqual([{ value: "status", description: "Show the status" }]);
+});
+
 test("runtime: gateOptions offers help's subcommand names until the word starts with a dash", async () => {
   const spec = helpFixture(helpCommand);
   const v = values(await resolve(spec, ["help"], "", true));

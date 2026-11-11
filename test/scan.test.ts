@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { InvalidOptionArg, UnknownOption } from "../src/errors.js";
-import { parse, readNext, readToken } from "../src/parse.js";
+import { parse, readHelpNames, readNext, readToken } from "../src/parse.js";
 import type { Arg, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 
@@ -307,4 +307,48 @@ test("readNext: lists the options the next token can use, with the names that re
     { option: all, forms: [{ name: "-a", join: null }], used: false },
   ]);
   expect(readNext(spec, ["--"], "").options).toEqual([]);
+});
+
+test("readHelpNames: reads the names after help the way the parser reads a command line", () => {
+  const status: Subcommand = { name: "status", isPersistent: true };
+  const add: Subcommand = { name: "add" };
+  const remote: Subcommand = { name: "remote", subcommands: [add] };
+  const open: Subcommand = { name: "open", args: { name: "file" } };
+  const leaf: Subcommand = { name: "leaf" };
+  const help: Subcommand = { name: "help", args: { isVariadic: true, isOptional: true }, isPersistent: true };
+  const spec: Spec = { name: "test", subcommands: [status, remote, open, leaf, help] };
+  const at = [spec, help] as const;
+
+  // An inherited subcommand leads on, as it does in `test leaf status`.
+  expect(readHelpNames(at, ["leaf", "status"])).toMatchObject({ path: [spec, leaf, status], error: null });
+  expect(readHelpNames(at, ["leaf"]).subcommands).toEqual([{ command: status, names: ["status"] }]);
+
+  // A name where the command takes arguments, or has no subcommands, ends the names.
+  expect(readHelpNames(at, ["open", "a", "add"])).toEqual({
+    path: [spec, open],
+    error: null,
+    subcommands: [],
+  });
+  expect(readHelpNames(at, ["leaf", "x"])).toEqual({ path: [spec, leaf], error: null, subcommands: [] });
+
+  // Any other name is an unknown command, reported at the command reached.
+  const unknown = readHelpNames(at, ["remote", "ad"]);
+  expect(unknown.path).toEqual([spec, remote]);
+  expect(unknown.error).toMatchObject({ message: "Unknown command 'ad'", context: { path: [spec, remote] } });
+
+  // No name is an option.
+  expect(readHelpNames(at, ["--"]).error).toMatchObject({ message: "Unknown command '--'" });
+
+  // An inherited copy of help ends the names, and isn't offered as a name.
+  expect(readHelpNames(at, ["remote", "help", "add"])).toEqual({
+    path: [spec, remote],
+    error: null,
+    subcommands: [],
+  });
+  expect(readHelpNames(at, ["remote"]).subcommands).toEqual([
+    { command: add, names: ["add"] },
+    { command: status, names: ["status"] },
+  ]);
+  // Where help is a command's own subcommand, its name leads to help.
+  expect(readHelpNames(at, ["help"]).path).toEqual([spec, help]);
 });

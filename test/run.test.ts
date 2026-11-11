@@ -273,6 +273,47 @@ test("run: a persistent helpCommand works from any command", async () => {
   );
 });
 
+test("run: helpCommand follows a persistent subcommand like the parser does", async () => {
+  const ran: string[] = [];
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      {
+        name: "status",
+        description: "show the status",
+        isPersistent: true,
+        action: () => void ran.push("status"),
+      },
+      { name: "leaf", description: "a leaf", action: () => {} },
+      helpCommand,
+    ],
+  };
+  await captureConsole(() => run(spec, ["leaf", "status"]));
+  expect(ran).toEqual(["status"]);
+
+  const help = await captureConsole(() => run(spec, ["help", "leaf", "status"]));
+  expect(help.code).toBe(0);
+  expect(help.stdout).toMatch(/show the status/);
+  expect(help.stdout).toMatch(/Usage:\n {2}demo leaf status\n/);
+});
+
+test("run: helpCommand reports an unknown command where only an inherited one can go", async () => {
+  const spec: Spec = {
+    name: "demo",
+    subcommands: [
+      { name: "status", isPersistent: true, action: () => {} },
+      { name: "group", requiresSubcommand: true },
+      helpCommand,
+    ],
+  };
+  const parsed = await captureConsole(() => run(spec, ["group", "stat"]));
+  const help = await captureConsole(() => run(spec, ["help", "group", "stat"]));
+  expect(help.code).toBe(1);
+  expect(help.stderr).toMatch(/^Error: Unknown command 'stat'/);
+  expect(help.stderr).toMatch(/Did you mean 'status'/);
+  expect(help.stderr).toBe(parsed.stderr);
+});
+
 test("run: helpCommand isn't persistent", async () => {
   const seen: string[][] = [];
   const spec: Spec = {
