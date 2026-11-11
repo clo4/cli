@@ -183,7 +183,19 @@ const baselineScenario: Scenario = { name: "process startup", group: "command", 
 const completionScenario: Scenario = {
   name: "completion",
   group: "command",
-  args: ["completion", "complete", "--gate-options", "--", "remote", "add", "origin", "url", "--"],
+  args: [
+    "completion",
+    "complete",
+    "--shell",
+    "bash",
+    "--gate-options",
+    "--",
+    "remote",
+    "add",
+    "origin",
+    "url",
+    "--",
+  ],
 };
 
 process.exitCode = await CLI.run({

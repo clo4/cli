@@ -13,7 +13,7 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { makeArray, print } from "./util.js";
+import { makeArray, output, print } from "./util.js";
 import { helpCommand, printUsageError } from "./help.js";
 import { readHelpNames, readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
@@ -43,9 +43,12 @@ function fishQuote(value: string): string {
   return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
 }
 
-/** Single-quote a string for PowerShell (a quote is written twice). */
+/**
+ * Single-quote a string for PowerShell. A quote is written twice, and
+ * PowerShell reads the curly single quotes as quotes too.
+ */
 function psQuote(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
+  return `'${value.replace(/['\u2018-\u201b]/g, "$&$&")}'`;
 }
 
 /**
@@ -285,46 +288,107 @@ function optionCandidates(next: NextToken): Candidate[] {
   return [...required, ...optional];
 }
 
+// }}}
+
+// Candidate lines {{{
+
+/**
+ * Format candidates as the lines a shell's completion script reads, one line
+ * per candidate. `word` is the word being completed, as the script passed it.
+ *
+ * - bash: the quoted value. Bash inserts a candidate as written and doesn't
+ *   filter, so this keeps the values whose quoted form starts with the word.
+ * - zsh: `value:description` for `_describe`, with `\` and `:` escaped in the
+ *   value. Zsh filters and quotes the values itself.
+ * - fish: `value<Tab>description`. Fish filters and quotes the values itself.
+ * - powershell: `text<Tab>value<Tab>tooltip`, the arguments of a
+ *   CompletionResult. Only values that start with the word, ignoring case.
+ * - nushell: `text<Tab>description`. Only values that start with the word,
+ *   ignoring case.
+ *
+ * A value with a tab or line break doesn't fit on a line, so it's left out.
+ * A description's tabs and line breaks become spaces.
+ */
+export function formatCandidates(candidates: readonly Candidate[], shell: Shell, word: string): string[] {
+  const lines: string[] = [];
+  const lowerWord = word.toLowerCase();
+  const startsWithWord = (value: string) => value.slice(0, word.length).toLowerCase() === lowerWord;
+  for (const candidate of candidates) {
+    const value = candidate.value;
+    if (value === "" || /[\t\n\r]/.test(value)) {
+      continue;
+    }
+    const description = candidate.description?.replace(/\s*[\t\n\r]\s*/g, " ").trim() ?? "";
+    if (shell === "bash") {
+      const text = value.replace(/[ '"\\$`|&;()<>{}*?[!#~]/g, "\\$&");
+      if (text.startsWith(word)) {
+        lines.push(text);
+      }
+    } else if (shell === "zsh") {
+      // `_describe` splits at the first colon without a backslash before it,
+      // then removes the backslashes from both parts.
+      const text = value.replace(/[\\:]/g, "\\$&");
+      lines.push(description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text);
+    } else if (shell === "fish") {
+      lines.push(description ? `${value}\t${description}` : value);
+    } else if (startsWithWord(value)) {
+      if (shell === "powershell") {
+        // A CompletionResult needs a tooltip, so the value stands in for a
+        // missing description.
+        const text = /[\s'"`$&|;,(){}<>@#\u2018-\u201e]/.test(value) ? psQuote(value) : value;
+        lines.push(`${text}\t${value}\t${description || value}`);
+      } else {
+        const text = /[\s'"`$|;#()[\]{}]/.test(value) ? nuQuote(value) : value;
+        lines.push(description ? `${text}\t${description}` : text);
+      }
+    }
+  }
+  return lines;
+}
+
+// }}}
+
+// Completion scripts {{{
+
 /**
  * Render the thin shim that forwards the line to `completion complete`. The
  * binary is invoked as typed (so `./pack` works) and guarded so a missing
- * command degrades to no completion instead of an error.
+ * command degrades to no completion instead of an error. Each shim passes
+ * `--shell`, so the CLI prints lines ready for that shell.
  */
 function renderRuntimeShim(spec: Spec, shell: Shell): string {
   const id = sanitize(spec.name);
   const name = spec.name;
   if (shell === "bash") {
+    // Each line is one reply. Reading the lines into the array keeps them as
+    // written. compgen -W would run the expansions in them, such as $(...).
     return `_${id}_complete() {
   local bin="\${COMP_WORDS[0]}"
   command -v "$bin" >/dev/null 2>&1 || return
-  local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local out
-  out="$(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --gate-options -- "\${COMP_WORDS[@]:1:COMP_CWORD-1}" "$cur" 2>/dev/null | cut -f1)"
-  local IFS=$'\\n'
-  COMPREPLY=( $(compgen -W "$out" -- "$cur") )
+  local line
+  COMPREPLY=()
+  while IFS= read -r line; do COMPREPLY+=( "$line" ); done < <(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --shell bash --gate-options -- "\${COMP_WORDS[@]:1:COMP_CWORD-1}" "\${COMP_WORDS[COMP_CWORD]}" 2>/dev/null)
 }
 complete -F _${id}_complete ${shQuote(name)}`;
   }
   if (shell === "zsh") {
+    // The CLI gets the words without their quotes. Zsh leaves the quote that
+    // opens the word being completed out of $PREFIX, and (Q) removes the rest.
     return `#compdef ${name}
 _${id}_complete() {
-  local bin="$words[1]"
+  local bin="\${(Q)words[1]}"
   command -v "$bin" >/dev/null 2>&1 || return
   local -a lines
-  lines=( "\${(@f)$(SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete -- "\${words[2,CURRENT-1]}" "\${words[CURRENT]}" 2>/dev/null)}" )
-  local -a disp
-  local line
-  for line in $lines; do disp+=( "\${line//$'\\t'/:}" ); done
-  _describe -t values ${shQuote(name)} disp
+  lines=( \${(f)"$(SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete --shell zsh -- "\${(@Q)words[2,CURRENT-1]}" "\${(Q)PREFIX}\${(Q)SUFFIX}" 2>/dev/null)"} )
+  _describe -t values ${shQuote(name)} lines
 }
 _${id}_complete "$@"`;
   }
   if (shell === "powershell") {
-    // PowerShell doesn't filter or quote a native command's candidates, so the
-    // script does both. The arguments go through an array so that PowerShell
-    // passes `--` on to the CLI. Windows PowerShell drops an empty argument,
-    // so an empty word is passed as --empty-word. The word is passed and
-    // matched without the quote it was opened with.
+    // The arguments go through an array so that PowerShell passes `--` on to
+    // the CLI. Windows PowerShell drops an empty argument, so an empty word is
+    // passed as --empty-word. The word is passed without the quote it was
+    // opened with.
     const stringAst = "[System.Management.Automation.Language.StringConstantExpressionAst]";
     return `Register-ArgumentCompleter -Native -CommandName ${psQuote(name)} -ScriptBlock {
   param($wordToComplete, $commandAst, $cursorPosition)
@@ -335,7 +399,7 @@ _${id}_complete "$@"`;
   $partial = $wordToComplete
   if ($partial.StartsWith("'")) { $partial = $partial.Substring(1).TrimEnd("'").Replace("''", "'") }
   elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1).TrimEnd('"') }
-  $arguments = @('completion', 'complete', '--gate-options')
+  $arguments = @('completion', 'complete', '--shell', 'powershell', '--gate-options')
   if ($partial -eq '') { $arguments += '--empty-word' }
   $arguments += '--'
   for ($i = 1; $i -lt $elements.Count; $i++) {
@@ -355,12 +419,9 @@ _${id}_complete "$@"`;
   } finally {
     $env:SHELL_COMPLETION_GENERATOR = $previous
   }
-  $lines | ForEach-Object {
-    $value, $description = $_ -split "\`t", 2
-    if (-not $value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) { return }
-    $text = if ($value -match '[\\s''"\`$&|;,(){}<>@#]') { "'$($value.Replace("'", "''"))'" } else { $value }
-    if (-not $description) { $description = $value }
-    [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $description)
+  foreach ($line in $lines) {
+    $text, $value, $tooltip = $line -split "\`t", 3
+    [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tooltip)
   }
 }`;
   }
@@ -369,8 +430,7 @@ _${id}_complete "$@"`;
     // keeps the completer that was set before and hands it other commands.
     // The spans keep the quotes they were typed with, the command's included,
     // so the script removes them. A command on Windows can be typed with its
-    // extension. Nushell doesn't filter or quote what an external completer
-    // returns, so the script does both.
+    // extension.
     const previous = `$__${id}_previous_completer`;
     const names = ["", ".exe", ".cmd", ".bat"].map((extension) => nuQuote(name + extension)).join(" ");
     return `let __${id}_previous_completer = $env.config.completions.external.completer?
@@ -384,27 +444,14 @@ $env.config.completions.external.completer = {|spans|
     return (if ${previous} != null { do ${previous} $spans })
   }
   if (which $command | is-empty) { return }
-  let args = $words | skip 1
-  let partial = $args | last | default ""
   $env.SHELL_COMPLETION_GENERATOR = 'nushell'
-  ^$command completion complete --gate-options -- ...$args
+  ^$command completion complete --shell nushell --gate-options -- ...($words | skip 1)
     | complete
     | get stdout
     | lines
     | each {|line|
       let parts = $line | split row "\\t"
       { value: $parts.0, description: ($parts | get 1? | default "") }
-    }
-    | where { $in.value | str starts-with --ignore-case $partial }
-    | update value {|candidate|
-      let value = $candidate.value
-      if ($value !~ "[\\\\s'\\"\`$|;#()\\\\[\\\\]{}]") {
-        $value
-      } else if ($value | str contains "'") {
-        $value | to json
-      } else {
-        $"'($value)'"
-      }
     }
 }`;
   }
@@ -415,7 +462,7 @@ $env.config.completions.external.completer = {|spans|
   set -l bin $toks[1]
   command -q -- $bin; or test -x "$bin"; or return
   set -lx SHELL_COMPLETION_GENERATOR fish
-  $bin completion complete --gate-options -- $toks[2..-1] $cur 2>/dev/null
+  $bin completion complete --shell fish --gate-options -- $toks[2..-1] $cur 2>/dev/null
 end
 complete -c ${fishQuote(name)} -f -a '(__${id}_complete)'`;
 }
@@ -430,9 +477,10 @@ export function getCompletion(spec: Spec, shell: Shell): string {
 // Completion commands {{{
 
 /**
- * Hidden machine-facing subcommand the `--runtime` shim calls on every Tab.
+ * Hidden machine-facing subcommand the completion scripts call on every Tab.
  * The tokens after `--` are the command line; the last is the word being
- * completed. Prints `value\tdescription` lines.
+ * completed. With `--shell`, prints the lines {@link formatCandidates} makes
+ * for that shell. Without it, prints `value\tdescription` lines.
  */
 const completeCommand: Subcommand = {
   name: "complete",
@@ -447,10 +495,20 @@ const completeCommand: Subcommand = {
       name: "--empty-word",
       description: "The word being completed is empty, so every token is before it",
     },
+    {
+      name: "--shell",
+      description: "Print the lines this shell's completion script reads",
+      args: { name: "shell", suggestions: SHELLS },
+    },
   ],
   args: { name: "tokens", isVariadic: true, isOptional: true },
   async action({ path, args, options }) {
     const spec = path[0] as Spec;
+    const shell = options.get("--shell");
+    if (shell !== undefined && !isShell(shell)) {
+      printUsageError(path, `Unsupported shell '${shell}'`, { input: shell, choices: SHELLS });
+      return 1;
+    }
     // Windows PowerShell drops an empty argument, so its script says the word
     // is empty with --empty-word instead of passing "".
     const emptyWord = options.has("--empty-word");
@@ -462,6 +520,16 @@ const completeCommand: Subcommand = {
       partial,
       gateOptions: options.has("--gate-options"),
     });
+    if (shell) {
+      const lines = formatCandidates(candidates, shell, partial);
+      // Written without print, which would trim a space that ends the last value.
+      if (lines.length > 0) {
+        output.write(1, `${lines.join("\n")}\n`);
+      }
+      return 0;
+    }
+    // Scripts from 3.1.0 don't pass --shell and read the candidates as they
+    // are, so they still get them that way.
     const lines = candidates.map((candidate) =>
       candidate.description ? `${candidate.value}\t${candidate.description}` : candidate.value,
     );

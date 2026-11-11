@@ -1,11 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, test } from "vitest";
 
-import { completeRuntime, completion, getCompletion } from "../src/completion.js";
+import { completeRuntime, completion, formatCandidates, getCompletion } from "../src/completion.js";
 import type { Shell } from "../src/completion.js";
 import { helpCommand } from "../src/help.js";
 import { run } from "../src/index.js";
@@ -505,9 +513,20 @@ test("getCompletion emits the PowerShell shim", () => {
   expectIncludes(powershell, "Register-ArgumentCompleter -Native -CommandName 'forge'");
   expectIncludes(powershell, "Get-Command $bin"); // guarded
   // `--` goes through an array, so PowerShell passes it on.
-  expectIncludes(powershell, "$arguments = @('completion', 'complete', '--gate-options')");
+  expectIncludes(
+    powershell,
+    "$arguments = @('completion', 'complete', '--shell', 'powershell', '--gate-options')",
+  );
   expectIncludes(powershell, "$arguments += '--'");
   expectIncludes(powershell, "& $bin @arguments");
+});
+
+test("the PowerShell shim makes a CompletionResult from each line's fields", () => {
+  const powershell = getCompletion(fixture, "powershell");
+  // `foreach` runs no times when the CLI prints nothing.
+  expectIncludes(powershell, "foreach ($line in $lines) {");
+  expectIncludes(powershell, '$text, $value, $tooltip = $line -split "`t", 3');
+  expectIncludes(powershell, "CompletionResult]::new($text, $value, 'ParameterValue', $tooltip)");
 });
 
 test("the PowerShell shim passes an empty word as --empty-word", () => {
@@ -522,11 +541,10 @@ test("the PowerShell shim runs a quoted command path without its quotes", () => 
   expectIncludes(powershell, "StringConstantExpressionAst]) { $first.Value } else { $first.Extent.Text }");
 });
 
-test("the PowerShell shim matches a quoted word without its opening quote", () => {
+test("the PowerShell shim passes a quoted word without its opening quote", () => {
   const powershell = getCompletion(fixture, "powershell");
   expectIncludes(powershell, `if ($partial.StartsWith("'")) { $partial = $partial.Substring(1)`);
   expectIncludes(powershell, `elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1)`);
-  expectIncludes(powershell, "$value.StartsWith($partial,");
   expectNotIncludes(powershell, "$arguments += $wordToComplete");
 });
 
@@ -542,11 +560,13 @@ test("getCompletion emits the Nushell shim", () => {
   expectIncludes(nushell, "if (which $command | is-empty) { return }"); // guarded
 });
 
-test("the Nushell shim passes and matches words without their quotes", () => {
+test("the Nushell shim passes words without their quotes", () => {
   const nushell = getCompletion(fixture, "nushell");
   expectIncludes(nushell, `if $quote in ["'", '"', '\`'] {`);
-  expectIncludes(nushell, "^$command completion complete --gate-options -- ...$args");
-  expectIncludes(nushell, "str starts-with --ignore-case $partial");
+  expectIncludes(
+    nushell,
+    "^$command completion complete --shell nushell --gate-options -- ...($words | skip 1)",
+  );
 });
 
 const nu = (() => {
@@ -558,6 +578,38 @@ const nu = (() => {
   }
 })();
 
+/** Quote a string for sh. */
+const shQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+
+/**
+ * Write a fake CLI to `file` that appends its arguments to `log`, one call per
+ * line with each argument in angle brackets. It prints what `completion complete --shell` prints for `candidates`
+ * when its last argument is one of `words`.
+ */
+function writeFakeCli(
+  file: string,
+  shell: Shell,
+  candidates: Parameters<typeof formatCandidates>[0],
+  words: readonly string[],
+  log: string,
+): void {
+  const cases = words.map((word) => {
+    const lines = formatCandidates(candidates, shell, word);
+    const out = lines.length > 0 ? `printf '%s\\n' ${shQuote(lines.join("\n"))}` : ":";
+    return `  ${shQuote(word)}) ${out} ;;`;
+  });
+  const script = [
+    "#!/bin/sh",
+    `{ printf '<%s>' "$@"; echo; } >> ${shQuote(log)}`,
+    "for word; do :; done",
+    'case "$word" in',
+    ...cases,
+    "esac",
+    "",
+  ];
+  writeFileSync(file, script.join("\n"), { mode: 0o755 });
+}
+
 // Runs the generated script in real Nushell, with spans shaped the way Nushell
 // passes them: each word as typed, quotes included.
 test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushell", () => {
@@ -566,13 +618,13 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
     const bin = join(dir, "with space");
     mkdirSync(bin);
     const log = join(dir, "args");
-    // A fake forge that records its arguments and prints fixed candidates.
     const forge = join(bin, "forge");
-    writeFileSync(
-      forge,
-      `#!/bin/sh\necho "$*" >> '${log}'\nprintf 'my file.txt\\tA file\\nother\\nbuild\\n'\n`,
-      { mode: 0o755 },
-    );
+    const candidates = [
+      { value: "my file.txt", description: "A file" },
+      { value: "other" },
+      { value: "build" },
+    ];
+    writeFakeCli(forge, "nushell", candidates, ["my f", "bu", "ot"], log);
     copyFileSync(forge, join(bin, "forge.exe"));
     writeFileSync(join(dir, "shim.nu"), getCompletion(fixture, "nushell"));
     const cases = [
@@ -593,10 +645,10 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
     });
     expect(JSON.parse(output)).toEqual([["'my file.txt'"], ["'my file.txt'"], ["build"], ["other"], []]);
     expect(readFileSync(log, "utf8").split("\n")).toEqual([
-      "completion complete --gate-options -- build my f",
-      "completion complete --gate-options -- build my f",
-      "completion complete --gate-options -- bu",
-      "completion complete --gate-options -- ot",
+      "<completion><complete><--shell><nushell><--gate-options><--><build><my f>",
+      "<completion><complete><--shell><nushell><--gate-options><--><build><my f>",
+      "<completion><complete><--shell><nushell><--gate-options><--><bu>",
+      "<completion><complete><--shell><nushell><--gate-options><--><ot>",
       "",
     ]);
   } finally {
@@ -970,3 +1022,472 @@ test.skipIf(!hasShell("nu") || process.platform === "win32")("the Nushell shim s
     "unset",
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// The lines `completion complete --shell` prints for each shell
+// ---------------------------------------------------------------------------
+
+const awkward = [
+  { value: "plain" },
+  { value: "http://example.com", description: "A URL: with colon" },
+  { value: "a:b" },
+  { value: "my file.txt", description: "A file\nsecond line" },
+  { value: "it's" },
+  { value: "$(touch x)" },
+  { value: "back\\slash", description: "a \\ b" },
+  { value: "Upper", description: "desc\twith\r\n  tabs" },
+  // A tab or line break in a value can't fit on a line, so these are left out.
+  { value: "tab\there" },
+  { value: "line\nbreak" },
+  { value: "carriage\rreturn" },
+  { value: "" },
+];
+
+test("formatCandidates quotes values for bash and drops descriptions", () => {
+  expect(formatCandidates(awkward, "bash", "")).toEqual([
+    "plain",
+    "http://example.com",
+    "a:b",
+    "my\\ file.txt",
+    "it\\'s",
+    "\\$\\(touch\\ x\\)",
+    "back\\\\slash",
+    "Upper",
+  ]);
+});
+
+test("formatCandidates escapes every character bash treats specially", () => {
+  const values = ["~home", "#tag", "!bang", "a*b?", "[x]", "{a,b}", "a;b|c&d", "<in>", '"q"', "`x`", "end "];
+  expect(
+    formatCandidates(
+      values.map((value) => ({ value })),
+      "bash",
+      "",
+    ),
+  ).toEqual([
+    "\\~home",
+    "\\#tag",
+    "\\!bang",
+    "a\\*b\\?",
+    "\\[x]",
+    "\\{a,b\\}",
+    "a\\;b\\|c\\&d",
+    "\\<in\\>",
+    '\\"q\\"',
+    "\\`x\\`",
+    "end\\ ",
+  ]);
+});
+
+test("formatCandidates keeps the bash values whose quoted form starts with the word", () => {
+  // Bash replaces the word as typed with the reply, so the CLI matches the
+  // word against the quoted value, case and all.
+  expect(formatCandidates(awkward, "bash", "my")).toEqual(["my\\ file.txt"]);
+  expect(formatCandidates(awkward, "bash", "my\\ f")).toEqual(["my\\ file.txt"]);
+  expect(formatCandidates(awkward, "bash", "\\$")).toEqual(["\\$\\(touch\\ x\\)"]);
+  expect(formatCandidates(awkward, "bash", "U")).toEqual(["Upper"]);
+  expect(formatCandidates(awkward, "bash", "u")).toEqual([]);
+  expect(formatCandidates(awkward, "bash", "it'")).toEqual([]);
+});
+
+test("formatCandidates writes _describe lines for zsh with the value's colons escaped", () => {
+  expect(formatCandidates(awkward, "zsh", "")).toEqual([
+    "plain",
+    "http\\://example.com:A URL: with colon",
+    "a\\:b",
+    "my file.txt:A file second line",
+    "it's",
+    "$(touch x)",
+    "back\\\\slash:a \\\\ b",
+    "Upper:desc with tabs",
+  ]);
+});
+
+test("formatCandidates leaves filtering to zsh and fish", () => {
+  for (const shell of ["zsh", "fish"] as const) {
+    expect(formatCandidates(awkward, shell, "zzz")).toEqual(formatCandidates(awkward, shell, ""));
+  }
+});
+
+test("formatCandidates writes fish lines with the value as it is", () => {
+  expect(formatCandidates(awkward, "fish", "")).toEqual([
+    "plain",
+    "http://example.com\tA URL: with colon",
+    "a:b",
+    "my file.txt\tA file second line",
+    "it's",
+    "$(touch x)",
+    "back\\slash\ta \\ b",
+    "Upper\tdesc with tabs",
+  ]);
+});
+
+test("formatCandidates writes the CompletionResult fields for PowerShell", () => {
+  expect(formatCandidates(awkward, "powershell", "")).toEqual([
+    "plain\tplain\tplain",
+    "http://example.com\thttp://example.com\tA URL: with colon",
+    "a:b\ta:b\ta:b",
+    "'my file.txt'\tmy file.txt\tA file second line",
+    "'it''s'\tit's\tit's",
+    "'$(touch x)'\t$(touch x)\t$(touch x)",
+    "back\\slash\tback\\slash\ta \\ b",
+    "Upper\tUpper\tdesc with tabs",
+  ]);
+});
+
+test("formatCandidates quotes the characters PowerShell reads as quotes", () => {
+  const values = ["it\u2019s", "\u201cq\u201d", "a,b", "@x", "a{b}"];
+  const texts = formatCandidates(
+    values.map((value) => ({ value })),
+    "powershell",
+    "",
+  ).map((line) => line.split("\t")[0]);
+  expect(texts).toEqual(["'it\u2019\u2019s'", "'\u201cq\u201d'", "'a,b'", "'@x'", "'a{b}'"]);
+});
+
+test("formatCandidates writes Nushell lines with quoted values", () => {
+  expect(formatCandidates(awkward, "nushell", "")).toEqual([
+    "plain",
+    "http://example.com\tA URL: with colon",
+    "a:b",
+    "'my file.txt'\tA file second line",
+    `"it's"`,
+    "'$(touch x)'",
+    "back\\slash\ta \\ b",
+    "Upper\tdesc with tabs",
+  ]);
+  const quotes = [{ value: `a'b"c` }, { value: "a'\\b" }, { value: "[x]" }];
+  expect(formatCandidates(quotes, "nushell", "")).toEqual([`"a'b\\"c"`, `"a'\\\\b"`, "'[x]'"]);
+});
+
+test("formatCandidates keeps PowerShell and Nushell values that start with the word, ignoring case", () => {
+  for (const shell of ["powershell", "nushell"] as const) {
+    // The value is PowerShell's second field and Nushell's first.
+    const values = (word: string) =>
+      formatCandidates(awkward, shell, word).map((line) => line.split("\t")[shell === "powershell" ? 1 : 0]);
+    expect(values("UP")).toEqual(["Upper"]);
+    expect(values("my f")).toEqual([shell === "powershell" ? "my file.txt" : "'my file.txt'"]);
+    expect(values("IT'")).toEqual([shell === "powershell" ? "it's" : `"it's"`]);
+    expect(values("nothing")).toEqual([]);
+    expect(values("")).toHaveLength(8);
+  }
+});
+
+test("formatCandidates prints nothing for no candidates", () => {
+  for (const shell of ["bash", "zsh", "fish", "powershell", "nushell"] as const) {
+    expect(formatCandidates([], shell, "")).toEqual([]);
+  }
+});
+
+const awkwardSpec: Spec = {
+  name: "forge",
+  subcommands: [
+    completion,
+    {
+      name: "go",
+      args: {
+        name: "target",
+        isVariadic: true,
+        suggestions: [
+          { name: "a:b", description: "colon: and\ttab" },
+          { name: "two\nlines", description: "first\nsecond" },
+          "end ",
+        ],
+      },
+    },
+  ],
+};
+
+test("complete subcommand prints candidates as they are without --shell", async () => {
+  // These are the lines 3.1.0 printed, which the scripts it generated read.
+  // The variable those scripts set doesn't change them.
+  const previous = process.env.SHELL_COMPLETION_GENERATOR;
+  process.env.SHELL_COMPLETION_GENERATOR = "bash";
+  try {
+    const result = await captureConsole(() => run(awkwardSpec, ["completion", "complete", "--", "go", ""]));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe("a:b\tcolon: and\ttab\ntwo\nlines\tfirst\nsecond\nend\n");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.SHELL_COMPLETION_GENERATOR;
+    } else {
+      process.env.SHELL_COMPLETION_GENERATOR = previous;
+    }
+  }
+});
+
+test("complete subcommand prints the shell's lines with --shell", async () => {
+  const zsh = await captureConsole(() =>
+    run(awkwardSpec, ["completion", "complete", "--shell", "zsh", "--", "go", ""]),
+  );
+  expect(zsh.code).toBe(0);
+  expect(zsh.stdout).toBe("a\\:b:colon: and tab\nend \n");
+
+  const bash = await captureConsole(() =>
+    run(awkwardSpec, ["completion", "complete", "--shell", "bash", "--", "go", "e"]),
+  );
+  expect(bash.stdout).toBe("end\\ \n");
+
+  const none = await captureConsole(() =>
+    run(awkwardSpec, ["completion", "complete", "--shell", "bash", "--", "go", "zzz"]),
+  );
+  expect(none.code).toBe(0);
+  expect(none.stdout).toBe("");
+});
+
+test("complete subcommand filters by an empty word with --empty-word", async () => {
+  const result = await captureConsole(() =>
+    run(fixture, ["completion", "complete", "--shell", "powershell", "--empty-word", "--", "remote"]),
+  );
+  const values = result.stdout.split("\n").map((line) => line.split("\t")[1]);
+  expect(values).toContain("remove");
+  expect(values).toContain("rm");
+});
+
+test("complete subcommand rejects an unknown shell", async () => {
+  const result = await captureConsole(() =>
+    run(fixture, ["completion", "complete", "--shell", "tcsh", "--", ""]),
+  );
+  expect(result.code).toBe(1);
+  expect(result.stderr).toMatch(/Unsupported shell 'tcsh'/);
+});
+
+test("every shim asks for its own shell's lines", () => {
+  expectIncludes(getCompletion(fixture, "bash"), "completion complete --shell bash --gate-options --");
+  expectIncludes(getCompletion(fixture, "zsh"), "completion complete --shell zsh --");
+  expectIncludes(getCompletion(fixture, "fish"), "completion complete --shell fish --gate-options --");
+  expectIncludes(getCompletion(fixture, "powershell"), "'complete', '--shell', 'powershell'");
+  expectIncludes(getCompletion(fixture, "nushell"), "completion complete --shell nushell --gate-options --");
+});
+
+// ---------------------------------------------------------------------------
+// The scripts in real shells
+// ---------------------------------------------------------------------------
+
+/** Candidates that each shell's script has to get through whole. */
+const tricky = [
+  { value: "http://example.com", description: "A URL: with colon" },
+  { value: "a:b" },
+  { value: "my file.txt", description: "A file\nsecond line" },
+  { value: "$(touch PWNED)" },
+  { value: "back\\slash" },
+  { value: "Upper" },
+];
+
+/**
+ * Make a directory with the shell's script in `shim` and a fake `forge` in
+ * `bin` that offers `tricky` for each of `words`.
+ */
+function trickyDir(shell: Shell, words: readonly string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), `clo4-cli-${shell}-`));
+  mkdirSync(join(dir, "bin"));
+  writeFakeCli(join(dir, "bin", "forge"), shell, tricky, words, join(dir, "args"));
+  writeFileSync(join(dir, "shim"), getCompletion(fixture, shell));
+  return dir;
+}
+
+const shellEnv = (dir: string): NodeJS.ProcessEnv => ({
+  ...process.env,
+  PATH: `${join(dir, "bin")}:${process.env.PATH}`,
+});
+
+test.skipIf(!hasShell("bash") || process.platform === "win32")(
+  "the bash shim replies with each line as it is",
+  () => {
+    const dir = trickyDir("bash", ["", "my", "my\\ f", "\\$", "u"]);
+    try {
+      const script = [
+        "source shim",
+        't() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _forge_complete; printf "[%s]" "${COMPREPLY[@]}"; echo; }',
+        "t forge go ''",
+        "t forge go my",
+        "t forge 'x y' go 'my\\ f'",
+        "t forge go '\\$'",
+        "t forge go u",
+      ].join("\n");
+      const output = execFileSync("bash", ["--norc", "-c", script], {
+        cwd: dir,
+        env: shellEnv(dir),
+        encoding: "utf8",
+      });
+      expect(output.split("\n")).toEqual([
+        "[http://example.com][a:b][my\\ file.txt][\\$\\(touch\\ PWNED\\)][back\\\\slash][Upper]",
+        "[my\\ file.txt]",
+        "[my\\ file.txt]",
+        "[\\$\\(touch\\ PWNED\\)]",
+        "[]",
+        "",
+      ]);
+      // compgen -W would have run the command in the candidate.
+      expect(existsSync(join(dir, "PWNED"))).toBe(false);
+      expect(readFileSync(join(dir, "args"), "utf8").split("\n")[2]).toBe(
+        "<completion><complete><--shell><bash><--gate-options><--><x y><go><my\\ f>",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(!hasShell("fish") || process.platform === "win32")(
+  "the fish shim hands the lines to fish",
+  () => {
+    const dir = trickyDir("fish", ["", "MY", "a:"]);
+    try {
+      const script = [
+        "source shim",
+        "complete -C 'forge go '",
+        "echo ---",
+        "complete -C 'forge go MY'",
+        "echo ---",
+        "complete -C 'forge go a:'",
+      ].join("\n");
+      const output = execFileSync("fish", ["--no-config", "-c", script], {
+        cwd: dir,
+        env: shellEnv(dir),
+        encoding: "utf8",
+      });
+      const [all, my, colon] = output.split("---\n").map((part) => part.split("\n").filter(Boolean));
+      expect(all.sort()).toEqual(
+        [
+          "http://example.com\tA URL: with colon",
+          "a:b",
+          "my file.txt\tA file second line",
+          "$(touch PWNED)",
+          "back\\slash",
+          "Upper",
+        ].sort(),
+      );
+      // Fish ignores case when it matches.
+      expect(my).toEqual(["my file.txt\tA file second line"]);
+      expect(colon).toEqual(["a:b"]);
+      expect(existsSync(join(dir, "PWNED"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+/**
+ * Sourced by an interactive zsh. A wrapper around compadd prints each match
+ * and display string that `_describe` hands to zsh. Tab prints the command
+ * line once it has completed.
+ */
+const zshSetup = [
+  "PS1=",
+  "RPS1=",
+  "fpath=($DIR/fpath $fpath)",
+  "autoload -Uz compinit",
+  "compinit -u -D",
+  "compadd() {",
+  // A call with -O, -A or -D only asks which words match.
+  '  if [[ ${@[1,(i)(-|--)]} == *-(O|A|D)\\ * ]]; then builtin compadd "$@"; return; fi',
+  "  local -a __matches __display",
+  '  builtin compadd -O __matches "$@"',
+  "  local -i __i=${@[(i)-d]}",
+  '  (( __i < $# )) && __display=( "${(@P)argv[__i+1]}" )',
+  "  local __m",
+  `  for __m in $__matches; do print -r -- $'\\n'"MATCH<$__m>"; done`,
+  `  for __m in $__display; do print -r -- $'\\n'"DISPLAY<$__m>"; done`,
+  '  builtin compadd "$@"',
+  "}",
+  `_tab() { zle complete-word; print -r -- $'\\n'"LINE<$BUFFER>"; print -r -- "DO""NE" }`,
+  "zle -N _tab",
+  "bindkey '^I' _tab",
+  'print -r -- "REA""DY"',
+].join("\n");
+
+/**
+ * Types each line and Tab into an interactive zsh in a pseudo-terminal, and
+ * prints what the setup printed.
+ */
+const zshDriver = [
+  "zmodload zsh/zpty || exit 2",
+  "export DIR=$1",
+  "shift",
+  "local line out",
+  "zpty z zsh -f -i",
+  'zpty -w z "source $DIR/setup.zsh"',
+  "zpty -r z out '*READY*'",
+  'for line in "$@"; do',
+  // Ctrl-U clears the line the last completion left.
+  `  zpty -w -n z $'\\x15'"$line"$'\\t'`,
+  "  zpty -r z out '*DONE*'",
+  '  print -r -- "--- $line"',
+  `  print -r -- "$out" | tr -d '\\r' | grep -ao 'MATCH<[^>]*>\\|DISPLAY<[^>]*>\\|LINE<.*>'`,
+  "done",
+  "zpty -d z",
+].join("\n");
+
+test.skipIf(!hasShell("zsh") || process.platform === "win32")(
+  "the zsh shim hands zsh each value whole, colons included",
+  () => {
+    const dir = trickyDir("zsh", ["", "a:", "ht", "my f", "back", "$("]);
+    try {
+      // The script goes on fpath as _forge, the way the README installs it.
+      mkdirSync(join(dir, "fpath"));
+      writeFileSync(join(dir, "fpath", "_forge"), getCompletion(fixture, "zsh"));
+      writeFileSync(join(dir, "setup.zsh"), zshSetup);
+      writeFileSync(join(dir, "drive.zsh"), zshDriver);
+      const lines = [
+        "forge go ",
+        "forge go a:",
+        "forge go ht",
+        "forge 'x y' go 'my f",
+        "forge go back",
+        "forge go \\$(",
+      ];
+      const output = execFileSync("zsh", ["-f", join(dir, "drive.zsh"), dir, ...lines], {
+        cwd: dir,
+        env: shellEnv(dir),
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      const results = new Map(
+        output
+          .split("--- ")
+          .filter(Boolean)
+          .map((part) => {
+            const [line, ...rest] = part.split("\n");
+            return [line, rest.filter(Boolean)];
+          }),
+      );
+      const all = results.get("forge go ") ?? [];
+      // Zsh can call compadd more than once for a Tab.
+      expect([...new Set(all.filter((line) => line.startsWith("MATCH<")))].sort()).toEqual(
+        [
+          "MATCH<http://example.com>",
+          "MATCH<a:b>",
+          "MATCH<my file.txt>",
+          "MATCH<$(touch PWNED)>",
+          "MATCH<back\\slash>",
+          "MATCH<Upper>",
+        ].sort(),
+      );
+      expect(all).toContainEqual(
+        expect.stringMatching(/^DISPLAY<http:\/\/example\.com +-- A URL: with colon>$/),
+      );
+      expect(all).toContainEqual(expect.stringMatching(/^DISPLAY<my file\.txt +-- A file second line>$/));
+      // Zsh quotes what it inserts.
+      expect(results.get("forge go a:")).toContain("LINE<forge go a:b >");
+      expect(results.get("forge go ht")).toContain("LINE<forge go http://example.com >");
+      expect(results.get("forge 'x y' go 'my f")).toContain("LINE<forge 'x y' go 'my file.txt' >");
+      expect(results.get("forge go back")).toContain("LINE<forge go back\\\\slash >");
+      expect(results.get("forge go \\$(")).toContain("LINE<forge go \\$\\(touch\\ PWNED\\) >");
+      expect(existsSync(join(dir, "PWNED"))).toBe(false);
+      // The words reach the CLI one by one, without their quotes.
+      expect(readFileSync(join(dir, "args"), "utf8").split("\n")).toEqual([
+        "<completion><complete><--shell><zsh><--><go><>",
+        "<completion><complete><--shell><zsh><--><go><a:>",
+        "<completion><complete><--shell><zsh><--><go><ht>",
+        "<completion><complete><--shell><zsh><--><x y><go><my f>",
+        "<completion><complete><--shell><zsh><--><go><back>",
+        "<completion><complete><--shell><zsh><--><go><$(>",
+        "",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);
