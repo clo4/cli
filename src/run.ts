@@ -38,19 +38,13 @@ export function run(spec: Spec, args?: readonly string[]): Promise<number> {
  * error, which runs no action, doesn't compile it.
  */
 function runAction(result: ParseResult): Promise<number> {
-  const { action, options } = result;
+  const action = result.action;
   const actionInit: ActionInit = {
     help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
     args: result.args,
     path: result.path,
     argSeparatorIndex: result.argSeparatorIndex,
-    options: {
-      options,
-      has: (name) => options.has(name),
-      get: (name) => (options.get(name) ?? result.defaults(name))?.[0],
-      all: (name) => options.get(name) ?? result.defaults(name),
-      count: (name) => options.get(name)?.length ?? 0,
-    },
+    options: result.options,
   };
 
   let actionResult: ReturnType<typeof action>;

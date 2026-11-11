@@ -1,4 +1,4 @@
-import type { Action, Arg, CommandPath, Option, Spec, Subcommand } from "./types.js";
+import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
 import { addDefaults, asArray, getMaxArgs, getMinArgs } from "./util.js";
 import {
   InvalidOptionArg,
@@ -19,13 +19,8 @@ import type { NoSubcommand } from "./subcommands.js";
 export interface ParseResult {
   args: string[];
   argSeparatorIndex: number;
-  options: Map<string, string[]>;
-  /**
-   * The defaults of the arguments of the option `name` refers to, for an
-   * option that wasn't used. Undefined if it was used, or if its first
-   * argument is optional or has no default.
-   */
-  defaults(name: string): string[] | undefined;
+  /** The options used, as the action receives them. */
+  options: OptionArgs;
   path: CommandPath;
   /**
    * The action to run: the last option action used, or else the selected
@@ -216,6 +211,44 @@ function checkRequiredOptions(
       }
     }
   }
+}
+
+/**
+ * The options used, as an action asks about them. `options` has every name of
+ * each option used, and `scope` is for the selected command, which decides
+ * the option each unused name refers to. Each function is a property of the
+ * object, so an action can take one off it and call it alone. A cold parse
+ * only makes the object, and each function compiles the first time it's
+ * called.
+ */
+function optionArgs(options: Map<string, string[]>, scope: CommandScope): OptionArgs {
+  return {
+    options,
+    has: (name) => options.has(name),
+    get: (name) => (options.get(name) ?? unusedDefaults(scope, name))?.[0],
+    all: (name) => options.get(name) ?? unusedDefaults(scope, name),
+    // A repeatable option without arguments stores an empty string for each
+    // use, so its values count the uses.
+    count: (name) => options.get(name)?.length ?? 0,
+  };
+}
+
+/**
+ * The defaults of the arguments of the option `name` refers to at the command
+ * `scope` is for, when no option of that name was used. Undefined if its
+ * first argument is optional or has no default.
+ */
+function unusedDefaults(scope: CommandScope, name: string): string[] | undefined {
+  const args = asArray(scope.resolve(name)?.args);
+  // An option whose first argument is optional, like `--inspect[=port]`,
+  // means something different when it's left out than when it's bare, so
+  // its defaults are only for the bare option.
+  if (args.length === 0 || args[0].isOptional) {
+    return undefined;
+  }
+  const values: string[] = [];
+  addDefaults(values, args);
+  return values.length > 0 ? values : undefined;
 }
 
 /** Reads a command line one token at a time. See {@link tokenReader}. */
@@ -532,26 +565,8 @@ class Scanner implements TokenReader {
       action: this.optionAction ?? command.action ?? builtinUsageAction,
       args: this.args,
       argSeparatorIndex: this.argSeparatorIndex,
-      options: this.options,
-      defaults: (name) => this.defaults(name),
+      options: optionArgs(this.options, this.scope),
     };
-  }
-
-  /** See {@link ParseResult.defaults}. */
-  private defaults(name: string): string[] | undefined {
-    if (this.options.has(name)) {
-      return undefined;
-    }
-    const args = asArray(this.scope.resolve(name)?.args);
-    // An option whose first argument is optional, like `--inspect[=port]`,
-    // means something different when it's left out than when it's bare, so
-    // its defaults are only for the bare option.
-    if (args.length === 0 || args[0].isOptional) {
-      return undefined;
-    }
-    const values: string[] = [];
-    addDefaults(values, args);
-    return values.length > 0 ? values : undefined;
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */

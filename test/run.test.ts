@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
 import { help, helpCommand, printError, run } from "../src/index.js";
+import { parse } from "../src/parse.js";
 import type { ActionInit, Spec, Subcommand } from "../src/types.js";
 import { captureConsole } from "./helpers.js";
 
@@ -47,6 +48,26 @@ test("run: executes command actions and exposes parsed string values", async () 
   expect(result.code).toBe(0);
   expect(result.stdout).toBe("file.out\n");
   expect(result.stderr).toBe("");
+});
+
+test("run: the action gets the options parse returns", async () => {
+  let received: ActionInit["options"] | undefined;
+  const spec: Spec = {
+    name: "demo",
+    options: [
+      { name: "--port", args: { default: "8080" } },
+      { name: "-v", isRepeatable: true },
+    ],
+    action: ({ options }) => void (received = options),
+  };
+  await expect(run(spec, ["-vv"])).resolves.toBe(0);
+  const parsed = parse(["-vv"], spec).options;
+  expect(Object.keys(received!)).toEqual(["options", "has", "get", "all", "count"]);
+  expect(received!.options).toEqual(parsed.options);
+  for (const name of ["--port", "-v"]) {
+    const ask = (o: ActionInit["options"]) => [o.has(name), o.get(name), o.all(name), o.count(name)];
+    expect(ask(received!)).toEqual(ask(parsed));
+  }
 });
 
 test("run: option actions bypass missing command inputs", async () => {

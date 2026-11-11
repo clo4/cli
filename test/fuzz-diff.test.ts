@@ -23,7 +23,7 @@ import type { Action, ActionInit, NonEmptyArray, Option, Spec, Subcommand } from
 import { asArray, output } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
-import { attempt, difference, nextDifference } from "./fuzz/snapshot.js";
+import { attempt, difference, hasDefaults, nextDifference } from "./fuzz/snapshot.js";
 import type { AnyNextToken } from "./fuzz/snapshot.js";
 
 vi.setConfig({ testTimeout: TIMEOUT });
@@ -61,7 +61,7 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
   const sameAction = (x: Action, y: Action) => x === y || (x === usage && y === theirUsage);
   // Specs only get defaults when the other version has them, since an older
   // parser ignores them and would differ on every one.
-  const theirsHasDefaults = typeof theirs.parse([], { name: "x" }).defaults === "function";
+  const theirsHasDefaults = hasDefaults(theirs.parse([], { name: "x" }));
   // The same goes for persistent subcommands, and for hidden subcommands that
   // only match their exact name.
   const pathLength = (input: string[], spec: Spec) => {

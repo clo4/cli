@@ -2,28 +2,36 @@
 // versions of the parser can be checked for differences.
 
 import type { NextToken, ParseResult } from "../../src/parse.js";
-import type { Action, Spec, Subcommand } from "../../src/types.js";
+import type { Action, OptionArgs, Spec, Subcommand } from "../../src/types.js";
 import { asArray } from "../../src/util.js";
 
 /**
  * A result of `parse` from this version or an older one. Before `parse` picked
  * the action, it returned every command action and option action instead.
+ * Before `parse` returned the options as the action receives them, it
+ * returned the map of option names to values, and `defaults` gave the
+ * defaults of an unused option.
  */
-type AnyParseResult = Omit<ParseResult, "action" | "defaults"> & {
+type AnyParseResult = Omit<ParseResult, "action" | "options"> & {
+  options: OptionArgs | Map<string, string[]>;
   /** Before `parse` had defaults, results didn't have this. */
-  defaults?: ParseResult["defaults"];
+  defaults?: (name: string) => string[] | undefined;
   action?: Action;
   actions?: Action[];
   optionActions?: Action[];
 };
 
-type Parse = (input: readonly string[], spec: Spec) => AnyParseResult;
+type Parse<R> = (input: readonly string[], spec: Spec) => R;
 
-export type Outcome =
-  | { ok: true; result: AnyParseResult }
+export type Outcome<R extends AnyParseResult = AnyParseResult> =
+  | { ok: true; result: R }
   | { ok: false; error: Error & Record<string, unknown> };
 
-export function attempt(parse: Parse, input: readonly string[], spec: Spec): Outcome {
+export function attempt<R extends AnyParseResult>(
+  parse: Parse<R>,
+  input: readonly string[],
+  spec: Spec,
+): Outcome<R> {
   try {
     return { ok: true, result: parse(input, spec) };
   } catch (error) {
@@ -35,8 +43,9 @@ export function attempt(parse: Parse, input: readonly string[], spec: Spec): Out
  * Describe how two outcomes of `parse` differ, or return null if they match.
  * Spec objects (path entries, options, actions) must be the same objects.
  * `sameAction` decides whether two actions match, so two copies of the
- * built-in usage action can count as the same. When both versions have
- * defaults, the defaults of each of `optionNames` are compared too.
+ * built-in usage action can count as the same. What `has`, `get`, `all` and
+ * `count` return for each of `optionNames` is compared too, and so are the
+ * defaults of each when both versions have defaults.
  */
 export function difference(
   a: Outcome,
@@ -72,20 +81,76 @@ export function difference(
   if (x.argSeparatorIndex !== y.argSeparatorIndex) {
     return "argSeparatorIndex differs";
   }
-  const optionsA = JSON.stringify(optionEntries(x.options));
-  const optionsB = JSON.stringify(optionEntries(y.options));
+  const optionsA = JSON.stringify(optionEntries(optionMap(x)));
+  const optionsB = JSON.stringify(optionEntries(optionMap(y)));
   if (optionsA !== optionsB) {
     return `options differ: ${optionsA} vs ${optionsB}`;
   }
-  if (x.defaults && y.defaults) {
+  const [defaultsOfA, defaultsOfB] = [defaultsOf(x), defaultsOf(y)];
+  if (defaultsOfA && defaultsOfB) {
     for (const name of optionNames) {
-      const [defaultsA, defaultsB] = [JSON.stringify(x.defaults(name)), JSON.stringify(y.defaults(name))];
+      const [defaultsA, defaultsB] = [JSON.stringify(defaultsOfA(name)), JSON.stringify(defaultsOfB(name))];
       if (defaultsA !== defaultsB) {
         return `defaults of ${name} differ: ${defaultsA} vs ${defaultsB}`;
       }
     }
   }
+  const [argsA, argsB] = [optionArgsOf(x), optionArgsOf(y)];
+  for (const name of optionNames) {
+    for (const question of ["has", "get", "all", "count"] as const) {
+      const [answerA, answerB] = [
+        JSON.stringify(argsA[question](name)),
+        JSON.stringify(argsB[question](name)),
+      ];
+      if (answerA !== answerB) {
+        return `${question}(${JSON.stringify(name)}) differs: ${answerA} vs ${answerB}`;
+      }
+    }
+  }
   return null;
+}
+
+/** Whether the version of `parse` that returned `result` has defaults. */
+export function hasDefaults(result: AnyParseResult): boolean {
+  return defaultsOf(result) !== undefined;
+}
+
+/** The map of option names to values, from either version. */
+function optionMap(result: AnyParseResult): Map<string, string[]> {
+  const options = result.options;
+  return options instanceof Map ? options : options.options;
+}
+
+/**
+ * The defaults of each unused option, from either version. Where `parse`
+ * returns the options as the action receives them, `all` gives the defaults
+ * of an unused option.
+ */
+function defaultsOf(result: AnyParseResult): ((name: string) => string[] | undefined) | undefined {
+  const options = result.options;
+  if (options instanceof Map) {
+    return result.defaults;
+  }
+  return (name) => (options.has(name) ? undefined : options.all(name));
+}
+
+/**
+ * The options as the action receives them, from either version. Where `parse`
+ * returned the map, they're made the way that version's `run` made them.
+ */
+function optionArgsOf(result: AnyParseResult): OptionArgs {
+  const options = result.options;
+  if (!(options instanceof Map)) {
+    return options;
+  }
+  const defaults = result.defaults ?? (() => undefined);
+  return {
+    options,
+    has: (name) => options.has(name),
+    get: (name) => (options.get(name) ?? defaults(name))?.[0],
+    all: (name) => options.get(name) ?? defaults(name),
+    count: (name) => options.get(name)?.length ?? 0,
+  };
 }
 
 /**

@@ -23,12 +23,12 @@ test("scan: arg separator", () => {
 
 test("scan: known option", () => {
   const spec: Spec = { name: "test", options: [{ name: "--option" }] };
-  expect(parse(["--option"], spec).options).toEqual(map({ "--option": [] }));
+  expect(parse(["--option"], spec).options.options).toEqual(map({ "--option": [] }));
 });
 
 test("scan: known option with inline arg", () => {
   const spec: Spec = { name: "test", options: [{ name: "--option", args: {} }] };
-  expect(parse(["--option=abc"], spec).options).toEqual(map({ "--option": ["abc"] }));
+  expect(parse(["--option=abc"], spec).options.options).toEqual(map({ "--option": ["abc"] }));
 });
 
 test("scan: an inline arg for an option without args is rejected", () => {
@@ -59,7 +59,7 @@ test("scan: posix-noncompliant options with known option", () => {
   };
   const result = parse(["arg", "option", "option=value"], spec);
   expect(result.args).toEqual(["arg"]);
-  expect(result.options).toEqual(map({ option: ["value"] }));
+  expect(result.options.options).toEqual(map({ option: ["value"] }));
 });
 
 test("scan: option arg separators", () => {
@@ -74,7 +74,7 @@ test("scan: option arg separators", () => {
   };
   const result = parse(["arg", "option", "option:value"], spec);
   expect(result.args).toEqual(["arg"]);
-  expect(result.options).toEqual(map({ option: ["value"] }));
+  expect(result.options.options).toEqual(map({ option: ["value"] }));
 });
 
 test("scan: anonymous options", () => {
@@ -82,7 +82,7 @@ test("scan: anonymous options", () => {
     name: "test",
     options: [{ name: "-", args: {} }, { name: "+", args: {} }, { name: "-x" }, { name: "-y" }],
   };
-  expect(parse(["-123", "+abc", "-xy"], spec).options).toEqual(
+  expect(parse(["-123", "+abc", "-xy"], spec).options.options).toEqual(
     map({ "-": ["123"], "+": ["abc"], "-x": [], "-y": [] }),
   );
 });
@@ -92,7 +92,14 @@ test("scan: chained options", () => {
     name: "test",
     options: [{ name: "-x" }, { name: "-y" }, { name: "-z" }, { name: "+x" }, { name: "+y" }, { name: "+z" }],
   };
-  expect([...parse(["-xyz", "+xyz"], spec).options.keys()]).toEqual(["-x", "-y", "-z", "+x", "+y", "+z"]);
+  expect([...parse(["-xyz", "+xyz"], spec).options.options.keys()]).toEqual([
+    "-x",
+    "-y",
+    "-z",
+    "+x",
+    "+y",
+    "+z",
+  ]);
 });
 
 test("scan: subcommand", () => {
@@ -100,7 +107,7 @@ test("scan: subcommand", () => {
   const spec: Spec = { name: "test", subcommands: [cmd] };
   const result = parse(["cmd", "--option"], spec);
   expect(result.path).toEqual([spec, cmd]);
-  expect(result.options).toEqual(map({ "--option": [] }));
+  expect(result.options.options).toEqual(map({ "--option": [] }));
 });
 
 test("scan: persistent options", () => {
@@ -111,7 +118,7 @@ test("scan: persistent options", () => {
   };
   const result = parse(["cmd", "--option"], spec);
   expect(result.path).toEqual([spec, spec.subcommands![0]]);
-  expect(result.options).toEqual(map({ "--option": [] }));
+  expect(result.options.options).toEqual(map({ "--option": [] }));
 });
 
 test("scan: optionsMustPrecedeArguments", () => {
@@ -122,7 +129,7 @@ test("scan: optionsMustPrecedeArguments", () => {
     subcommands: [{ name: "cmd", args: { isVariadic: true } }],
   };
   const result = parse(["cmd", "--option", "arg", "--option"], spec);
-  expect(result.options).toEqual(map({ "--option": [] }));
+  expect(result.options.options).toEqual(map({ "--option": [] }));
   expect(result.args).toEqual(["arg", "--option"]);
 });
 
@@ -151,7 +158,7 @@ test("scan: subcommandsMatchUniquePrefix", () => {
 test("scan: a separate option value belongs to the option", () => {
   const spec: Spec = { name: "test", args: {}, options: [{ name: "--option", args: {} }] };
   const result = parse(["--option", "abc", "def"], spec);
-  expect(result.options).toEqual(map({ "--option": ["abc"] }));
+  expect(result.options.options).toEqual(map({ "--option": ["abc"] }));
   expect(result.args).toEqual(["def"]);
 });
 

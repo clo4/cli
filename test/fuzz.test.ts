@@ -144,7 +144,7 @@ function violation(spec: Spec, input: string[]): string | null {
       return "readNext and parse end at different commands";
     }
     const seenNames = [...usedNames(spec, input)].sort();
-    const parsedNames = [...result.options.keys()].sort();
+    const parsedNames = [...result.options.options.keys()].sort();
     if (JSON.stringify(seenNames) !== JSON.stringify(parsedNames)) {
       return `readNext saw options named ${JSON.stringify(seenNames)}, but parse has ${JSON.stringify(parsedNames)}`;
     }
@@ -224,8 +224,8 @@ function optionNamed(path: readonly (Spec | Subcommand)[], name: string): Option
  * The first way defaults change a parse other than adding to it, or null.
  * Defaults must not change whether a line parses, the error, the command,
  * which options were used or the separator. They only add positional values
- * after the typed ones, and values of the options that were used. And
- * `defaults(name)` only answers for options that weren't used and whose first
+ * after the typed ones, and values of the options that were used. And `get`
+ * and `all` only give defaults for options that weren't used and whose first
  * argument is required.
  */
 function defaultsViolation(spec: Spec, input: string[]): string | null {
@@ -247,12 +247,13 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
   if (typed.argSeparatorIndex !== result.argSeparatorIndex) {
     return "defaults change argSeparatorIndex";
   }
+  const values = result.options.options;
   const keys = (map: Map<string, string[]>) => JSON.stringify([...map.keys()]);
-  if (keys(typed.options) !== keys(result.options)) {
+  if (keys(typed.options.options) !== keys(values)) {
     return "defaults change which options were used";
   }
-  for (const [name, typedValues] of typed.options) {
-    const extra = addedValues(typedValues, result.options.get(name)!);
+  for (const [name, typedValues] of typed.options.options) {
+    const extra = addedValues(typedValues, values.get(name)!);
     if (!extra) {
       return `the values of ${name} don't keep the typed ones in order`;
     }
@@ -267,7 +268,7 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
     const [only] = owners;
     if (owners.length === 1 && !only.isRepeatable) {
       const expected = [...typedValues, ...leadingDefaults(only.args, typedValues.length)];
-      const got = result.options.get(name)!;
+      const got = values.get(name)!;
       if (JSON.stringify(got) !== JSON.stringify(expected)) {
         return `${name} is ${JSON.stringify(got)}, expected ${JSON.stringify(expected)}`;
       }
@@ -282,17 +283,24 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
     return `args are ${JSON.stringify(result.args)}, expected ${JSON.stringify(expected)}`;
   }
 
-  if (!result.defaults) {
-    return "parse has no defaults";
-  }
+  // Each answer about an option agrees with the values stored for it. An
+  // unused option gives its defaults to `get` and `all`.
+  const options = result.options;
   for (const name of OPTION_NAMES) {
-    const got = result.defaults(name);
-    const option = result.options.has(name) ? undefined : optionNamed(path, name);
+    const stored = values.get(name);
+    const option = stored ? undefined : optionNamed(path, name);
     const first = asArray(option?.args)[0];
-    const values = first && !first.isOptional ? leadingDefaults(option!.args, 0) : [];
-    const want = values.length > 0 ? values : undefined;
-    if (JSON.stringify(got) !== JSON.stringify(want)) {
-      return `defaults(${JSON.stringify(name)}) is ${JSON.stringify(got)}, expected ${JSON.stringify(want)}`;
+    const defaults = first && !first.isOptional ? leadingDefaults(option!.args, 0) : [];
+    const all = stored ?? (defaults.length > 0 ? defaults : undefined);
+    const want = JSON.stringify([stored !== undefined, all?.[0], all, stored?.length ?? 0]);
+    const got = JSON.stringify([
+      options.has(name),
+      options.get(name),
+      options.all(name),
+      options.count(name),
+    ]);
+    if (got !== want) {
+      return `has, get, all and count of ${JSON.stringify(name)} are ${got}, expected ${want}`;
     }
   }
   return null;
