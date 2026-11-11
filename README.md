@@ -1057,7 +1057,16 @@ These times are for running one command of a bundled CLI whose commands each tak
 | 100      | 2.3 ms        | 2.1 ms                  | 1.9 ms                     |
 | 1,000    | 12.6 ms       | 7.5 ms                  | 2.1 ms                     |
 
-The benchmark's large CLIs have a row for each form.
+The benchmark compares large CLIs in two forms, one file and a file per group. Each form has a table for each kind of work: running a command, root help, a group's help, and an unknown command. Each library is written the way its own docs show for that form, and a hand-written `parseArgs` CLI shows the least a CLI can do. In one file, @clo4/cli returns each group's body from `loadSpec`. The benchmark also records @clo4/cli without `loadSpec`.
+
+- **One file:** @clo4/cli, Commander, Yargs, citty, sade, Cliffy, Stricli, gunshi and the `parseArgs` CLI. sade has no command groups, so it has no group help.
+- **A file per group:** @clo4/cli, citty, Cliffy, Stricli and gunshi, whose docs show how to load code from another file when a command line needs it, and the `parseArgs` CLI, which uses `import()`. Stricli and gunshi keep every command's definition in the entry and load only its action.
+
+citty and Cliffy load every group's file to print root help, and citty does the same for an unknown command. Their group files import the library, so the bundler moves the library into a shared chunk that every run also loads.
+
+oclif has no large CLI, because it loads each command from its own file through a manifest, which a single bundle can't reproduce. Cac, Clipanion, Effect, Optique, clerc, cmd-ts and brocli have no large CLI yet.
+
+Help times are for output piped to another program. At a terminal, Node takes longer to set up `process.stdout`, which @clo4/cli doesn't use for help.
 
 [← Parser settings](#parser-settings) · [↑ Contents](#contents) · [API and compatibility →](#api-and-compatibility)
 

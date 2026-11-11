@@ -8,14 +8,26 @@ import { performance } from "node:perf_hooks";
 import { build as rolldownBuild } from "rolldown";
 
 import * as CLI from "../src/index.js";
-import { clo4LoadSpec, clo4LoadSpecFiles, largeCommandLine, largeGenerators } from "./large.js";
-import type { LargeShape } from "./large.js";
+import {
+  clo4WholeSpec,
+  largeCommandLine,
+  largeGenerators,
+  splitGenerators,
+  withoutGroupHelp,
+} from "./large.js";
+import type { LargeCli, LargeShape } from "./large.js";
 
 type Adapter = readonly [library: string, scriptUrl: URL];
 type BenchSignal = "SIGINT" | "SIGTERM";
 
+/** The forms a large CLI is written in. See `largeForms`. */
+type LargeForm = "large" | "large-split" | "large-whole-spec";
+
+/** The kinds of work a large CLI does. See `largeWorkloads`. */
+type LargeWorkload = "command" | "root-help" | "group-help" | "unknown-command";
+
 /** The kinds of work the comparison reports separately. */
-type Group = "command" | "help" | "error" | "large";
+type Group = "command" | "help" | "error" | `${LargeForm}:${LargeWorkload}`;
 
 interface Scenario {
   name: string;
@@ -26,8 +38,11 @@ interface Scenario {
 }
 
 interface Expected {
-  status: number;
+  /** The exit code, or "non-zero" for any failure. */
+  status: number | "non-zero";
   stdout?: string;
+  /** Text that stdout or stderr must contain, for output that differs between libraries. */
+  includes?: string;
 }
 type Status = number | string;
 
@@ -44,6 +59,7 @@ interface RunResult {
   stdio: number;
   status: Status;
   stdout: string;
+  stderr: string;
 }
 
 interface Job {
@@ -121,12 +137,11 @@ const adapters: readonly Adapter[] = [
   ["node:util parseArgs", new URL("../node-parseargs.mjs", import.meta.url)],
 ];
 
-/** The groups, in the order the comparison reports them. */
+/** The 7-command CLI's groups, in the order the comparison reports them. */
 const groups: readonly { group: Group; title: string }[] = [
   { group: "command", title: "Running a command" },
   { group: "help", title: "Printing help" },
   { group: "error", title: "Usage errors" },
-  { group: "large", title: "Running a command in a large CLI" },
 ];
 
 /** What every library runs, on the 7-command CLI in each adapter. */
@@ -178,13 +193,79 @@ const largeShapes: readonly { commands: string; shape: LargeShape }[] = [
 ];
 
 /**
- * The large CLIs again for @clo4/cli alone, with each group's commands behind
- * a `loadSpec`. They're rows of their own, outside the comparison, like completion.
+ * The forms each large CLI is written in. Every library with a generator for
+ * a form runs each large workload in that form. The whole-spec form has no
+ * comparison.
  */
-const loadSpecKinds = [
-  { key: "body", title: "loadSpec in one file" },
-  { key: "import", title: "loadSpec, a file per group" },
-] as const;
+const largeForms: readonly {
+  form: LargeForm;
+  suffix: string;
+  title?: string;
+  generators: ReadonlyMap<string, (shape: LargeShape) => LargeCli>;
+}[] = [
+  { form: "large", suffix: "", title: "A large CLI in one file", generators: largeGenerators },
+  {
+    form: "large-split",
+    suffix: ", a file per group",
+    title: "A large CLI with a file per group",
+    generators: splitGenerators,
+  },
+  { form: "large-whole-spec", suffix: ", whole spec", generators: new Map([[ours, clo4WholeSpec]]) },
+];
+
+/**
+ * What each large CLI runs, each compared in a table of its own: a command
+ * near its end, root help, a group's help, and a name that isn't a command.
+ * Some libraries load every group to list the groups or look for an alias,
+ * so the cost of one kind of work can be far from the others.
+ */
+const largeWorkloads: readonly {
+  workload: LargeWorkload;
+  suffix: string;
+  title: string;
+  scenario: (shape: LargeShape) => Pick<Scenario, "args" | "expected">;
+}[] = [
+  {
+    workload: "command",
+    suffix: "",
+    title: "running a command",
+    scenario(shape) {
+      const { args, stdout } = largeCommandLine(shape);
+      return { args, expected: { status: 0, stdout } };
+    },
+  },
+  {
+    workload: "root-help",
+    suffix: ", --help",
+    title: "root help",
+    scenario: (shape) => ({ args: ["--help"], expected: { status: 0, includes: `g${shape.groups - 1}` } }),
+  },
+  {
+    workload: "group-help",
+    suffix: ", group --help",
+    title: "a group's help",
+    scenario: (shape) => ({
+      args: [largeCommandLine(shape).args[0], "--help"],
+      expected: { status: 0, includes: `c${shape.commands - 1}` },
+    }),
+  },
+  {
+    workload: "unknown-command",
+    suffix: ", unknown command",
+    title: "an unknown command",
+    scenario: () => ({ args: ["nope"], expected: { status: "non-zero", includes: "nope" } }),
+  },
+];
+
+/** The large CLIs' comparisons, one for each form and kind of work. */
+const largeGroups: readonly { group: Group; title: string }[] = largeForms.flatMap(({ form, title }) =>
+  title === undefined
+    ? []
+    : largeWorkloads.map(({ workload, title: work }) => ({
+        group: `${form}:${workload}` as const,
+        title: `${title}: ${work}`,
+      })),
+);
 
 const baselineScenario: Scenario = { name: "process startup", group: "command", args: [] };
 
@@ -257,6 +338,7 @@ async function runBenchmark({ samples, warmup, concurrency, jsonOut }: BenchOpti
 
   try {
     const { jobs, libraries, largeScenarios } = await prepareJobs(bundleDir);
+    const allScenarios = [...scenarios, ...largeScenarios];
     const interrupt = createInterruptController();
     const results = new Map<string, Bucket>();
 
@@ -354,13 +436,17 @@ async function runBenchmark({ samples, warmup, concurrency, jsonOut }: BenchOpti
     console.log("geometric mean of its scenario medians in that table. Ratios leave out the time");
     console.log("to load an empty bundle. Lower is better. `stdio` is the mean of its scenario");
     console.log("`stdio` medians.");
-    const comparisons = groups.map(({ group, title }) => {
-      const groupScenarios = [...scenarios, ...largeScenarios].filter((s) => s.group === group);
+    const comparisons = [...groups, ...largeGroups].map(({ group, title }) => {
+      const groupScenarios = allScenarios.filter((s) => s.group === group);
       const groupLibraries = libraries.filter((library) =>
         groupScenarios.every((s) => results.has(keyFor(library, s.name))),
       );
       const comparison = compareGroup(results, group, groupScenarios, groupLibraries, baseline);
-      printComparison(title, comparison);
+      printComparison(
+        title,
+        comparison,
+        libraries.filter((library) => !groupLibraries.includes(library)),
+      );
       return comparison;
     });
 
@@ -385,43 +471,44 @@ async function runBenchmark({ samples, warmup, concurrency, jsonOut }: BenchOpti
 
 /**
  * Bundle every adapter and list the timed jobs: the baseline, each library on
- * each scenario, the large CLIs, and @clo4/cli's completion.
+ * each scenario, the large CLIs in each form, and @clo4/cli's completion.
  */
 async function prepareJobs(
   bundleDir: string,
 ): Promise<{ jobs: Job[]; libraries: string[]; largeScenarios: Scenario[] }> {
   const bundled = (name: string) => join(bundleDir, `${slug(name)}.mjs`);
 
-  const largeScenarios: Scenario[] = largeShapes.map(({ commands, shape }) => {
-    const { args, stdout } = largeCommandLine(shape);
-    return { name: `${commands} commands`, group: "large", args, expected: { status: 0, stdout } };
-  });
-
-  const loadSpecBundle = (kind: string, i: number) =>
-    kind === "import"
-      ? join(bundleDir, `large-load-import-${i}`, "entry.mjs")
-      : bundled(`large-load-body-${i}`);
+  const large = largeForms.flatMap(({ form, suffix: formSuffix, generators }) =>
+    adapters
+      .filter(([library]) => generators.has(library))
+      .flatMap(([library]) =>
+        largeShapes.map(({ commands, shape }) => {
+          const name = slug(`${form} ${library} ${commands}`);
+          const { entry, files } = generators.get(library)!(shape);
+          return {
+            library,
+            scenarios: largeWorkloads
+              .filter(({ workload }) => workload !== "group-help" || !withoutGroupHelp.has(library))
+              .map(({ workload, suffix, scenario }) => ({
+                name: `${commands} commands${formSuffix}${suffix}`,
+                group: `${form}:${workload}` as const,
+                ...scenario(shape),
+              })),
+            input: join(benchDir, `${name}.mjs`),
+            // A CLI with a file per group gets a directory for its chunks.
+            output: files.size > 0 ? join(bundleDir, name, "entry.mjs") : bundled(name),
+            entry,
+            files,
+          };
+        }),
+      ),
+  );
 
   await Promise.all([
-    ...largeShapes.flatMap(({ shape }, i) => {
-      const { entry, files } = clo4LoadSpecFiles(shape);
-      return [
-        bundle(join(benchDir, `large-load-body-${i}.mjs`), loadSpecBundle("body", i), clo4LoadSpec(shape)),
-        bundle(join(benchDir, "entry.mjs"), loadSpecBundle("import", i), entry, files),
-      ];
-    }),
     bundle(fileURLToPath(baselineAdapter), bundled("baseline")),
     bundle(fileURLToPath(completionAdapter), bundled("completion")),
     ...adapters.map(([library, url]) => bundle(fileURLToPath(url), bundled(library))),
-    ...[...largeGenerators].flatMap(([library, generate]) =>
-      largeShapes.map(({ shape }, i) =>
-        bundle(
-          join(benchDir, `large-${slug(library)}-${i}.mjs`),
-          bundled(`large-${library}-${i}`),
-          generate(shape),
-        ),
-      ),
-    ),
+    ...large.map(({ input, output, entry, files }) => bundle(input, output, entry, files)),
   ]);
 
   const jobs: Job[] = [{ library: "baseline", scenario: baselineScenario, bundle: bundled("baseline") }];
@@ -430,33 +517,30 @@ async function prepareJobs(
       jobs.push({ library, scenario, bundle: bundled(library) });
     }
   }
-  for (const [library] of adapters) {
-    if (largeGenerators.has(library)) {
-      largeScenarios.forEach((scenario, i) => {
-        jobs.push({ library, scenario, bundle: bundled(`large-${library}-${i}`) });
-      });
+  for (const { library, scenarios: cliScenarios, output } of large) {
+    for (const scenario of cliScenarios) {
+      jobs.push({ library, scenario, bundle: output });
     }
-  }
-  for (const { key, title } of loadSpecKinds) {
-    largeScenarios.forEach((scenario, i) => {
-      jobs.push({
-        library: ours,
-        scenario: { ...scenario, name: `${scenario.name}, ${title}` },
-        bundle: loadSpecBundle(key, i),
-      });
-    });
   }
   jobs.push({ library: ours, scenario: completionScenario, bundle: bundled("completion") });
 
-  return { jobs, libraries: adapters.map(([library]) => library), largeScenarios };
+  return {
+    jobs,
+    libraries: adapters.map(([library]) => library),
+    largeScenarios: [
+      ...new Map(large.flatMap(({ scenarios }) => scenarios.map((s) => [s.name, s]))).values(),
+    ],
+  };
 }
 
 /**
  * Bundle `input` to `output`, minified, as a CLI shipped to users would be.
  * With `source`, `input` is a path that needn't exist and `source` is its
  * contents, so a generated adapter's imports resolve from the bench directory.
- * With `files`, the adapter imports each of those paths with `import()`, and
- * `output` gets a chunk beside it for each one.
+ * When `files` isn't empty, the adapter imports each of those paths with
+ * `import()`, and `output` gets a chunk beside it for each one. Each file
+ * resolves to a path in the bench directory, so its own imports resolve from
+ * there too.
  */
 async function bundle(
   input: string,
@@ -464,6 +548,13 @@ async function bundle(
   source?: string,
   files?: ReadonlyMap<string, string>,
 ): Promise<void> {
+  const generated = new Map<string, string>();
+  if (source !== undefined) {
+    generated.set(input, source);
+  }
+  for (const [path, text] of files ?? []) {
+    generated.set(join(dirname(input), path), text);
+  }
   await rolldownBuild({
     input,
     platform: "node",
@@ -475,14 +566,14 @@ async function bundle(
         : [
             {
               name: "generated-adapter",
-              resolveId: (id) => (id === input || files?.has(id) ? id : null),
-              load: (id) => (id === input ? source : (files?.get(id) ?? null)),
+              resolveId: (id) => (id === input ? id : files?.has(id) ? join(dirname(input), id) : null),
+              load: (id) => generated.get(id) ?? null,
             },
           ],
     output: {
       // Chunks are named .mjs too, so Node doesn't parse each one twice to
       // find out whether it's a module.
-      ...(files
+      ...(files !== undefined && files.size > 0
         ? { dir: dirname(output), entryFileNames: basename(output), chunkFileNames: "[name]-[hash].mjs" }
         : { file: output, codeSplitting: false }),
       format: "esm",
@@ -552,12 +643,19 @@ async function checkOutputs(
   await forEachConcurrent(checks, concurrency, async ({ library, bundle, scenario }, slot) => {
     const expected = scenario.expected!;
     const result = await runOnce(bundle, scenario.args, interrupt, join(timingDir, `timing-${slot}.txt`));
-    if (result.status !== expected.status) {
+    const statusMatches =
+      expected.status === "non-zero" ? result.status !== 0 : result.status === expected.status;
+    if (!statusMatches) {
       failures.push(`${library}, ${scenario.name}: exited ${result.status}, expected ${expected.status}`);
     } else if (expected.stdout !== undefined && result.stdout !== expected.stdout) {
       failures.push(
         `${library}, ${scenario.name}: printed ${JSON.stringify(result.stdout)}, expected ${JSON.stringify(expected.stdout)}`,
       );
+    } else if (
+      expected.includes !== undefined &&
+      !`${result.stdout}${result.stderr}`.includes(expected.includes)
+    ) {
+      failures.push(`${library}, ${scenario.name}: didn't print ${JSON.stringify(expected.includes)}`);
     }
   });
   return failures;
@@ -616,7 +714,11 @@ async function runOnce(
   child.stdout.on("data", (chunk: string) => {
     stdout += chunk;
   });
-  child.stderr.resume();
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
 
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -637,6 +739,7 @@ async function runOnce(
         stdio: Number.NaN,
         status: basename(error.name),
         stdout,
+        stderr,
       });
     });
 
@@ -663,6 +766,7 @@ async function runOnce(
         stdio: timing.stdio,
         status: code ?? signal ?? "signal",
         stdout,
+        stderr,
       });
     });
   });
@@ -798,7 +902,8 @@ function compareGroup(
   };
 }
 
-function printComparison(title: string, comparison: GroupComparison): void {
+/** Print a comparison, then the libraries in `missing`, which have no CLI for it. */
+function printComparison(title: string, comparison: GroupComparison, missing: readonly string[]): void {
   const count = comparison.scenarios.length;
   console.log("");
   console.log(`${title} (${count} ${count === 1 ? "scenario" : "scenarios"})`);
@@ -816,6 +921,9 @@ function printComparison(title: string, comparison: GroupComparison): void {
       ]),
     );
   }
+  if (missing.length > 0) {
+    console.log(`Not in this table: ${missing.join(", ")}`);
+  }
 }
 
 function comparisonText(ours: number, other: number, low: number, high: number): string {
@@ -828,14 +936,8 @@ function comparisonText(ours: number, other: number, low: number, high: number):
   if (Math.abs(other - ours) < negligibleMs) {
     return `less than ${negligibleMs}ms apart`;
   }
-  const ratio = other / ours;
-  if (ratio >= 2) {
-    return `@clo4/cli faster (${ratio.toFixed(1)}x)`;
-  }
-  if (ratio <= 0.5) {
-    return `@clo4/cli slower (${(1 / ratio).toFixed(1)}x)`;
-  }
-  return other > ours ? "@clo4/cli faster" : "@clo4/cli slower";
+  const ratio = other > ours ? other / ours : ours / other;
+  return `@clo4/cli ${other > ours ? "faster" : "slower"} (${ratio.toFixed(ratio < 2 ? 2 : 1)}x)`;
 }
 
 /** The median `self` time of `library` on `scenario`, or NaN if it wasn't run. */
@@ -914,7 +1016,7 @@ function readConcurrency(raw: string | undefined): number {
 }
 
 function formatRow(cells: readonly string[]): string {
-  const widths = [19, 42, 10, 10, 10, 10, 10, 4, 24];
+  const widths = [19, 50, 10, 10, 10, 10, 10, 4, 24];
   return cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 }
 

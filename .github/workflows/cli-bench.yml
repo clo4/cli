@@ -23,13 +23,28 @@ env:
   # One line of JSON per run. history.csv and history-v2.csv hold the earlier
   # CSV rows. Their @clo4/cli times include completion's code in every
   # scenario, which adds about 0.1 to 0.2 ms to each.
+  #
+  # The large CLIs changed after e805b31:
+  # - @clo4/cli's "N commands" rows built the whole spec at startup. They
+  #   now use `loadSpec` in one file, which e805b31 recorded as
+  #   "N commands, loadSpec in one file". "N commands, whole spec" rows
+  #   build the whole spec.
+  # - e805b31's "N commands, loadSpec, a file per group" rows are now
+  #   "N commands, a file per group".
+  # - The parseArgs CLI was one table of every command. It now has groups,
+  #   builds only the group a command line enters, and prints help.
+  # - Yargs, Cliffy, Stricli and gunshi have large CLIs for the first time.
+  # - Each large CLI also runs root help, a group's help and an unknown
+  #   command. The "large" comparison is now one comparison for each form
+  #   and kind of work, with groups named like "large:command".
   HISTORY_FILE: history.jsonl
 
 jobs:
   benchmark:
     runs-on: ubuntu-latest
-    # A run took about 20 minutes before the large-CLI scenarios were added.
-    timeout-minutes: 35
+    # The benchmark step took 26 minutes for 135 jobs at e805b31. There are
+    # now 247 jobs, so a run should take about 48 minutes.
+    timeout-minutes: 75
     permissions:
       contents: write
     steps:
