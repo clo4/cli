@@ -768,7 +768,8 @@ class Scanner {
     if (from < 0) {
       for (let i = 1; i < path.length - 1; i++) {
         this.path.push(path[i]);
-        this.scope.enter(path[i]);
+        // The parser entered these on the way to help, so they're loaded.
+        this.scope.enterNow(path[i]);
       }
       // The parser read the names as arguments of help, so none is an option.
       this.optionsAllowed = false;

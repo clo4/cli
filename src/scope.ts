@@ -119,12 +119,20 @@ export class CommandScope {
   static at(path: readonly (Spec | Subcommand)[]): CommandScope {
     const scope = new CommandScope(path[0]);
     for (let i = 1; i < path.length; i++) {
-      const loading = scope.enter(path[i]);
-      if (loading) {
-        throw notLoaded(loading, path[i]);
-      }
+      scope.enterNow(path[i]);
     }
     return scope;
+  }
+
+  /**
+   * {@link enter} for a caller that can't wait: throws if the body of
+   * `command` is a promise.
+   */
+  enterNow(command: Spec | Subcommand): void {
+    const loading = this.enter(command);
+    if (loading) {
+      throw notLoaded(loading, command);
+    }
   }
 
   /**
