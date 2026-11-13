@@ -111,11 +111,18 @@ export class CommandScope {
     this.select(root);
   }
 
-  /** The scope at the last command on `path`. */
+  /**
+   * The scope at the last command on `path`. A command on the path that isn't
+   * loaded gets its body first. Throws if that body is a promise, since the
+   * scope can't say what's in effect until it settles.
+   */
   static at(path: readonly (Spec | Subcommand)[]): CommandScope {
     const scope = new CommandScope(path[0]);
     for (let i = 1; i < path.length; i++) {
-      scope.enter(path[i]);
+      const loading = scope.enter(path[i]);
+      if (loading) {
+        throw notLoaded(loading, path[i]);
+      }
     }
     return scope;
   }
@@ -563,6 +570,19 @@ export function loadBody(command: Subcommand): Promise<void> | null {
   }
   mergeBody(command, body as CommandBody);
   return null;
+}
+
+/**
+ * The error for reading `command` while its body is still `loading`. It's a
+ * function of its own so that a run that never does doesn't compile it.
+ */
+function notLoaded(loading: Promise<void>, command: Spec | Subcommand): Error {
+  // Nobody waits for the load, so it mustn't become an unhandled rejection.
+  loading.catch(() => {});
+  const name = asArray(command.name)[0];
+  return new Error(
+    `The command '${name}' isn't loaded, and its loadSpec returned a promise to wait for first`,
+  );
 }
 
 /**

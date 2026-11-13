@@ -4,7 +4,7 @@ import { completeRuntime } from "../src/completion.js";
 import { getHelp } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
 import { help, helpCommand } from "../src/index.js";
-import { parse, parseOrWait, readNext, readNextOrWait } from "../src/parse.js";
+import { parse, parseOrWait, readNext, readNextOrWait, readToken } from "../src/parse.js";
 import type { ParseResult } from "../src/parse.js";
 import { loadAll } from "../src/scope.js";
 import * as Testing from "../src/testing.js";
@@ -325,4 +325,45 @@ test("random specs read, complete, print help and check the same with every body
       }
     }
   }
+});
+
+test("loadSpec: help for another path loads the commands on it", async () => {
+  const sub: Subcommand = {
+    name: "sub",
+    loadSpec: () => ({ options: [{ name: "--force" }], subcommands: [{ name: "leaf" }] }),
+  };
+  const spec: Spec = {
+    name: "cli",
+    subcommands: [sub, { name: "show", action: ({ help }) => console.log(help({ path: [spec, sub] })) }],
+  };
+  const result = await captureConsole(() => run(spec, ["show"]));
+  expect(result.stdout).toContain("Commands:\n  leaf");
+  expect(result.stdout).toContain("Flags:\n  --force");
+});
+
+test("loadSpec: help for a path whose body is a promise says it isn't loaded", async () => {
+  const sub: Subcommand = {
+    name: "sub",
+    loadSpec: () => Promise.resolve({ options: [{ name: "--force" }], subcommands: [{ name: "leaf" }] }),
+  };
+  const spec: Spec = {
+    name: "cli",
+    subcommands: [sub, { name: "show", action: ({ help }) => console.log(help({ path: [spec, sub] })) }],
+  };
+  const result = await captureConsole(() => run(spec, ["show"]));
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toContain("'sub' isn't loaded");
+  // The load it started still finishes, so the path can be read after it.
+  await Promise.resolve();
+  expect(getHelp([spec, sub])).toContain("Commands:\n  leaf");
+});
+
+test("loadSpec: reading tokens one at a time refuses to read past a body that's a promise", () => {
+  const spec: Spec = {
+    name: "cli",
+    subcommands: [{ name: "sub", loadSpec: () => Promise.resolve({ options: [{ name: "--force" }] }) }],
+  };
+  expect(readToken(spec, [], "sub").kind).toBe("subcommand");
+  expect(() => readToken(spec, ["sub"], "--force")).toThrow(/can't be read synchronously/);
 });

@@ -112,13 +112,15 @@ function helpText(
   didYouMean: DidYouMean | undefined,
 ): string {
   const command = commands[commands.length - 1];
+  // The scope loads any command on the path that isn't loaded yet, so it's
+  // made before anything reads the command.
+  const scope = CommandScope.at(commands);
 
   const commandsSection = command.subcommands ? subcommandRows(command.subcommands) : "";
 
   let flagsSection = "";
   let globalFlagsSection = "";
   let required = "";
-  const scope = CommandScope.at(commands);
   let { local, persistent } = scope.visible();
   if (local.length > 0 || persistent.length > 0) {
     // A command without parents or subcommands has no global flags to set

@@ -270,7 +270,10 @@ export interface HelpNames {
 
 /** Reads a command line one token at a time. See {@link tokenReader}. */
 export interface TokenReader {
-  /** Read the next token of the line, and say what it was read as. */
+  /**
+   * Read the next token of the line, and say what it was read as. Throws if
+   * the token before it entered a command whose `loadSpec` returned a promise.
+   */
   read(token: string): TokenReading;
 }
 
@@ -282,7 +285,7 @@ export interface TokenReader {
  * {@link readNext} can still read a line that's wrong at the moment, and it
  * keeps the first problem it finds for {@link parse} to throw.
  */
-class Scanner implements TokenReader {
+class Scanner {
   private readonly path: [Spec, ...Subcommand[]];
   // The last option action used.
   private optionAction: Action | undefined = undefined;
@@ -326,8 +329,9 @@ class Scanner implements TokenReader {
 
   /**
    * The body of the command just entered, if its `loadSpec` returned a
-   * promise. Nothing can be read until it settles, and whoever waits for it
-   * sets this back to null.
+   * promise. Nothing can be read until it settles. Whoever reads the next
+   * token calls {@link afterLoad} to wait for it, or throws if it can't
+   * wait, as {@link tokenReader} does.
    */
   pending: Promise<void> | null = null;
 
@@ -352,6 +356,19 @@ class Scanner implements TokenReader {
     this.path = [spec];
     this.scope = new CommandScope(spec);
     this.directives = this.scope.directives;
+  }
+
+  /**
+   * Wait for the body of the command just entered, then `resume`. Returns
+   * null if no body is loading, and the caller carries on as it was.
+   */
+  afterLoad<T>(resume: () => T | Promise<T>): Promise<T> | null {
+    const pending = this.pending;
+    if (!pending) {
+      return null;
+    }
+    this.pending = null;
+    return pending.then(resume);
   }
 
   // A copy of the path, since reading carries on after a problem and can
@@ -772,10 +789,9 @@ class Scanner implements TokenReader {
         this.path.pop();
         return { path: this.path, error: null, subcommands: [] };
       }
-      const pending = this.pending;
-      if (pending) {
-        this.pending = null;
-        return pending.then(() => this.readHelpNames(path, names, i + 1));
+      const waited = this.afterLoad(() => this.readHelpNames(path, names, i + 1));
+      if (waited) {
+        return waited;
       }
     }
     const subcommands = this.scope.subcommands();
@@ -804,10 +820,22 @@ function argAt(args: readonly Arg[], index: number): Arg | undefined {
 
 /**
  * Start reading a command line for `spec`, to say what each token is read as
- * in turn. Reads leniently, like {@link readNext}.
+ * in turn. Reads leniently, like {@link readNext}. It can't wait for a
+ * `loadSpec` that returns a promise, so it throws instead of reading a token
+ * after such a command.
  */
 export function tokenReader(spec: Spec): TokenReader {
-  return new Scanner(spec);
+  const s = new Scanner(spec);
+  return {
+    read(token) {
+      // It's checked here and not in the scanner, which the parser's bundle
+      // would carry it in.
+      if (s.pending) {
+        unlessWaiting(s.pending);
+      }
+      return s.read(token);
+    },
+  };
 }
 
 /**
@@ -851,10 +879,9 @@ function readNextFrom(
 ): NextToken | Promise<NextToken> {
   for (let i = from; i < before.length; i++) {
     s.read(before[i]);
-    const pending = s.pending;
-    if (pending) {
-      s.pending = null;
-      return pending.then(() => readNextFrom(s, before, i + 1, partial));
+    const waited = s.afterLoad(() => readNextFrom(s, before, i + 1, partial));
+    if (waited) {
+      return waited;
     }
   }
   const next = s.next();
@@ -883,14 +910,14 @@ function readNextFrom(
 /**
  * Say what the parser reads `token` as when it comes after `before`. Reads
  * leniently, like {@link readNext}. To read every token of a line, use
- * {@link tokenReader}. Every command on the line has to be loaded already.
+ * {@link tokenReader}, which this is built on.
  */
 export function readToken(spec: Spec, before: readonly string[], token: string): TokenReading {
-  const s = new Scanner(spec);
+  const reader = tokenReader(spec);
   for (const earlier of before) {
-    s.read(earlier);
+    reader.read(earlier);
   }
-  return s.read(token);
+  return reader.read(token);
 }
 
 /**
@@ -955,7 +982,5 @@ function stop(s: Scanner, input: readonly string[], spec: Spec, next: number): P
   if (s.problem) {
     throw s.problem();
   }
-  const pending = s.pending!;
-  s.pending = null;
-  return pending.then(() => parseOrWait(input, spec, s, next));
+  return s.afterLoad(() => parseOrWait(input, spec, s, next))!;
 }
