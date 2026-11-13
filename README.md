@@ -837,13 +837,12 @@ await testSpec(spec, {
 })();
 ```
 
-Three other options disable individual checks:
+Two other options disable individual checks:
 
 - `allowLongDescriptionLines`: descriptions can have lines over 68 characters.
-- `allowShadowingPersistentOptions`: a subcommand's option can take the name of an inherited option without a `ref` on each.
 - `allowMatchingSubcommandPrefixAndArgs`: a command can combine positional arguments with subcommands matched by prefix.
 
-All four default to `false`. `namingStyle: "function"` uses check names such as `assertNamesReadBack` in step-based test output.
+All three default to `false`. `namingStyle: "function"` uses check names such as `assertNamesReadBack` in step-based test output.
 
 The testing entry point also exports `test` as an alias of `testSpec`, and the [types of its options](src/testing.ts).
 

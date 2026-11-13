@@ -287,13 +287,6 @@ export type TestNamingStyle = "sentence" | "function";
 /** Options that can be provided to `test` */
 export interface TestOptions {
   /**
-   * Allows an option to take the name of a persistent option above it
-   * without a `ref` on each. An action can then only read whichever of the
-   * two was used last.
-   */
-  allowShadowingPersistentOptions?: boolean;
-
-  /**
    * Allows subcommands and options to not have a description
    */
   allowNoDescription?: boolean;
@@ -464,7 +457,6 @@ const specChecks: readonly SpecCheck[] = [
      */
     sentence: "An option that shadows a persistent option has a ref, and so does the option it shadows",
     name: "assertShadowingOptionsHaveRefs",
-    skippedBy: "allowShadowingPersistentOptions",
     check(spec) {
       forEachCommand(spec, ({ path, own, inherited }) => {
         for (const { option, index } of own) {
@@ -506,8 +498,7 @@ const specChecks: readonly SpecCheck[] = [
      * its ref.
      *
      * This skips persistent parent options. The check that shadowing options
-     * have refs covers those, and `allowShadowingPersistentOptions` turns that
-     * check off.
+     * have refs covers those.
      */
     sentence: "Different options on a subcommand and its parents have different names",
     name: "assertOptionsHaveDifferentNamesFromParents",

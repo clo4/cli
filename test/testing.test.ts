@@ -815,29 +815,6 @@ test("testing: testSpec config skips optional checks", async () => {
   await expect(
     collectSteps(
       {
-        ...validSpec(),
-        options: [{ name: "--global", description: "Global option.", isPersistent: true }],
-        subcommands: [
-          {
-            name: "run",
-            description: "Run.",
-            options: [{ name: "--global", description: "Shadows global." }],
-          },
-          {
-            name: "check",
-            description: "Check.",
-          },
-        ],
-      },
-      { allowShadowingPersistentOptions: true },
-    ),
-  ).resolves.not.toContain(
-    "An option that shadows a persistent option has a ref, and so does the option it shadows",
-  );
-
-  await expect(
-    collectSteps(
-      {
         name: "demo",
         options: [{ name: "--option" }],
       },
