@@ -182,10 +182,10 @@ interface OptionReader<Name, ValueName, Value, Values> {
   readonly options: Map<string, string[]>;
 
   /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
-  all<K extends ValueName>(name: K): K extends keyof Values ? Values[K] : string[];
+  all<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Values ? Values[K] : string[];
 
   /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
-  get<K extends ValueName>(name: K): K extends keyof Value ? Value[K] : string | undefined;
+  get<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Value ? Value[K] : string | undefined;
 
   /** Whether an option was supplied. Defaults don't count. */
   has(name: Name): boolean;
@@ -193,6 +193,25 @@ interface OptionReader<Name, ValueName, Value, Values> {
   /** How many values an option has, or how many times a repeatable option without arguments was used. */
   count(name: Name): number;
 }
+
+/** Whether `T` is more than one type. */
+type IsUnion<T, Whole = T> = T extends unknown ? ([Whole] extends [T] ? false : true) : never;
+
+/**
+ * The argument of `get` and `all` for the name `K`. A name of an option with
+ * a value is itself. A name of a flag is a message that says so. Anything
+ * else, like a misspelling, leaves `K` as every name there is, and the
+ * argument is then any name with a value, which is what TypeScript lists in
+ * its error and an editor suggests.
+ *
+ * The message is joined to `K` so that it's still a kind of string. The
+ * typed options are then accepted wherever `OptionArgs` is asked for.
+ */
+type WithValue<K, ValueName> = [K] extends [ValueName]
+  ? K
+  : IsUnion<K> extends true
+    ? ValueName
+    : K & Invalid<`'${K & string}' takes no value. Use has() or count() to read it.`>;
 
 /** The options a command's action can read: the command's own, and the persistent ones above it. */
 type OptionsFor<O> = [O] extends [never]
