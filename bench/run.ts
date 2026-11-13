@@ -288,7 +288,7 @@ const completionScenario: Scenario = {
   ],
 };
 
-void CLI.run({
+const spec = CLI.spec({
   name: "clo4-cli-bench",
   description: "Benchmark @clo4/cli against other JavaScript CLI libraries.",
   options: [
@@ -314,19 +314,17 @@ void CLI.run({
       args: { name: "file" },
     },
   ],
-  action(init) {
-    return runBenchmark(readOptions(init));
+  action({ options }) {
+    return runBenchmark({
+      samples: readPositiveIntOption(options.get("--samples"), "--samples", 50),
+      warmup: readPositiveIntOption(options.get("--warmup"), "--warmup", 3),
+      concurrency: readConcurrency(options.get("--concurrency")),
+      jsonOut: options.get("--json-out"),
+    });
   },
 });
 
-function readOptions({ options }: CLI.ActionInit): BenchOptions {
-  return {
-    samples: readPositiveIntOption(options.get("--samples"), "--samples", 50),
-    warmup: readPositiveIntOption(options.get("--warmup"), "--warmup", 3),
-    concurrency: readConcurrency(options.get("--concurrency")),
-    jsonOut: options.get("--json-out"),
-  };
-}
+CLI.run(spec);
 
 async function runBenchmark({ samples, warmup, concurrency, jsonOut }: BenchOptions): Promise<number> {
   if (!existsSync(new URL("../../dist/index.js", import.meta.url))) {
