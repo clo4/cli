@@ -672,6 +672,18 @@ const spec = CLI.spec({
 
 An action in a command made with `CLI.command` knows that command's options only, since the commands above it aren't in the call.
 
+An option or argument that several commands share is written outside the spec. Mark it `as const`, so that its name and fields keep their exact types:
+
+```ts
+const reason = {
+  name: "--reason",
+  description: "Why, for the audit log.",
+  args: { name: "text" },
+} as const;
+```
+
+Without `as const`, TypeScript reads the option's name as `string`, and a command that uses the option accepts any option name. An argument with `isOptional: true` doesn't compile without it, because `true` becomes `boolean`.
+
 These types need TypeScript 6.0 or later.
 
 [← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
