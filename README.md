@@ -1134,7 +1134,7 @@ Write the `import()` in your own file with a literal path, as above, so a bundle
 
 Call `CLI.run` without `await`, as every example here does. A command's file can't import the library from an entry that is waiting on a top-level `await`, so a bundler moves the library into a file of its own, and every run loads one more file.
 
-An action that calls `help({ path })` for another command loads the commands on that path too. `help` returns a string, so it can't wait for a `loadSpec` that returns a promise. For a command like that which no command line has entered yet, `help` throws an error that names the command.
+An action that calls `help({ path })` for another command loads the commands on that path too. `help` returns a string, so it can't wait for a `loadSpec` that returns a promise. For a command like that which no command line has entered yet, `help` throws an error with the command's name in its message.
 
 `testSpec` loads every command before it checks the spec.
 
