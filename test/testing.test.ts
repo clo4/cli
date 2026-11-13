@@ -1180,6 +1180,14 @@ test("testing: the spec checks follow a persistent subcommand into the commands 
   );
 });
 
+test("testing: a persistent option listed again by a command that inherits it is reported as that", async () => {
+  const verbose: Option = { name: "--verbose", isPersistent: true };
+  const spec: Spec = { name: "cli", options: [verbose], subcommands: [{ name: "a", options: [verbose] }] };
+  await expect(runSpecCheck("assertShadowingOptionsHaveRefs", spec)).rejects.toThrow(
+    "Option `cli a --verbose` (index 0) is a persistent option that `cli a` already inherits, Option `cli --verbose` (index 0). Remove it from `cli a`.",
+  );
+});
+
 test("testing: a persistent subcommand's option that shadows an option of a command inheriting it needs a ref", async () => {
   const spec: Spec = {
     name: "cli",

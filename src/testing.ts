@@ -13,8 +13,6 @@ import type { TokenReading } from "./parse.js";
 
 const repr = JSON.stringify;
 
-// TODO: one decorators are stable (ts 4.9?), use decorators this file
-
 /** An option, the path to the command that defines it, and its index there. */
 interface Definition {
   option: Option;
@@ -558,6 +556,11 @@ const specChecks: readonly SpecCheck[] = [
             const shadowed = parent!.definition(shadowedOption);
             const where = describeOption(path, index);
             const other = describeOption(shadowed.definedIn, shadowed.index);
+            // The same object can't have a ref for each place, and needs none.
+            assert(
+              shadowedOption !== option,
+              `${where} is a persistent option that ${namedArrayToString(...path)} already inherits, ${other}. Remove it from ${namedArrayToString(...path)}.`,
+            );
             assert(
               option.ref !== undefined,
               `${where} shadows the name ${repr(name)} of a persistent option, ${other}. Give it a \`ref\` so an action can read it.`,
