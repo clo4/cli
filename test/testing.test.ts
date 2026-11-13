@@ -1158,3 +1158,37 @@ test("testing: an option with a ref isn't a common option its subcommands copied
     }),
   ).rejects.toThrow(/define the option once/);
 });
+
+test("testing: the spec checks follow a persistent subcommand into the commands that inherit it", async () => {
+  // `cli a p --x=1` reads `--x=1` with the separators of `a`, which `p` under
+  // the root never sees.
+  const spec: Spec = {
+    name: "cli",
+    subcommands: [
+      {
+        name: "p",
+        isPersistent: true,
+        options: [{ name: "--x", args: { name: "v" }, requiresSeparator: "=" }],
+      },
+      { name: "a", parserDirectives: { optionArgSeparators: ":" } },
+    ],
+  };
+  expect(() => parse(["p", "--x=1"], spec)).not.toThrow();
+  expect(() => parse(["a", "p", "--x=1"], spec)).toThrow();
+  await expect(runSpecCheck("assertNamesReadBack", spec)).rejects.toThrow(
+    /^Option `cli a p --x` \(index 0\) is written '--x=<v>', but '=' isn't one of the option arg separators there \(':'\)/,
+  );
+});
+
+test("testing: a persistent subcommand's option that shadows an option of a command inheriting it needs a ref", async () => {
+  const spec: Spec = {
+    name: "cli",
+    subcommands: [
+      { name: "p", isPersistent: true, options: [{ name: "-v" }] },
+      { name: "a", options: [{ name: "-v", isPersistent: true }] },
+    ] as const,
+  };
+  await expect(runSpecCheck("assertShadowingOptionsHaveRefs", spec)).rejects.toThrow(
+    /^Option `cli a p -v` \(index 0\) shadows the name "-v" of a persistent option, Option `cli a -v` \(index 0\)/,
+  );
+});

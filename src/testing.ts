@@ -23,17 +23,26 @@ interface Definition {
   index: number;
 }
 
-/** One command in the spec, with what's in effect there. */
+/**
+ * One command at the end of one path the parser can enter. Everything a spec
+ * check knows about what's in effect there, it asks the command scope.
+ */
 class CommandVisit {
   private built: CommandScope | null = null;
 
   constructor(
     /** The commands from the root to this one. */
     readonly path: Subcommand[],
-    /** This command's options, in definition order. */
-    readonly own: Definition[],
-    /** The persistent options of the commands above, root first. */
-    readonly inherited: Definition[],
+    /** The tokens that enter the path: a name the parser reads as each command after the root. */
+    readonly tokens: string[],
+    /**
+     * Whether every command on the path is one of its parent's own
+     * subcommands. Otherwise the path enters a persistent subcommand from
+     * below the command that defines it, as `cli a help` does.
+     */
+    readonly isDefinition: boolean,
+    /** The visit of the command before this one on the path. */
+    readonly parent: CommandVisit | null,
   ) {}
 
   /** The last command on the path. */
@@ -45,24 +54,99 @@ class CommandVisit {
   get scope(): CommandScope {
     return (this.built ??= CommandScope.at(this.path));
   }
+
+  /** The path to the command at `depth`, which is the path itself for this command, so a message can tell. */
+  private pathTo(depth: number): Subcommand[] {
+    return depth === this.path.length - 1 ? this.path : this.path.slice(0, depth + 1);
+  }
+
+  /**
+   * Where `option`, which is in effect here, is defined: the nearest command
+   * on the path that lists it.
+   */
+  definition(option: Option): Definition {
+    for (let depth = this.path.length - 1; depth >= 0; depth--) {
+      const index = makeArray(this.path[depth].options).indexOf(option);
+      if (index !== -1) {
+        return { option, definedIn: this.pathTo(depth), index };
+      }
+    }
+    throw new Error("No command on the path lists the option");
+  }
+
+  /** This command's options, in definition order. */
+  get own(): Definition[] {
+    return makeArray(this.command.options).map((option, index) => ({ option, definedIn: this.path, index }));
+  }
+
+  /**
+   * Every option that can be on a command line with this command's: the
+   * options of each command on the path, root first, persistent or not. The
+   * parser keeps the values of every option used on a line in one place,
+   * under the option's names and its ref, so these are the options whose
+   * names and refs can meet.
+   */
+  get onLine(): Definition[] {
+    return this.path.flatMap((command, depth) => {
+      const definedIn = this.pathTo(depth);
+      return makeArray(command.options).map((option, index) => ({ option, definedIn, index }));
+    });
+  }
 }
 
 /**
- * Run a function once for each command in the spec, parents before their
- * subcommands, starting with `spec`. Each visit's path and scope start at
- * `spec`.
+ * Run a function once for each path the spec checks follow from `spec`,
+ * parents before the commands below them. The command scope says which
+ * subcommands the next token can name at each command, so a path can enter a
+ * persistent subcommand from below the command that defines it.
+ *
+ * The parser can enter more paths than these. A path here has no command
+ * twice, and goes through an inherited subcommand at most once, then stays in
+ * that subcommand's own commands. So `cli a help` is checked, and `cli a help
+ * b help` isn't. Without the limit, the paths of a spec with several
+ * persistent subcommands multiply. Of 300 random specs with up to 46
+ * commands, the one with the most paths had 44,800 when the only limit was no
+ * command twice, and 390 with this one.
+ */
+function forEachPath(spec: Subcommand, fn: (visit: CommandVisit) => void): void {
+  let visits = walks.get(spec);
+  if (!visits) {
+    visits = [];
+    const walk = (visit: CommandVisit) => {
+      visits!.push(visit);
+      const own = makeArray(visit.command.subcommands);
+      for (const { command, names } of visit.scope.subcommands()) {
+        const isOwn = own.includes(command);
+        if ((isOwn || visit.isDefinition) && !visit.path.includes(command)) {
+          const tokens = [...visit.tokens, names[0]];
+          walk(new CommandVisit([...visit.path, command], tokens, visit.isDefinition && isOwn, visit));
+        }
+      }
+    };
+    walk(new CommandVisit([spec], [], true, null));
+    walks.set(spec, visits);
+  }
+  visits.forEach(fn);
+}
+
+/**
+ * The visits of each spec walked since `test` last started, so the spec checks
+ * of one run walk a spec once.
+ */
+let walks = new WeakMap<Subcommand, CommandVisit[]>();
+
+/**
+ * Run a function once for each command in the spec, at the path that defines
+ * it, parents before their subcommands, starting with `spec`. A check of how
+ * a command is written uses this. A check of what the parser does there uses
+ * {@link forEachPath}.
  */
 function forEachCommand(spec: Subcommand, fn: (visit: CommandVisit) => void): void {
-  const visit = (path: Subcommand[], inherited: Definition[]) => {
-    const command = path[path.length - 1];
-    const own = makeArray(command.options).map((option, index) => ({ option, definedIn: path, index }));
-    fn(new CommandVisit(path, own, inherited));
-    const next = [...inherited, ...own.filter(({ option }) => option.isPersistent)];
-    for (const subcommand of makeArray(command.subcommands)) {
-      visit([...path, subcommand], next);
+  forEachPath(spec, (visit) => {
+    if (visit.isDefinition) {
+      fn(visit);
     }
-  };
-  visit([spec], []);
+  });
 }
 
 /**
@@ -109,7 +193,11 @@ function namedArrayToString(...parts: { name: SingleOrArray<string> }[]) {
   return `\`${names.join(" ")}\``;
 }
 
-/** Name the last command on `path` in a message, with its index among its siblings. */
+/**
+ * Name the last command on `path` in a message, with its index among its
+ * siblings, or the command it's inherited in if the one before it doesn't
+ * define it.
+ */
 function describeCommand(path: readonly Subcommand[]): string {
   const command = path[path.length - 1];
   const parent = path[path.length - 2];
@@ -117,6 +205,9 @@ function describeCommand(path: readonly Subcommand[]): string {
     return `Command ${namedArrayToString(command)}`;
   }
   const index = makeArray(parent.subcommands).indexOf(command);
+  if (index === -1) {
+    return `In ${namedArrayToString(...path.slice(0, -1))}, persistent subcommand ${namedArrayToString(command)}`;
+  }
   return `Subcommand ${namedArrayToString(...path)} (index ${index})`;
 }
 
@@ -133,28 +224,37 @@ function describeOption(definedIn: readonly Subcommand[], index: number, usedIn 
 /** One option, at one command it can be used in. */
 interface OptionUse {
   option: Option;
+  /** The command it's used in. */
+  visit: CommandVisit;
   /** The commands from the root to the one the option is used in. */
   path: Subcommand[];
   /** The options and directives in effect there. */
   scope: CommandScope;
-  /** Whether the command it's used in is the one that defines it. */
+  /**
+   * Whether this use is the option's definition: the command it's used in
+   * defines it, at the path that defines the command.
+   */
   isDefinedHere: boolean;
   /** Names the option at the start of a message. See {@link describeOption}. */
   where: string;
 }
 
 /**
- * Run a function once for each option at each command it can be used in: the
- * command's own options, in definition order, then the persistent ones it
- * inherits. A check that is about how the option is written skips the uses
- * that aren't `isDefinedHere`. A check that depends on the scope sees the
- * option the way the parser does at each command.
+ * Run a function once for each option at the end of each path it can be used
+ * on: the options the command scope has in effect there, local ones first. A
+ * check that is about how the option is written skips the uses that aren't
+ * `isDefinedHere`. A check that depends on the scope sees the option the way
+ * the parser does at each command.
  */
 function forEachOption(spec: Subcommand, fn: (use: OptionUse) => void): void {
-  forEachCommand(spec, ({ path, own, inherited, scope }) => {
-    for (const { option, definedIn, index } of [...own, ...inherited]) {
+  forEachPath(spec, (visit) => {
+    const { path, scope } = visit;
+    // A command can list an option that a command above it lists too. It's
+    // one option there, so it's one use.
+    for (const option of new Set([...scope.local, ...scope.persistent])) {
+      const { definedIn, index } = visit.definition(option);
       const where = describeOption(definedIn, index, path);
-      fn({ option, path, scope, isDefinedHere: definedIn === path, where });
+      fn({ option, visit, path, scope, isDefinedHere: visit.isDefinition && definedIn === path, where });
     }
   });
 }
@@ -188,23 +288,14 @@ function readsAs(reading: TokenReading, option: Option): boolean {
 }
 
 /**
- * The tokens that reach the last command on `path`, using each command's first
- * name. The names-read-back check reads subcommand names from the root down
- * before options, so each of these is a name the parser reads.
- */
-function tokensTo(path: readonly Subcommand[]): string[] {
-  return path.slice(1).map((command) => makeArray(command.name)[0]);
-}
-
-/**
- * A value for writing options with at the last command on `path`. No name
+ * A value for writing options with at the command `scope` is for. No name
  * there starts with it, or with it after '-' or '+', so the parser can only
  * read it as a value.
  */
-function placeholderValue(path: readonly Subcommand[], scope: CommandScope): string {
+function placeholderValue(scope: CommandScope): string {
   const names = [
     ...[...scope.local, ...scope.persistent].flatMap((option) => makeArray(option.name)),
-    ...makeArray(path[path.length - 1].subcommands).flatMap((command) => makeArray(command.name)),
+    ...scope.subcommands().flatMap((subcommand) => subcommand.names),
   ];
   for (const value of "0123456789abcdefghijklmnopqrstuvwxyz") {
     const starts = [value, `-${value}`, `+${value}`];
@@ -236,9 +327,9 @@ function writeForm(option: Option, form: OptionForm, value: string): string[] {
  */
 function assertOptionFormsReadBack(spec: Subcommand) {
   const root = spec as Spec;
-  forEachOption(spec, ({ option, where, scope, path }) => {
-    const before = tokensTo(path);
-    const value = placeholderValue(path, scope);
+  forEachOption(spec, ({ option, where, scope, path, visit }) => {
+    const before = visit.tokens;
+    const value = placeholderValue(scope);
     // A name that another option shadows is that option's to check.
     const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
     for (const form of scope.forms(option, names)) {
@@ -458,13 +549,19 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "An option that shadows a persistent option has a ref, and so does the option it shadows",
     name: "assertShadowingOptionsHaveRefs",
     check(spec) {
-      forEachCommand(spec, ({ path, own, inherited }) => {
+      forEachPath(spec, ({ path, own, parent }) => {
+        // The persistent options of the commands above, which this command's
+        // options take names from.
+        const inherited = parent?.scope.persistent ?? [];
         for (const { option, index } of own) {
           for (const name of makeArray(option.name)) {
-            const shadowed = inherited.find((persistent) => makeArray(persistent.option.name).includes(name));
-            if (!shadowed) {
+            const shadowedOption = inherited
+              .filter((persistent) => makeArray(persistent.name).includes(name))
+              .at(-1);
+            if (!shadowedOption) {
               continue;
             }
+            const shadowed = parent!.definition(shadowedOption);
             const where = describeOption(path, index);
             const other = describeOption(shadowed.definedIn, shadowed.index);
             assert(
@@ -472,7 +569,7 @@ const specChecks: readonly SpecCheck[] = [
               `${where} shadows the name ${repr(name)} of a persistent option, ${other}. Give it a \`ref\` so an action can read it.`,
             );
             assert(
-              shadowed.option.ref !== undefined,
+              shadowedOption.ref !== undefined,
               `${other} has its name ${repr(name)} shadowed by ${where}. Give it a \`ref\` so an action can read it.`,
             );
           }
@@ -503,20 +600,22 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Different options on a subcommand and its parents have different names",
     name: "assertOptionsHaveDifferentNamesFromParents",
     check(spec) {
-      forEachOption(spec, ({ option, path, isDefinedHere, where }) => {
-        if (!isDefinedHere) {
-          return;
-        }
-        const names = makeArray(option.name);
-        // A parent's non-persistent options aren't in this command's scope, so
-        // they're found on the parents themselves.
-        for (const parent of path.slice(0, -1)) {
-          for (const parentOption of makeArray(parent.options)) {
-            if (parentOption.isPersistent || (parentOption.ref !== undefined && option.ref !== undefined)) {
+      forEachPath(spec, ({ path, own, onLine }) => {
+        for (const { option, index } of own) {
+          const where = describeOption(path, index);
+          const names = makeArray(option.name);
+          // A parent's non-persistent options aren't in this command's scope,
+          // but they can be on the same command line.
+          for (const { option: parentOption, definedIn } of onLine) {
+            if (
+              definedIn === path ||
+              parentOption.isPersistent ||
+              (parentOption.ref !== undefined && option.ref !== undefined)
+            ) {
               continue;
             }
             const parentNames = makeArray(parentOption.name);
-            const other = namedArrayToString(parent, parentOption);
+            const other = namedArrayToString(definedIn[definedIn.length - 1], parentOption);
             if (optionKey(parentOption) === optionKey(option)) {
               assert(
                 isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 }),
@@ -549,15 +648,11 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "No option a ref can meet on a command line has the same ref, or has it as a name",
     name: "assertRefsAreUnique",
     check(spec) {
-      forEachCommand(spec, ({ path, own }) => {
-        // Every option that can be on a command line with this command's: its own, and the ones above it.
-        const met: { option: Option; where: string }[] = [];
-        for (let depth = 1; depth <= path.length; depth++) {
-          const definedIn = path.slice(0, depth);
-          for (const [index, option] of makeArray(definedIn[depth - 1].options).entries()) {
-            met.push({ option, where: describeOption(definedIn, index) });
-          }
-        }
+      forEachPath(spec, ({ path, own, onLine }) => {
+        const met = onLine.map(({ option, definedIn, index }) => ({
+          option,
+          where: describeOption(definedIn, index),
+        }));
         for (const { option, index } of own) {
           const where = describeOption(path, index);
           const ref = option.ref;
@@ -604,17 +699,19 @@ const specChecks: readonly SpecCheck[] = [
     check(spec) {
       const sharing = new Set<Option>();
       const withRef: { option: Option; where: string }[] = [];
-      forEachCommand(spec, ({ path, own }) => {
+      forEachPath(spec, ({ path, own, onLine, isDefinition }) => {
         for (const { option, index } of own) {
-          if (option.ref !== undefined) {
+          if (option.ref !== undefined && isDefinition) {
             withRef.push({ option, where: describeOption(path, index) });
           }
           const names = makeArray(option.name);
-          for (const parent of path.slice(0, -1)) {
-            for (const other of makeArray(parent.options)) {
-              if (other !== option && makeArray(other.name).some((name) => names.includes(name))) {
-                sharing.add(option).add(other);
-              }
+          for (const { option: other, definedIn } of onLine) {
+            if (
+              definedIn !== path &&
+              other !== option &&
+              makeArray(other.name).some((name) => names.includes(name))
+            ) {
+              sharing.add(option).add(other);
             }
           }
         }
@@ -656,10 +753,10 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertNamesReadBack",
     check(spec) {
       const root = spec as Spec;
-      forEachCommand(spec, ({ command, path }) => {
-        const before = tokensTo(path);
-        for (const subcommand of makeArray(command.subcommands)) {
-          for (const name of makeArray(subcommand.name)) {
+      forEachPath(spec, ({ path, scope, tokens: before }) => {
+        // An inherited subcommand is checked by the names that still refer to it.
+        for (const { command: subcommand, names } of scope.subcommands()) {
+          for (const name of names) {
             const reading = readToken(root, before, name);
             if (reading.kind === "subcommand" && reading.command === subcommand) {
               continue;
@@ -829,7 +926,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
     name: "assertPrefixMatchCommandsHaveNoArguments",
     skippedBy: "allowMatchingSubcommandPrefixAndArgs",
     check(spec) {
-      forEachCommand(spec, ({ command, path, scope }) => {
+      forEachPath(spec, ({ command, path, scope }) => {
         // The scope is at this command, so this is the setting that decides how
         // its own subcommands are matched.
         if (!scope.directives.subcommandsMatchUniquePrefix) {
@@ -859,6 +956,7 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   const checks = specChecks.filter(({ skippedBy }) => !(skippedBy && options[skippedBy]));
   return async (t) => {
     await loadAll(spec);
+    walks = new WeakMap();
     for (const { sentence, name, check } of checks) {
       await runStep(t, namingStyle === "function" ? name : sentence, () => check(spec));
     }
