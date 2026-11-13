@@ -1050,30 +1050,30 @@ The [benchmarks](bench/run.ts) compare command execution and startup overhead wi
 <summary>Performance comparison</summary>
 <br>
 
-Each value is relative to `@clo4/cli` in the same run: `2.5x` means the library took 2.5 times as long for the measured work. Lower is better. Each column is a separate run on the listed hardware or CI.
+Each value is relative to `@clo4/cli` in the same run: `2.5x` means the library took 2.5 times as long for the measured work. Lower is better. The run was on an Apple M3 Pro.
 
-| Library                                 | CI                 | AMD Ryzen 9 9950X3D | Apple M3 Pro       |
-| --------------------------------------- | ------------------ | ------------------- | ------------------ |
-| `node:util` parseArgs, hand-written CLI | Roughly equivalent | Roughly equivalent  | Roughly equivalent |
-| sade                                    | Roughly equivalent | Roughly equivalent  | Roughly equivalent |
-| Cac                                     | 1.1x               | Roughly equivalent  | 1.2x               |
-| citty                                   | 1.4x               | 1.4x                | 1.4x               |
-| brocli                                  | 2.5x               | 3.0x                | 1.6x               |
-| Cliffy                                  | 2.8x               | 2.7x                | 2.4x               |
-| Stricli                                 | 3.0x               | 2.8x                | 1.9x               |
-| gunshi                                  | 3.1x               | 2.3x                | 2.0x               |
-| Commander                               | 3.7x               | 4.5x                | 2.6x               |
-| clerc                                   | 3.8x               | 4.3x                | 2.7x               |
-| cmd-ts                                  | 4.4x               | 5.0x                | 3.1x               |
-| Clipanion                               | 4.6x               | 5.3x                | 3.4x               |
-| Optique                                 | 11.9x              | 12.2x               | 11.1x              |
-| oclif                                   | 13.8x              | 14.8x               | 12.7x              |
-| Effect                                  | 15.6x              | 16.3x               | 14.4x              |
-| Yargs                                   | 16.0x              | 16.1x               | 15.6x              |
+| Library                                 | Apple M3 Pro |
+| --------------------------------------- | ------------ |
+| `node:util` parseArgs, hand-written CLI | 1.3x         |
+| sade                                    | 1.3x         |
+| Cac                                     | 1.4x         |
+| citty                                   | 1.8x         |
+| brocli                                  | 2.0x         |
+| Stricli                                 | 2.3x         |
+| gunshi                                  | 2.5x         |
+| Cliffy                                  | 3.0x         |
+| Commander                               | 3.4x         |
+| clerc                                   | 3.6x         |
+| cmd-ts                                  | 4.0x         |
+| Clipanion                               | 4.4x         |
+| Optique                                 | 13.9x        |
+| oclif                                   | 16.2x        |
+| Effect                                  | 18.2x        |
+| Yargs                                   | 20.7x        |
 
 The benchmark runs seven tasks, including help output, nested commands and argument errors. Timing starts before the bundled CLI is loaded and ends when the process exits. Node's own startup time is excluded.
 
-For each library, the score is the geometric mean of its seven task medians, minus the cost of loading an empty bundle. The table compares those scores. “Roughly equivalent” means the difference was below 0.25 ms, or the 95% bootstrap interval for the difference included zero.
+For each library, the score is the geometric mean of its seven task medians, minus the cost of loading an empty bundle. The table compares those scores.
 
 </details>
 
@@ -1128,10 +1128,10 @@ These times are for running one command of a bundled CLI whose commands each tak
 
 | Commands | No `loadSpec` | Body from the same file | Body from a file per group |
 | -------- | ------------- | ----------------------- | -------------------------- |
-| 10       | 1.5 ms        | 1.6 ms                  | 1.8 ms                     |
-| 50       | 1.9 ms        | 1.9 ms                  | 1.9 ms                     |
-| 100      | 2.3 ms        | 2.1 ms                  | 1.9 ms                     |
-| 1,000    | 12.6 ms       | 7.5 ms                  | 2.1 ms                     |
+| 10       | 1.6 ms        | 1.7 ms                  | 1.9 ms                     |
+| 50       | 1.9 ms        | 1.9 ms                  | 2.0 ms                     |
+| 100      | 2.4 ms        | 2.2 ms                  | 2.0 ms                     |
+| 1,000    | 12.9 ms       | 7.8 ms                  | 2.3 ms                     |
 
 The benchmark compares large CLIs in two forms, one file and a file per group. Each form has a table for each kind of work: running a command, root help, a group's help, and an unknown command. Each library is written the way its own docs show for that form, and a hand-written `parseArgs` CLI shows the least a CLI can do. In one file, @clo4/cli returns each group's body from `loadSpec`. The benchmark also records @clo4/cli without `loadSpec`.
 
