@@ -824,6 +824,8 @@ test("CLI spec is valid", () => testSpec(spec)());
 
 `testSpec(spec)` returns an async function that runs the checks and throws on failure. Return its promise from your test callback, as above, or await it inside an async test.
 
+The checks read each command the way the parser does. A persistent subcommand is checked under its parent and under each command that inherits it, where different options and parser settings can be in effect. A path that goes through two inherited subcommands, like `demo build help remote help`, isn't checked.
+
 The examples above leave out some descriptions to keep them short. By default, validation checks that every command and option has a description and that description lines fit within 68 characters.
 
 <details>
@@ -1131,6 +1133,8 @@ loadSpec: () => CLI.command({ requiresSubcommand: true, subcommands: [/* ... */]
 Write the `import()` in your own file with a literal path, as above, so a bundler can find the file and emit it as a separate chunk.
 
 Call `CLI.run` without `await`, as every example here does. A command's file can't import the library from an entry that is waiting on a top-level `await`, so a bundler moves the library into a file of its own, and every run loads one more file.
+
+An action that calls `help({ path })` for another command loads the commands on that path too. `help` returns a string, so it can't wait for a `loadSpec` that returns a promise. For a command like that which no command line has entered yet, `help` throws an error that names the command.
 
 `testSpec` loads every command before it checks the spec.
 
