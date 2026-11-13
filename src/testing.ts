@@ -101,8 +101,8 @@ class CommandVisit {
  *
  * The parser can enter more paths than these. A path here has no command
  * twice, and goes through an inherited subcommand at most once, then stays in
- * that subcommand's own commands. So `cli a help` is checked, and `cli a help
- * b help` isn't. Without the limit, the paths of a spec with several
+ * that subcommand's own commands. So `cli a help` is checked, and `cli a p q`
+ * isn't when `a` inherits both `p` and `q`. Without the limit, the paths of a spec with several
  * persistent subcommands multiply. Of 300 random specs with up to 46
  * commands, the one with the most paths had 44,800 when the only limit was no
  * command twice, and 390 with this one.

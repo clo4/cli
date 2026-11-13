@@ -824,7 +824,7 @@ test("CLI spec is valid", () => testSpec(spec)());
 
 `testSpec(spec)` returns an async function that runs the checks and throws on failure. Return its promise from your test callback, as above, or await it inside an async test.
 
-The checks read each command the way the parser does. A persistent subcommand is checked under its parent and under each command that inherits it, where different options and parser settings can be in effect. A path that goes through two inherited subcommands, like `demo build help remote help`, isn't checked.
+The checks read each command the way the parser does. A persistent subcommand is checked under its parent and under each command that inherits it, where different options and parser settings can be in effect. A path that enters two inherited subcommands, one inside the other, isn't checked.
 
 The examples above leave out some descriptions to keep them short. By default, validation checks that every command and option has a description and that description lines fit within 68 characters.
 
