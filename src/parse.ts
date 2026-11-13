@@ -1,5 +1,5 @@
 import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
-import { addDefaults, asArray, getMaxArgs, getMinArgs } from "./util.js";
+import { addDefaults, asArray, getMaxArgs, getMinArgs, print } from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -13,8 +13,6 @@ import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
 import type { LiveSubcommand, OptionForm, SubcommandMatching } from "./scope.js";
-import { usage as builtinUsageAction } from "./subcommands.js";
-import type { NoSubcommand } from "./subcommands.js";
 
 export interface ParseResult {
   args: string[];
@@ -250,6 +248,12 @@ function unusedDefaults(scope: CommandScope, name: string): string[] | undefined
   addDefaults(values, args);
   return values.length > 0 ? values : undefined;
 }
+
+/** The action of a command that has none of its own: print the command's help. */
+export const usage: Action = ({ help }) => {
+  print(help());
+  return 0;
+};
 
 /** Where the names after a help command lead. See {@link readHelpNames}. */
 export interface HelpNames {
@@ -593,7 +597,7 @@ class Scanner implements TokenReader {
     }
     return {
       path: this.path,
-      action: this.optionAction ?? command.action ?? builtinUsageAction,
+      action: this.optionAction ?? command.action ?? usage,
       args: this.args,
       argSeparatorIndex: this.argSeparatorIndex,
       options: optionArgs(this.options, this.scope),
@@ -730,9 +734,9 @@ class Scanner implements TokenReader {
   private failUnmatched(token: string, exactOnly: boolean): void {
     const command = this.scope.command;
     if (command.subcommands?.length || command.requiresSubcommand) {
-      const unmatched = this.scope.matchSubcommand(token, exactOnly) as NoSubcommand;
+      const reason = this.scope.unmatched(token, exactOnly);
       this.failArgs((ctx) => {
-        const { message, didYouMean } = unmatched.reason();
+        const { message, didYouMean } = reason();
         return new ParseError(ctx, message, didYouMean);
       });
     }

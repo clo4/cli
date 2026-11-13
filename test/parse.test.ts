@@ -1,6 +1,5 @@
 import { expect, test } from "vitest";
 
-import { usage } from "../src/subcommands.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -10,7 +9,7 @@ import {
   TooManyArguments,
   UnknownOption,
 } from "../src/errors.js";
-import { parse } from "../src/parse.js";
+import { parse, usage } from "../src/parse.js";
 import { getMaxArgs, getMinArgs } from "../src/util.js";
 import type { Action, Option, OptionArgs, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";

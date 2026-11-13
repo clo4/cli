@@ -17,8 +17,7 @@ import { afterAll, expect, test, vi } from "vitest";
 import type { DidYouMean, ParseError } from "../src/errors.js";
 import { getHelp, help, helpCommand, printUsageError } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
-import { usage } from "../src/subcommands.js";
-import { parse, readNext } from "../src/parse.js";
+import { parse, readNext, usage } from "../src/parse.js";
 import type { Action, ActionInit, NonEmptyArray, Option, Spec, Subcommand } from "../src/types.js";
 import { asArray, output } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
@@ -53,9 +52,13 @@ test.skipIf(!ref)(`parse and readNext behave the same as at ${ref}`, async () =>
     parse: typeof parse;
     readNext?: (spec: Spec, input: readonly string[], partial: string) => AnyNextToken;
   };
-  // The built-in usage action moved from help.ts to subcommands.ts.
+  // The built-in usage action moved from help.ts to subcommands.ts, and from
+  // there to parse.ts.
   const theirSubcommands = (await load("subcommands.ts").catch(() => ({}))) as { usage?: Action };
-  const theirUsage = theirSubcommands.usage ?? ((await load("help.ts")) as { usage: Action }).usage;
+  const theirUsage =
+    (theirs as { usage?: Action }).usage ??
+    theirSubcommands.usage ??
+    ((await load("help.ts")) as { usage: Action }).usage;
 
   // Each copy of the source has its own built-in usage action.
   const sameAction = (x: Action, y: Action) => x === y || (x === usage && y === theirUsage);

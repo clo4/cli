@@ -1,11 +1,8 @@
 import type { CommandBody, Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
-import { NoSubcommand } from "./subcommands.js";
+import type { DidYouMean } from "./errors.js";
 import { asArray, getMaxArgs, getMinArgs } from "./util.js";
-
-/** The subcommand a token names, or why it names none. See {@link CommandScope.matchSubcommand}. */
-export type SubcommandMatch = { command: Subcommand } | NoSubcommand;
 
 /**
  * How the next token can match a subcommand: by any name the command's
@@ -203,15 +200,18 @@ export class CommandScope {
     return live;
   }
 
-  /** The subcommand `token` names, or why it names none. See {@link meaning}. */
-  matchSubcommand(token: string, exactOnly = false): SubcommandMatch {
-    const meaning = this.meaning(token, exactOnly ? exactName : anyName, false);
-    if (meaning?.kind === "subcommand") {
-      return meaning;
-    }
+  /**
+   * Why `token` names no subcommand here, as an error message and suggestions.
+   * It's for a token {@link meaning} read as no subcommand, matched the same
+   * way. The scope moves on, so this takes what the answer depends on now. The
+   * message is only made when it's asked for, since an option action like
+   * `--help` can make the token's error moot.
+   */
+  unmatched(token: string, exactOnly: boolean): () => { message: string; didYouMean?: DidYouMean } {
     const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !exactOnly;
-    const matches = allowPrefix ? prefixMatches(this.command.subcommands ?? [], token) : [];
-    return new NoSubcommand(this.subcommands(), token, matches);
+    const prefixOf = allowPrefix ? prefixMatches(this.command.subcommands ?? [], token) : [];
+    const subcommands = this.subcommands();
+    return () => unmatchedReason(token, prefixOf, subcommands);
   }
 
   /** The option `name` refers to, if any. */
@@ -603,6 +603,39 @@ export function optionKey(option: Option): string {
 
 function hasName(names: string | readonly string[], name: string): boolean {
   return typeof names === "string" ? names === name : names.includes(name);
+}
+
+/**
+ * Why `token` names none of `subcommands`. `prefixOf` are the commands it's a
+ * prefix of a name of, where prefixes match. There is never exactly one of
+ * them, since the token would name that one.
+ */
+function unmatchedReason(
+  token: string,
+  prefixOf: readonly Subcommand[],
+  subcommands: readonly LiveSubcommand[],
+): { message: string; didYouMean?: DidYouMean } {
+  if (token === "") {
+    return { message: "Expected a command, but the value was empty" };
+  }
+  if (prefixOf.length > 0) {
+    const possible: string[] = [];
+    for (const command of prefixOf) {
+      for (const name of asArray(command.name)) {
+        if (name.startsWith(token)) {
+          possible.push(name);
+        }
+      }
+    }
+    return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
+  }
+  const choices: (readonly string[])[] = [];
+  for (const { command, names } of subcommands) {
+    if (!command.hidden) {
+      choices.push(names);
+    }
+  }
+  return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
 }
 
 /** The visible commands that `token` is a prefix of a name of, each listed once. */
