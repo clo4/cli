@@ -16,6 +16,8 @@ npm install @clo4/cli
 
 ## Example
 
+[↑ Contents](#contents) · [Getting started →](#getting-started)
+
 This example defines `demo build`, with an input directory, an output option and a watch flag. The action prints the selected paths and whether watch mode was requested.
 
 Save this as `demo.ts` in a project with `"type": "module"` in its `package.json`. Run the examples with Node.js 24 or later using its [built-in TypeScript support](https://nodejs.org/api/typescript.html#type-stripping):
@@ -131,9 +133,9 @@ Global flags:
 <hr>
 </details>
 
-[↑ Contents](#contents) · [Getting started →](#getting-started)
-
 ## Getting started
+
+[← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
 
 A **spec** is a plain object describing your CLI. `CLI.spec` takes the top-level (root) command and returns it unchanged. `CLI.command` does the same for a command written outside the spec. Both give each action the types of its own command's arguments and options.
 
@@ -686,9 +688,9 @@ Without `as const`, TypeScript reads the option's name as `string`, and a comman
 
 These types need TypeScript 6.0 or later.
 
-[← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
-
 ## Help and completion
+
+[← Getting started](#getting-started) · [↑ Contents](#contents) · [Testing your spec →](#testing-your-spec)
 
 `CLI.help` is a help option; `CLI.helpCommand` and `CLI.completion` are subcommands. Add them to the root spec's `options` and `subcommands` arrays:
 
@@ -804,9 +806,9 @@ Start a new shell after installing.
 <hr>
 </details>
 
-[← Getting started](#getting-started) · [↑ Contents](#contents) · [Testing your spec →](#testing-your-spec)
-
 ## Testing your spec
+
+[← Help and completion](#help-and-completion) · [↑ Contents](#contents) · [Parser settings →](#parser-settings)
 
 `testSpec` validates the structure of a spec, including names, argument order, defaults and option references. These checks catch mistakes that TypeScript's types cannot express.
 
@@ -848,9 +850,9 @@ The testing entry point also exports `test` as an alias of `testSpec`, and the [
 <hr>
 </details>
 
-[← Help and completion](#help-and-completion) · [↑ Contents](#contents) · [Parser settings →](#parser-settings)
-
 ## Parser settings
+
+[← Testing your spec](#testing-your-spec) · [↑ Contents](#contents) · [Performance →](#performance)
 
 A command's `parserDirectives` field controls how the parser reads its command line. By default, options can appear before or after positional arguments, subcommands match exact names or aliases, and attached option values use `=`.
 
@@ -1052,9 +1054,9 @@ Quote glob patterns when you want the CLI to receive the pattern itself. In <cod
 <!-- </tip> -->
 </td></tr></tbody></table>
 
-[← Testing your spec](#testing-your-spec) · [↑ Contents](#contents) · [Performance →](#performance)
-
 ## Performance
+
+[← Parser settings](#parser-settings) · [↑ Contents](#contents) · [API and compatibility →](#api-and-compatibility)
 
 The [benchmarks](bench/run.ts) compare command execution and startup overhead with other CLI libraries and Node's built-in `parseArgs`. Run them with `pnpm bench`; [CI also records results](.github/workflows/cli-bench.yml).
 
@@ -1156,9 +1158,9 @@ oclif has no large CLI, because it loads each command from its own file through 
 
 Help times are for output piped to another program. At a terminal, Node takes longer to set up `process.stdout`, which @clo4/cli doesn't use for help.
 
-[← Parser settings](#parser-settings) · [↑ Contents](#contents) · [API and compatibility →](#api-and-compatibility)
-
 ## API and compatibility
+
+[← Performance](#performance) · [↑ Contents](#contents) · [License →](#license)
 
 The package uses ECMAScript modules (ESM), includes TypeScript declarations and has no runtime dependencies. Its named runtime exports are `run`, `spec`, `command`, `printError`, `help`, `helpCommand` and `completion`. The default export is an object containing those same seven values.
 
@@ -1166,10 +1168,8 @@ Public types include `Spec`, `Subcommand`, `Option`, `Arg` and `ActionInit`. The
 
 The runtime API follows semantic versioning. The testing module may introduce stricter validation rules in minor or patch releases to catch incorrect or undefined behavior.
 
-[← Performance](#performance) · [↑ Contents](#contents) · [License →](#license)
-
 ## License
 
-[MIT](LICENSE)
-
 [← API and compatibility](#api-and-compatibility) · [↑ Contents](#contents)
+
+[MIT](LICENSE)
