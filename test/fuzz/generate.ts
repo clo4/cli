@@ -395,26 +395,26 @@ export function generator(seed: number, options: GenerateOptions = {}) {
 /**
  * Make a failing case smaller. Tries removing tokens, array items and object
  * keys (except `name`) one at a time, keeping any change that still fails,
- * until nothing more can go.
+ * until nothing more can go. `fails` can answer with a promise.
  */
-export function shrink(
+export async function shrink(
   spec: Spec,
   input: string[],
-  fails: (spec: Spec, input: string[]) => boolean,
-): { spec: Spec; input: string[] } {
+  fails: (spec: Spec, input: string[]) => boolean | Promise<boolean>,
+): Promise<{ spec: Spec; input: string[] }> {
   let changed = true;
   while (changed) {
     changed = false;
     for (let i = 0; i < input.length; i++) {
       const smaller = without(input, i);
-      if (fails(spec, smaller)) {
+      if (await fails(spec, smaller)) {
         input = smaller;
         changed = true;
         i--;
       }
     }
     for (const smaller of smallerValues(spec)) {
-      if (fails(smaller as Spec, input)) {
+      if (await fails(smaller as Spec, input)) {
         spec = smaller as Spec;
         changed = true;
         break;

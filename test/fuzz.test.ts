@@ -163,7 +163,7 @@ function violation(spec: Spec, input: string[]): string | null {
   return null;
 }
 
-test("readNext and parse keep their invariants on random specs", () => {
+test("readNext and parse keep their invariants on random specs", async () => {
   for (const n of caseNumbers()) {
     const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
@@ -171,7 +171,7 @@ test("readNext and parse keep their invariants on random specs", () => {
     if (violation(spec, input) === null) {
       continue;
     }
-    const small = shrink(spec, input, (s, i) => violation(s, i) !== null);
+    const small = await shrink(spec, input, (s, i) => violation(s, i) !== null);
     expect.fail(report(n, small.spec, small.input, violation(small.spec, small.input) ?? ""));
   }
 });
@@ -343,7 +343,7 @@ function optionsNamed(spec: Subcommand, name: string): Option[] {
 
 type CommandPathLike = readonly { name: Spec["name"] | Subcommand["name"] }[];
 
-test("defaults only add to what the user typed", () => {
+test("defaults only add to what the user typed", async () => {
   for (const n of caseNumbers()) {
     const gen = generator(caseSeed(n), { ...shapes, defaults: true });
     const spec = gen.spec();
@@ -351,7 +351,7 @@ test("defaults only add to what the user typed", () => {
     if (defaultsViolation(spec, input) === null) {
       continue;
     }
-    const small = shrink(spec, input, (s, i) => defaultsViolation(s, i) !== null);
+    const small = await shrink(spec, input, (s, i) => defaultsViolation(s, i) !== null);
     expect.fail(report(n, small.spec, small.input, defaultsViolation(small.spec, small.input) ?? ""));
   }
 });

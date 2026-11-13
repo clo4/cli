@@ -1,37 +1,16 @@
 // Comparable snapshots of what `parse` and `readNext` return or throw, so two
-// versions of the parser can be checked for differences.
+// reads of the same command line can be checked for differences.
 
 import type { NextToken, ParseResult } from "../../src/parse.js";
-import type { Action, OptionArgs, Spec, Subcommand } from "../../src/types.js";
-import { asArray } from "../../src/util.js";
+import type { Action, Spec } from "../../src/types.js";
 
-/**
- * A result of `parse` from this version or an older one. Before `parse` picked
- * the action, it returned every command action and option action instead.
- * Before `parse` returned the options as the action receives them, it
- * returned the map of option names to values, and `defaults` gave the
- * defaults of an unused option.
- */
-type AnyParseResult = Omit<ParseResult, "action" | "options"> & {
-  options: OptionArgs | Map<string, string[]>;
-  /** Before `parse` had defaults, results didn't have this. */
-  defaults?: (name: string) => string[] | undefined;
-  action?: Action;
-  actions?: Action[];
-  optionActions?: Action[];
-};
+type Parse = (input: readonly string[], spec: Spec) => ParseResult;
 
-type Parse<R> = (input: readonly string[], spec: Spec) => R;
-
-export type Outcome<R extends AnyParseResult = AnyParseResult> =
-  | { ok: true; result: R }
+export type Outcome =
+  | { ok: true; result: ParseResult }
   | { ok: false; error: Error & Record<string, unknown> };
 
-export function attempt<R extends AnyParseResult>(
-  parse: Parse<R>,
-  input: readonly string[],
-  spec: Spec,
-): Outcome<R> {
+export function attempt(parse: Parse, input: readonly string[], spec: Spec): Outcome {
   try {
     return { ok: true, result: parse(input, spec) };
   } catch (error) {
@@ -42,10 +21,8 @@ export function attempt<R extends AnyParseResult>(
 /**
  * Describe how two outcomes of `parse` differ, or return null if they match.
  * Spec objects (path entries, options, actions) must be the same objects.
- * `sameAction` decides whether two actions match, so two copies of the
- * built-in usage action can count as the same. What `has`, `get`, `all` and
- * `count` return for each of `optionNames` is compared too, and so are the
- * defaults of each when both versions have defaults.
+ * `sameAction` decides whether two actions match. What `has`, `get`, `all`
+ * and `count` return for each of `optionNames` is compared too.
  */
 export function difference(
   a: Outcome,
@@ -71,8 +48,7 @@ export function difference(
   if (!sameItems(x.path, y.path)) {
     return "path differs";
   }
-  const [actionA, actionB] = [pickedAction(x), pickedAction(y)];
-  if (actionA !== actionB && !(actionA && actionB && sameAction(actionA, actionB))) {
+  if (!sameAction(x.action, y.action)) {
     return "action differs";
   }
   if (JSON.stringify(x.args) !== JSON.stringify(y.args)) {
@@ -81,27 +57,15 @@ export function difference(
   if (x.argSeparatorIndex !== y.argSeparatorIndex) {
     return "argSeparatorIndex differs";
   }
-  const optionsA = JSON.stringify(optionEntries(optionMap(x)));
-  const optionsB = JSON.stringify(optionEntries(optionMap(y)));
+  const optionsA = JSON.stringify(optionEntries(x.options.options));
+  const optionsB = JSON.stringify(optionEntries(y.options.options));
   if (optionsA !== optionsB) {
     return `options differ: ${optionsA} vs ${optionsB}`;
   }
-  const [defaultsOfA, defaultsOfB] = [defaultsOf(x), defaultsOf(y)];
-  if (defaultsOfA && defaultsOfB) {
-    for (const name of optionNames) {
-      const [defaultsA, defaultsB] = [JSON.stringify(defaultsOfA(name)), JSON.stringify(defaultsOfB(name))];
-      if (defaultsA !== defaultsB) {
-        return `defaults of ${name} differ: ${defaultsA} vs ${defaultsB}`;
-      }
-    }
-  }
-  const [argsA, argsB] = [optionArgsOf(x), optionArgsOf(y)];
   for (const name of optionNames) {
     for (const question of ["has", "get", "all", "count"] as const) {
-      // Before `all` gave an empty list for an unused option without defaults, it gave undefined.
-      const answer = (args: OptionArgs): unknown =>
-        question === "all" ? ((args.all(name) as string[] | undefined) ?? []) : args[question](name);
-      const [answerA, answerB] = [JSON.stringify(answer(argsA)), JSON.stringify(answer(argsB))];
+      const answerA = JSON.stringify(x.options[question](name));
+      const answerB = JSON.stringify(y.options[question](name));
       if (answerA !== answerB) {
         return `${question}(${JSON.stringify(name)}) differs: ${answerA} vs ${answerB}`;
       }
@@ -110,124 +74,20 @@ export function difference(
   return null;
 }
 
-/** Whether the version of `parse` that returned `result` has defaults. */
-export function hasDefaults(result: AnyParseResult): boolean {
-  return defaultsOf(result) !== undefined;
-}
-
-/** The map of option names to values, from either version. */
-function optionMap(result: AnyParseResult): Map<string, string[]> {
-  const options = result.options;
-  return options instanceof Map ? options : options.options;
-}
-
-/**
- * The defaults of each unused option, from either version. Where `parse`
- * returns the options as the action receives them, `all` gives the defaults
- * of an unused option.
- */
-function defaultsOf(result: AnyParseResult): ((name: string) => string[] | undefined) | undefined {
-  const options = result.options;
-  if (options instanceof Map) {
-    return result.defaults;
-  }
-  // Before `all` gave an empty list for an option without defaults, it gave undefined.
-  return (name) => {
-    const all: string[] | undefined = options.has(name) ? undefined : options.all(name);
-    return all && all.length > 0 ? all : undefined;
-  };
-}
-
-/**
- * The options as the action receives them, from either version. Where `parse`
- * returned the map, they're made the way that version's `run` made them.
- */
-function optionArgsOf(result: AnyParseResult): OptionArgs {
-  const options = result.options;
-  if (!(options instanceof Map)) {
-    return options;
-  }
-  const defaults = result.defaults ?? (() => undefined);
-  return {
-    options,
-    has: (name) => options.has(name),
-    get: (name) => (options.get(name) ?? defaults(name))?.[0],
-    all: (name) => options.get(name) ?? defaults(name) ?? [],
-    count: (name) => options.get(name)?.length ?? 0,
-  };
-}
-
-/**
- * A result of `readNext` from this version or an older one. Before `readNext`
- * listed the usable options, it returned the option scope, every option used,
- * and a function to check each option's rules.
- */
-export type AnyNextToken = Omit<NextToken, "directives" | "options" | "subcommands"> & {
-  directives?: NextToken["directives"];
-  options?: readonly AnyUsableOption[];
-  scope?: { directives: NextToken["directives"] };
-  subcommands: readonly (NextToken["subcommands"][number] | Subcommand)[];
-};
-
-/**
- * Each subcommand the token can name, paired with each name that refers to
- * it. Before `readNext` listed those names, it listed the subcommands alone,
- * and every name of one referred to it.
- */
-function subcommandNames(next: AnyNextToken): [Subcommand, string][] {
-  return next.subcommands.flatMap((item): [Subcommand, string][] =>
-    "command" in item
-      ? item.names.map((name): [Subcommand, string] => [item.command, name])
-      : asArray(item.name).map((name): [Subcommand, string] => [item, name]),
-  );
-}
-
-/**
- * A usable option from this version or an older one. Before options listed
- * how each name is written, they listed the names and one separator.
- */
-type AnyUsableOption = Omit<NextToken["options"][number], "forms"> & {
-  forms?: NextToken["options"][number]["forms"];
-  names?: readonly string[];
-  separator?: string | null;
-};
-
-/** The names that read as a usable option, from either version. */
-function namesOf(usable: AnyUsableOption): string[] {
-  if (!usable.forms) {
-    return [...(usable.names ?? [])];
-  }
-  return usable.forms.map((form) => form.name);
-}
-
-/** How each name is written, if both versions say so the same way. */
-function sameForms(a: AnyUsableOption, b: AnyUsableOption): boolean {
-  if (a.forms && b.forms) {
-    return sameItems(a.forms, b.forms, (x, y) => x.name === y.name && x.join === y.join);
-  }
-  if (a.forms || b.forms) {
-    return true;
-  }
-  return a.separator === b.separator;
-}
-
-/**
- * Describe how two results of `readNext` differ, or return null if they match.
- * The usable options are only compared when both versions list them, and how
- * their names are written only when both versions say it the same way.
- */
-export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null {
+/** Describe how two results of `readNext` differ, or return null if they match. */
+export function nextDifference(x: NextToken, y: NextToken): string | null {
   if (!sameItems(x.path, y.path)) {
     return "path differs";
   }
-  const directives = (next: AnyNextToken) => JSON.stringify(next.directives ?? next.scope?.directives);
-  if (directives(x) !== directives(y)) {
+  if (JSON.stringify(x.directives) !== JSON.stringify(y.directives)) {
     return "directives differ";
   }
   if (x.optionsAllowed !== y.optionsAllowed) {
     return "optionsAllowed differs";
   }
-  if (!sameItems(subcommandNames(x), subcommandNames(y), (a, b) => a[0] === b[0] && a[1] === b[1])) {
+  const sameSubcommand = (a: NextToken["subcommands"][number], b: NextToken["subcommands"][number]) =>
+    a.command === b.command && sameItems(a.names, b.names);
+  if (!sameItems(x.subcommands, y.subcommands, sameSubcommand)) {
     return "subcommands differ";
   }
   if (x.arg !== y.arg) {
@@ -247,31 +107,20 @@ export function nextDifference(x: AnyNextToken, y: AnyNextToken): string | null 
       return `attached ${key} differs`;
     }
   }
-  if (x.options && y.options) {
-    if (x.options.length !== y.options.length) {
-      return "options differ";
-    }
-    for (let i = 0; i < x.options.length; i++) {
-      const [a, b] = [x.options[i], y.options[i]];
-      if (
-        a.option !== b.option ||
-        a.used !== b.used ||
-        !sameItems(namesOf(a), namesOf(b)) ||
-        !sameForms(a, b)
-      ) {
-        return `options differ at ${i}`;
-      }
+  if (x.partialIsOption !== y.partialIsOption) {
+    return "partialIsOption differs";
+  }
+  if (x.options.length !== y.options.length) {
+    return "options differ";
+  }
+  for (let i = 0; i < x.options.length; i++) {
+    const [a, b] = [x.options[i], y.options[i]];
+    const sameForms = sameItems(a.forms, b.forms, (f, g) => f.name === g.name && f.join === g.join);
+    if (a.option !== b.option || a.used !== b.used || !sameForms) {
+      return `options differ at ${i}`;
     }
   }
   return null;
-}
-
-/** The action `run` would run for `result`, picked the way that version of `run` picks it. */
-function pickedAction(result: AnyParseResult): Action | undefined {
-  if (!result.actions) {
-    return result.action;
-  }
-  return result.optionActions?.at(-1) ?? result.actions.at(-1);
 }
 
 function describe(outcome: Outcome): string {
@@ -291,7 +140,7 @@ function sameItems<T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => bo
  * The options map as `[name, group, values]`, where names that share one
  * values array get the same group number.
  */
-function optionEntries(options: Map<string, string[]>): [string, number, string[]][] {
+export function optionEntries(options: Map<string, string[]>): [string, number, string[]][] {
   const groups: string[][] = [];
   return [...options].map(([name, values]) => {
     let group = groups.indexOf(values);
