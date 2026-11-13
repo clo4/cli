@@ -14,8 +14,8 @@
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, output, print } from "./util.js";
-import { helpCommand, printUsageError } from "./help.js";
-import { readHelpNamesOrWait, readNextOrWait } from "./parse.js";
+import { nextHelpNames, printUsageError } from "./help.js";
+import { readNextOrWait } from "./parse.js";
 import { formStart } from "./scope.js";
 import type { NextToken } from "./parse.js";
 
@@ -204,7 +204,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
     if (arg) {
       candidates.push(...(await argValues(arg, tokens, req.partial)));
     }
-    if (!next.value && next.path[next.path.length - 1].action === helpCommand.action) {
+    if (!next.value) {
       candidates.push(...(await helpNameCandidates(next)));
     }
   }
@@ -225,17 +225,13 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   return candidates;
 }
 
-/**
- * The names a help command can take next, which {@link readHelpNamesOrWait} works
- * out. A copy of `helpCommand` is recognised by its action.
- */
+/** The names a help command can take next, if the word is an argument of one. */
 async function helpNameCandidates(next: NextToken): Promise<Candidate[]> {
   // The parser reads a name of one of these as that subcommand, so help never
   // sees it, and the subcommand loop offers it.
   const taken = new Set(next.subcommands.flatMap(({ names }) => names));
   const candidates: Candidate[] = [];
-  for (const { command: subcommand, names } of (await readHelpNamesOrWait(next.path, next.args))
-    .subcommands) {
+  for (const { command: subcommand, names } of await nextHelpNames(next.path, next.args)) {
     if (subcommand.hidden) {
       continue;
     }

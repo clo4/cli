@@ -1,7 +1,7 @@
-import type { ActionInit, Arg, Option, NonEmptyArray, Subcommand } from "./types.js";
+import type { ActionInit, Arg, CommandPath, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
-import type { OptionForm, VisibleOption } from "./scope.js";
+import type { LiveSubcommand, OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { readHelpNamesOrWait } from "./parse.js";
 import type { HelpNames } from "./parse.js";
@@ -71,6 +71,24 @@ export const helpCommand: Subcommand = {
       : printHelpNames(target, help);
   },
 };
+
+/**
+ * The subcommands the next name after a help command can lead to, hidden ones
+ * included, each with the names that still refer to it. `path` ends at the
+ * command being completed and `names` are its arguments so far. Empty if that
+ * command isn't a help command. A copy of {@link helpCommand}, like a
+ * persistent one, is recognised by its action. Completion offers these.
+ */
+export function nextHelpNames(
+  path: CommandPath,
+  names: readonly string[],
+): readonly LiveSubcommand[] | Promise<readonly LiveSubcommand[]> {
+  if (path[path.length - 1].action !== helpCommand.action) {
+    return [];
+  }
+  const target = readHelpNamesOrWait(path, names);
+  return target instanceof Promise ? target.then((loaded) => loaded.subcommands) : target.subcommands;
+}
 
 /** Print the help of the command the help command's names led to, or the error they ended in. */
 function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
