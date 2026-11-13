@@ -185,7 +185,10 @@ const bodyKeys = [
   "parserDirectives",
   "requiresSubcommand",
   "action",
-] as const;
+] as const satisfies readonly (keyof CommandBody)[];
+
+// Fails to compile when `CommandBody` gets a key that isn't listed above.
+true satisfies Exclude<keyof CommandBody & string, (typeof bodyKeys)[number]> extends never ? true : never;
 
 /**
  * Move the body of every subcommand below `command` behind a `loadSpec`, in
