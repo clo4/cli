@@ -82,7 +82,7 @@ const clo4Command = (g: number, c: number, options: number): string =>
         action({ args, options }) { console.log(\`${output(g, c, "args[0]", 'options.get("--o1")')}\`); } },`;
 
 /** The properties a @clo4/cli group has besides its name and description. */
-const clo4GroupBody = (g: number, { commands, options }: LargeShape): string =>
+const clo4GroupRest = (g: number, { commands, options }: LargeShape): string =>
   `requiresSubcommand: true, subcommands: [
 ${range(commands)
   .map((c) => clo4Command(g, c, options))
@@ -102,11 +102,15 @@ ${range(shape.groups)
 }));
 `;
 
-export const clo4WholeSpec: Generate = oneFile((shape) => clo4Cli(shape, (g) => clo4GroupBody(g, shape)));
+export const clo4WholeSpec: Generate = oneFile((shape) => clo4Cli(shape, (g) => clo4GroupRest(g, shape)));
 
-/** README.md, "Loading commands on demand", returning the body from the same file. */
+/** A @clo4/cli group as the whole command a `loadSpec` gives, with its name again. */
+const clo4LoadedGroup = (g: number, shape: LargeShape): string =>
+  `CLI.command({ name: "g${g}", ${clo4GroupRest(g, shape)} })`;
+
+/** README.md, "Loading commands on demand", returning the command from the same file. */
 const clo4: Generate = oneFile((shape) =>
-  clo4Cli(shape, (g) => `loadSpec: () => CLI.command({ ${clo4GroupBody(g, shape)} })`),
+  clo4Cli(shape, (g) => `loadSpec: () => ${clo4LoadedGroup(g, shape)}`),
 );
 
 /** README.md, "Loading commands on demand", with `loadSpec` importing the group's file. */
@@ -114,11 +118,10 @@ const clo4Split: Generate = filePerGroup(
   (shape) =>
     clo4Cli(
       shape,
-      (g) => `loadSpec: () => import("${groupFile(g)}").then(body)`,
-      "const body = (module) => module.default;\n",
+      (g) => `loadSpec: () => import("${groupFile(g)}").then(command)`,
+      "const command = (module) => module.default;\n",
     ),
-  (g, shape) =>
-    `import * as CLI from "../dist/index.js";\nexport default CLI.command({ ${clo4GroupBody(g, shape)} });`,
+  (g, shape) => `import * as CLI from "../dist/index.js";\nexport default ${clo4LoadedGroup(g, shape)};`,
 );
 
 // sade

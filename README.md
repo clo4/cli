@@ -1095,7 +1095,7 @@ For each library, the score is the geometric mean of its seven task medians, min
 
 ### Loading commands on demand
 
-A spec is built in full every time the CLI starts, even though one run uses one command. Give a subcommand a `loadSpec` function and the rest of that command is built only when a command line enters it:
+A spec is built in full every time the CLI starts, even though one run uses one command. Give a subcommand a `loadSpec` function that returns the whole command, and the command is built only when a command line enters it:
 
 ```ts
 subcommands: [
@@ -1112,6 +1112,7 @@ subcommands: [
 import * as CLI from "@clo4/cli";
 
 export default CLI.command({
+  name: "remote",
   requiresSubcommand: true,
   subcommands: [
     { name: "add", description: "Add a remote.", args: { name: "url" }, action: addRemote },
@@ -1120,14 +1121,16 @@ export default CLI.command({
 });
 ```
 
-The command keeps its `name`, `description`, `hidden` and `isPersistent`, because its parent's help and completion show it before it loads. Everything else goes in the body: `args`, `options`, `subcommands`, `action`, `requiresSubcommand` and `parserDirectives`. A subcommand in a body can have a `loadSpec` of its own.
+The command with the `loadSpec` sets only its `name`, `description`, `hidden` and `isPersistent`, because its parent's help and completion show it before it loads. Everything else goes in the loaded command: `args`, `options`, `subcommands`, `action`, `requiresSubcommand` and `parserDirectives`. A subcommand of a loaded command can have a `loadSpec` of its own.
+
+The loaded command is an ordinary command, so it has the same `name`. It can leave out `description`, `hidden` and `isPersistent`. If it sets one, the value on the command with the `loadSpec` is the one used, and `testSpec` fails when the two differ. `testSpec` also fails when a command sets anything else beside its `loadSpec`.
 
 `loadSpec` runs once, the first time the parser, help or completion enters the command. `demo remote add`, `demo remote --help`, `demo help remote` and pressing Tab after `demo remote` all load `remote` and nothing else. `demo --help` loads nothing.
 
-`loadSpec` can also return the body directly, which keeps the command in the same file and the parser synchronous:
+`loadSpec` can also return the command directly, which keeps it in the same file and the parser synchronous:
 
 ```ts
-loadSpec: () => CLI.command({ requiresSubcommand: true, subcommands: [/* ... */] }),
+loadSpec: () => CLI.command({ name: "remote", requiresSubcommand: true, subcommands: [/* ... */] }),
 ```
 
 Write the `import()` in your own file with a literal path, as above, so a bundler can find the file and emit it as a separate chunk.
@@ -1140,18 +1143,18 @@ An action that calls `help({ path })` for another command loads the commands on 
 
 #### When loading on demand is faster
 
-Loading from another file costs about 0.3 ms, the time Node takes to read one more file. It's faster than building the whole spec from about 50 commands up, which is also about when a spec gets easier to maintain as a file per command group. Returning the body from the same file is faster from about 25 commands, and costs 0.03 ms below that.
+Loading from another file costs about 0.3 ms, the time Node takes to read one more file. It's faster than building the whole spec from about 50 commands up, which is also about when a spec gets easier to maintain as a file per command group. Returning the command from the same file is faster from about 25 commands, and costs 0.03 ms below that.
 
 These times are for running one command of a bundled CLI whose commands each take 6 options, on an Apple M3 Pro. They leave out Node's own startup and the time it spends setting up stdout.
 
-| Commands | No `loadSpec` | Body from the same file | Body from a file per group |
-| -------- | ------------- | ----------------------- | -------------------------- |
-| 10       | 1.6 ms        | 1.7 ms                  | 1.9 ms                     |
-| 50       | 1.9 ms        | 1.9 ms                  | 2.0 ms                     |
-| 100      | 2.4 ms        | 2.2 ms                  | 2.0 ms                     |
-| 1,000    | 12.9 ms       | 7.8 ms                  | 2.3 ms                     |
+| Commands | No `loadSpec` | Command from the same file | Command from a file per group |
+| -------- | ------------- | -------------------------- | ----------------------------- |
+| 10       | 1.6 ms        | 1.7 ms                     | 1.9 ms                        |
+| 50       | 1.9 ms        | 1.9 ms                     | 2.0 ms                        |
+| 100      | 2.4 ms        | 2.2 ms                     | 2.0 ms                        |
+| 1,000    | 12.9 ms       | 7.8 ms                     | 2.3 ms                        |
 
-The benchmark compares large CLIs in two forms, one file and a file per group. Each form has a table for each kind of work: running a command, root help, a group's help, and an unknown command. Each library is written the way its own docs show for that form, and a hand-written `parseArgs` CLI shows the least a CLI can do. In one file, @clo4/cli returns each group's body from `loadSpec`. The benchmark also records @clo4/cli without `loadSpec`.
+The benchmark compares large CLIs in two forms, one file and a file per group. Each form has a table for each kind of work: running a command, root help, a group's help, and an unknown command. Each library is written the way its own docs show for that form, and a hand-written `parseArgs` CLI shows the least a CLI can do. In one file, @clo4/cli returns each group from `loadSpec`. The benchmark also records @clo4/cli without `loadSpec`.
 
 - **One file:** @clo4/cli, Commander, Yargs, citty, sade, Cliffy, Stricli, gunshi and the `parseArgs` CLI. sade has no command groups, so it has no group help.
 - **A file per group:** @clo4/cli, citty, Cliffy, Stricli and gunshi, whose docs show how to load code from another file when a command line needs it, and the `parseArgs` CLI, which uses `import()`. Stricli and gunshi keep every command's definition in the entry and load only its action.

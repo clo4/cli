@@ -1,7 +1,8 @@
 import { command } from "../../src/index.js";
 
-/** A command body in a file of its own, for a `loadSpec` to import. */
+/** A command in a file of its own, for a `loadSpec` to import. */
 export default command({
+  name: "remote",
   requiresSubcommand: true,
   subcommands: [
     {

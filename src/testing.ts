@@ -114,6 +114,8 @@ class SpecWalk {
   constructor(
     /** The root command. Every path and scope starts there. */
     readonly spec: Subcommand,
+    /** What was wrong with the commands that loaded before the walk. See {@link loadProblems}. */
+    readonly loadProblems: readonly string[] = [],
   ) {
     const walk = (visit: CommandVisit) => {
       this.visits.push(visit);
@@ -372,6 +374,47 @@ function assertOptionFormsReadBack(walk: SpecWalk) {
   });
 }
 
+/** What a command's parent reads before the command loads. */
+const readBeforeLoading = ["name", "description", "hidden", "isPersistent"] as const;
+
+/**
+ * What's wrong with the command at the end of `path`, which has a `loadSpec`,
+ * and with `loaded`, the command that gave. The two are merged after this, and
+ * what the parent read before then stays as it was.
+ */
+function loadProblems(path: Subcommand[], loaded: Subcommand): string[] {
+  const command = path[path.length - 1];
+  const where = describeCommand(path);
+  const problems: string[] = [];
+  for (const [key, value] of Object.entries(command)) {
+    if (
+      value !== undefined &&
+      key !== "loadSpec" &&
+      !(readBeforeLoading as readonly string[]).includes(key)
+    ) {
+      problems.push(
+        `${where} has a \`loadSpec\` and sets \`${key}\`. Beside a \`loadSpec\`, a command only sets ${readBeforeLoading.map((name) => `\`${name}\``).join(", ")}. Move \`${key}\` to the command it loads.`,
+      );
+    }
+  }
+  if (!isSameStructure(makeArray(loaded.name), makeArray(command.name))) {
+    problems.push(
+      `${where} loads a command named ${repr(loaded.name)}. Give the loaded command the same \`name\`, ${repr(command.name)}.`,
+    );
+  }
+  for (const key of ["description", "hidden", "isPersistent"] as const) {
+    if (loaded[key] !== undefined && loaded[key] !== command[key]) {
+      problems.push(
+        `${where} loads a command whose \`${key}\` is ${repr(loaded[key])}, but its own is ${repr(command[key]) ?? "not set"}, and its own is the one used. Make them the same, or leave \`${key}\` out of the loaded command.`,
+      );
+    }
+  }
+  if (loaded.loadSpec !== undefined) {
+    problems.push(`${where} loads a command that has a \`loadSpec\` of its own, which is never called.`);
+  }
+  return problems;
+}
+
 export type TestNamingStyle = "sentence" | "function";
 
 /** Options that can be provided to `test` */
@@ -436,6 +479,20 @@ interface SpecCheck {
 }
 
 const specChecks: readonly SpecCheck[] = [
+  {
+    /*
+     * A parent's help and completion show a command's name and description
+     * before it loads, and the parser matches its name. So those stay as the
+     * command with the `loadSpec` has them, and the loaded command can only
+     * say the same. Anything else beside a `loadSpec` would be replaced or
+     * left behind when the command loads.
+     */
+    sentence: "A command with a loadSpec sets only what its parent reads, and loads a command that agrees",
+    name: "assertLoadedCommandsMatch",
+    check(walk) {
+      assert(walk.loadProblems.length === 0, walk.loadProblems[0]);
+    },
+  },
   {
     sentence: "Required arguments don't follow optional arguments",
     name: "assertRequiredArgumentsDoNotFollowOptionalArguments",
@@ -961,8 +1018,9 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   const { namingStyle = "sentence" } = options;
   const checks = specChecks.filter(({ skippedBy }) => !(skippedBy && options[skippedBy]));
   return async (t) => {
-    await loadAll(spec);
-    const walk = new SpecWalk(spec);
+    const problems: string[] = [];
+    await loadAll(spec, (path, loaded) => problems.push(...loadProblems(path, loaded)));
+    const walk = new SpecWalk(spec, problems);
     for (const { sentence, name, check } of checks) {
       await runStep(t, namingStyle === "function" ? name : sentence, () => check(walk));
     }

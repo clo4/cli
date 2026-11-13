@@ -172,19 +172,21 @@ export interface Subcommand {
   action?: Action;
 
   /**
-   * Give the rest of this command when a command line enters it, so a large
-   * CLI only builds the commands it uses. The body is merged into this
-   * command the first time the parser, help or completion enters it, and
+   * Give this command in full when a command line enters it, so a large CLI
+   * only builds the commands it uses. The loaded command is merged into this
+   * one the first time the parser, help or completion enters it, and
    * `loadSpec` is never called again.
    *
-   * Return the body itself to stay synchronous, or a promise of it to load
-   * it from another file with `import()`. Parsing only waits when a command
-   * on the command line returns a promise.
+   * Return the command itself to stay synchronous, or a promise of it to
+   * load it from another file with `import()`. Parsing only waits when a
+   * command on the command line returns a promise.
    *
-   * What a parent needs to know stays on the command: its `name`,
-   * `description`, `hidden` and `isPersistent`.
+   * A command with a `loadSpec` sets only what its parent reads before then:
+   * its `name`, `description`, `hidden` and `isPersistent`. Those stay as
+   * they are here. The loaded command has the same name, and the spec checks
+   * report one that sets any of the others differently.
    */
-  loadSpec?: () => CommandBody | Promise<CommandBody>;
+  loadSpec?: () => Subcommand | Promise<Subcommand>;
 
   /**
    * This property never exists. It prevents accidental structural assignment
@@ -194,12 +196,6 @@ export interface Subcommand {
    */
   [kind]?: "Subcommand";
 }
-
-/**
- * The part of a command that `loadSpec` gives once the command is entered:
- * everything except what its parent reads before then.
- */
-export type CommandBody = Omit<Subcommand, "name" | "description" | "hidden" | "isPersistent" | "loadSpec">;
 
 /** A option that modifies or overrides command execution. */
 export interface Option {

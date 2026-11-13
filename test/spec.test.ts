@@ -186,13 +186,14 @@ const demo = CLI.spec({
     {
       name: "remote",
       description: "From another file.",
-      loadSpec: () => import("./fixtures/remote-body.js").then((module) => module.default),
+      loadSpec: () => import("./fixtures/remote.js").then((module) => module.default),
     },
     {
       name: "local",
       description: "From this file.",
       loadSpec: () =>
         CLI.command({
+          name: "local",
           subcommands: [
             {
               name: "add",
@@ -281,8 +282,11 @@ CLI.spec({
 CLI.spec({
   name: "loads",
   subcommands: [
-    { name: "a", loadSpec: async () => (await import("./fixtures/remote-body.js")).default },
-    { name: "b", loadSpec: () => import("./fixtures/remote-body.js").then((module) => module.default) },
+    { name: "remote", loadSpec: async () => (await import("./fixtures/remote.js")).default },
+    {
+      name: "remote",
+      loadSpec: () => import("./fixtures/remote.js").then((module) => module.default),
+    },
     {
       name: "c",
       action({ args }) {
@@ -443,8 +447,10 @@ CLI.spec({ name: "x", options: [] });
 CLI.spec({ name: "x", args: [{ name: "f" }] });
 // @ts-expect-error A template that doesn't exist.
 CLI.spec({ name: "x", args: { name: "f", template: "nonsense" } });
-// @ts-expect-error A command body can't set what its parent reads first.
+// @ts-expect-error A command without a name.
 CLI.command({ description: "x", subcommands: [{ name: "a" }] });
+// @ts-expect-error Only a subcommand has a loadSpec.
+CLI.spec({ name: "x", loadSpec: () => ({ name: "x" }) });
 CLI.spec({
   name: "x",
   args: { name: "f", isOptional: true },

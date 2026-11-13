@@ -348,7 +348,7 @@ class Scanner {
   problem: (() => ParseError) | null = null;
 
   /**
-   * The body of the command just entered, if its `loadSpec` returned a
+   * The load of the command just entered, if its `loadSpec` returned a
    * promise. Nothing can be read until it settles. Whoever reads the next
    * token calls {@link afterLoad} to wait for it, or throws if it can't
    * wait, as {@link tokenReader} does.
@@ -356,7 +356,7 @@ class Scanner {
   pending: Promise<void> | null = null;
 
   /**
-   * Whether entering a command loads its body. {@link readNext} turns it off
+   * Whether entering a command loads it. {@link readNext} turns it off
    * to read the word being completed, which nothing follows.
    */
   loads = true;
@@ -379,8 +379,8 @@ class Scanner {
   }
 
   /**
-   * Wait for the body of the command just entered, then `resume`. Returns
-   * null if no body is loading, and the caller carries on as it was.
+   * Wait for the command just entered to load, then `resume`. Returns null
+   * if it isn't loading, and the caller carries on as it was.
    */
   afterLoad<T>(resume: () => T | Promise<T>): Promise<T> | null {
     const pending = this.pending;
@@ -902,7 +902,7 @@ function unlessWaiting<T>(value: T | Promise<T>): T {
  * `partial`: whether it's an option, and if so, whether it has a value
  * attached. Reads leniently, so a line that's wrong at the moment still has
  * an answer. Completion is built on this. The result is a promise only if a
- * command on the line had a body to wait for.
+ * command on the line had a load to wait for.
  */
 export function readNextOrWait(
   spec: Spec,
@@ -973,7 +973,7 @@ export function readToken(spec: Spec, before: readonly string[], token: string):
  * parser reports it as an unknown or ambiguous command. Otherwise help ignores
  * it and the names after it, so `cli help completion zsh` prints the help of
  * `completion`. The result is a promise only if one of the commands had a
- * body to wait for.
+ * load to wait for.
  */
 export function readHelpNamesOrWait(
   path: CommandPath,
@@ -1020,7 +1020,7 @@ export function parse(input: readonly string[], spec: Spec): ParseResult {
 }
 
 /**
- * Throw the scanner's problem, or else wait for the body it's loading and
+ * Throw the scanner's problem, or else wait for the command it's loading and
  * parse the rest of `input` from `next`. It's a function of its own so that a
  * cold parse that never stops doesn't compile it.
  */

@@ -1,4 +1,4 @@
-import type { ActionInit, Arg, CommandBody, Option, Spec, Subcommand } from "../src/index.js";
+import type { ActionInit, Arg, Option, Spec, Subcommand } from "../src/index.js";
 import { test } from "vitest";
 
 test("type surface compiles", () => {});
@@ -28,22 +28,21 @@ const option: Option = { name: "--option" };
 // @ts-expect-error Options and subcommands are intentionally not structurally interchangeable.
 option satisfies Subcommand;
 
-// A command body is a subcommand without what its parent reads first.
-({ args: { name: "input" }, requiresSubcommand: true }) satisfies CommandBody;
+// A loadSpec gives a whole command, with its name.
+({
+  name: "group",
+  loadSpec: () => ({ name: "group", subcommands: [{ name: "child" }] }),
+}) satisfies Subcommand;
+({ name: "group", loadSpec: () => Promise.resolve({ name: "group", action: () => 0 }) }) satisfies Subcommand;
+
+// @ts-expect-error A loaded command has a name.
 ({ name: "group", loadSpec: () => ({ subcommands: [{ name: "child" }] }) }) satisfies Subcommand;
-({ name: "group", loadSpec: () => Promise.resolve({ action: () => 0 }) }) satisfies Subcommand;
 
-// @ts-expect-error An option isn't a command body, though they share properties.
-option satisfies CommandBody;
+// @ts-expect-error The root command has no loadSpec.
+({ name: "root", loadSpec: () => ({ name: "root" }) }) satisfies Spec;
 
-// @ts-expect-error The parent has already matched the name, so a body can't set one.
-({ name: "other" }) satisfies CommandBody;
-
-// @ts-expect-error A body can't have a loadSpec of its own.
-({ loadSpec: () => ({}) }) satisfies CommandBody;
-
-declare const moduleNamespace: Promise<{ default: CommandBody }>;
-// @ts-expect-error loadSpec gives the body, so a dynamic import has to be unwrapped.
+declare const moduleNamespace: Promise<{ default: Subcommand }>;
+// @ts-expect-error loadSpec gives the command, so a dynamic import has to be unwrapped.
 ({ name: "group", loadSpec: () => moduleNamespace }) satisfies Subcommand;
 ({ name: "group", loadSpec: () => moduleNamespace.then((module) => module.default) }) satisfies Subcommand;
 

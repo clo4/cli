@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { ActionInit, CommandBody, Spec, Subcommand } from "./types.js";
+import type { ActionInit, Spec, Subcommand } from "./types.js";
 
 type Result = Promise<number | void> | number | void;
 
@@ -400,14 +400,13 @@ type Described<S> =
             : "this object";
 
 /**
- * A key the schema doesn't have. In the body a `loadSpec` returns, a key like
- * `description` is a field of a command, but one its parent reads before the
- * body loads.
+ * A key the schema doesn't have. The root command has every field of a
+ * subcommand except `loadSpec`.
  */
 type Unknown<Y, S> = {
   [K in Exclude<keyof Y, keyof S>]: IsCommand<S> extends true
     ? K extends keyof Subcommand
-      ? Invalid<`'${K & string}' goes on the command that has the loadSpec, beside its name.`>
+      ? Invalid<`'${K & string}' isn't a field of the root command. Only a subcommand has one.`>
       : Invalid<`'${K & string}' isn't a field of a command. Check its spelling.`>
     : Invalid<`'${K & string}' isn't a field of ${Described<S>}. Check its spelling.`>;
 };
@@ -476,14 +475,13 @@ export function spec<const T>(spec: Tree<T, never, Spec>): Spec {
 }
 
 /**
- * Define a command outside the spec that uses it. Takes the same object as
- * `Subcommand`, or as `CommandBody` for a `loadSpec` to return, and returns it.
+ * Define a command outside the spec that uses it, to list among a command's
+ * `subcommands` or for a `loadSpec` to return. Takes the same object as
+ * `Subcommand` and returns it.
  *
  * Its actions are typed like the ones in {@link spec}, except that they can't
  * see the persistent options of the commands it's placed under.
  */
-export function command<const T>(
-  command: Tree<T, never, T extends { name: unknown } ? Subcommand : CommandBody>,
-): T extends { name: unknown } ? Subcommand : CommandBody {
-  return command as never;
+export function command<const T>(command: Tree<T, never, Subcommand>): Subcommand {
+  return command as unknown as Subcommand;
 }

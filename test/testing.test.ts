@@ -795,6 +795,7 @@ test("testing: assertPrefixMatchCommandsHaveNoArguments respects a subcommand tu
 test("testing: testSpec runs all default steps with sentence names", async () => {
   const steps = await collectSteps(validSpec());
   expect(steps).toEqual([
+    "A command with a loadSpec sets only what its parent reads, and loads a command that agrees",
     "Required arguments don't follow optional arguments",
     "The parser can use every default",
     "Repeatable options that are numbers are integers greater than 1",
@@ -819,6 +820,7 @@ test("testing: testSpec supports function-style step names", async () => {
   // Users see these names in their test output.
   const steps = await collectSteps(validSpec(), { namingStyle: "function" });
   expect(steps).toEqual([
+    "assertLoadedCommandsMatch",
     "assertRequiredArgumentsDoNotFollowOptionalArguments",
     "assertDefaultsCanBeUsed",
     "assertRepeatableOptionsArePositiveIntegers",

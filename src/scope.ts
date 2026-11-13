@@ -1,4 +1,4 @@
-import type { CommandBody, Option, Spec, Subcommand } from "./types.js";
+import type { Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
 import type { DidYouMean } from "./errors.js";
@@ -113,8 +113,8 @@ export class CommandScope {
 
   /**
    * The scope at the last command on `path`. A command on the path that isn't
-   * loaded gets its body first. Throws if that body is a promise, since the
-   * scope can't say what's in effect until it settles.
+   * loaded is loaded first. Throws if its `loadSpec` gives a promise, since
+   * the scope can't say what's in effect until it settles.
    */
   static at(path: readonly (Spec | Subcommand)[]): CommandScope {
     const scope = new CommandScope(path[0]);
@@ -125,8 +125,8 @@ export class CommandScope {
   }
 
   /**
-   * {@link enter} for a caller that can't wait: throws if the body of
-   * `command` is a promise.
+   * {@link enter} for a caller that can't wait: throws if the `loadSpec` of
+   * `command` gives a promise.
    */
   enterNow(command: Spec | Subcommand): void {
     const loading = this.enter(command);
@@ -137,9 +137,9 @@ export class CommandScope {
 
   /**
    * Move to `command`, a subcommand of the current one. A command with a
-   * `loadSpec` gets its body first, unless `load` is false. If the body is a
-   * promise, so is the result, and the scope can't be asked anything until it
-   * settles.
+   * `loadSpec` is loaded first, unless `load` is false. If the `loadSpec`
+   * gives a promise, so does this, and the scope can't be asked anything
+   * until it settles.
    */
   enter(command: Spec | Subcommand, load = true): Promise<void> | null {
     const parentSubcommands = this.command.subcommands;
@@ -154,7 +154,7 @@ export class CommandScope {
     }
     this.command = command;
     if ((command as Subcommand).loadSpec !== undefined && load) {
-      const loading = loadBody(command as Subcommand);
+      const loading = loadCommand(command as Subcommand);
       if (loading) {
         return loading.then(() => this.select(command));
       }
@@ -561,22 +561,22 @@ export class CommandScope {
 }
 
 /**
- * Call `command`'s `loadSpec` and merge the body into the command, so every
- * reader of the spec sees one loaded command from then on. Returns a promise
- * only if `loadSpec` did. It's a function of its own so that a cold parse of a
- * spec without `loadSpec` doesn't compile it.
+ * Call `command`'s `loadSpec` and merge the command it gives into `command`,
+ * so every reader of the spec sees one loaded command from then on. Returns a
+ * promise only if `loadSpec` did. It's a function of its own so that a cold
+ * parse of a spec without `loadSpec` doesn't compile it.
  */
-export function loadBody(command: Subcommand): Promise<void> | null {
-  const body = command.loadSpec!();
-  if (typeof (body as Promise<CommandBody>).then === "function") {
-    return Promise.resolve(body).then((loaded) => mergeBody(command, loaded));
+function loadCommand(command: Subcommand): Promise<void> | null {
+  const loaded = command.loadSpec!();
+  if (typeof (loaded as Promise<Subcommand>).then === "function") {
+    return Promise.resolve(loaded).then((whole) => mergeLoaded(command, whole));
   }
-  mergeBody(command, body as CommandBody);
+  mergeLoaded(command, loaded as Subcommand);
   return null;
 }
 
 /**
- * The error for reading `command` while its body is still `loading`. It's a
+ * The error for reading `command` while it's still `loading`. It's a
  * function of its own so that a run that never does doesn't compile it.
  */
 function notLoaded(loading: Promise<void>, command: Spec | Subcommand): Error {
@@ -589,21 +589,34 @@ function notLoaded(loading: Promise<void>, command: Spec | Subcommand): Error {
 }
 
 /**
- * Load the body of every command below `command` that has a `loadSpec`, so the
- * spec checks see the whole CLI.
+ * Load every command below `command` that has a `loadSpec`, so the spec
+ * checks see the whole CLI. `each` is given the path to each such command and
+ * the command its `loadSpec` gave, before the two are merged.
  */
-export async function loadAll(command: Spec | Subcommand): Promise<void> {
+export async function loadAll(
+  command: Spec | Subcommand,
+  each?: (path: Subcommand[], loaded: Subcommand) => void,
+  path: Subcommand[] = [command],
+): Promise<void> {
   for (const subcommand of command.subcommands ?? []) {
+    const below = [...path, subcommand];
     if (subcommand.loadSpec !== undefined) {
-      await loadBody(subcommand);
+      const loaded = await subcommand.loadSpec();
+      each?.(below, loaded);
+      mergeLoaded(subcommand, loaded);
     }
-    await loadAll(subcommand);
+    await loadAll(subcommand, each, below);
   }
 }
 
-function mergeBody(command: Subcommand, body: CommandBody): void {
-  command.loadSpec = undefined;
-  Object.assign(command, body);
+/**
+ * Give `command` everything `loaded` has, except what the parent of `command`
+ * read before it loaded. A parent's help and completion have shown those, so
+ * they stay as `command` has them.
+ */
+function mergeLoaded(command: Subcommand, loaded: Subcommand): void {
+  const { name, description, hidden, isPersistent } = command;
+  Object.assign(command, loaded, { name, description, hidden, isPersistent, loadSpec: undefined });
 }
 
 /**
