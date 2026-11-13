@@ -82,8 +82,11 @@ function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
   return 0;
 }
 
-/** A persistent help option that prints help for the selected command. */
-export const help: Option = {
+/**
+ * A persistent help option that prints help for the selected command. Its
+ * type says what its names are, so `spec` knows them in every command.
+ */
+export const help: Option & { readonly name: readonly ["-h", "--help"]; readonly isPersistent: true } = {
   name: ["-h", "--help"],
   description: "Print a help message",
   isPersistent: true,

@@ -6,13 +6,20 @@ import * as Testing from "../src/testing.js";
 
 test("public API stays minimal and namespace-friendly", () => {
   expect(Object.keys(CLI).sort()).toEqual([
+    "command",
     "completion",
     "default",
     "help",
     "helpCommand",
     "printError",
     "run",
+    "spec",
   ]);
+  expect(Object.keys(CLI.default).sort()).toEqual(
+    Object.keys(CLI)
+      .filter((name) => name !== "default")
+      .sort(),
+  );
   expect(typeof CLI.run).toBe("function");
   expect(typeof CLI.help).toBe("object");
   expect(typeof CLI.helpCommand).toBe("object");

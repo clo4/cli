@@ -388,7 +388,7 @@ options: [
   },
 ],
 action({ options }) {
-  console.log(JSON.stringify(options.all("--tag") ?? []));
+  console.log(JSON.stringify(options.all("--tag")));
 },
 ```
 
@@ -413,7 +413,7 @@ options: [
   },
 ],
 action({ options }) {
-  console.log(JSON.stringify(options.all("--tag") ?? []));
+  console.log(JSON.stringify(options.all("--tag")));
 },
 ```
 
@@ -598,6 +598,52 @@ The action's `help()` function accepts `description: false` to omit the command 
 
 <hr>
 </details>
+
+### Typed actions
+
+`CLI.spec` takes the same object as `CLI.Spec` and returns it. Each action in it then receives `args` and `options` typed from its own command:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  options: [CLI.help, { name: ["-v", "--verbose"], isPersistent: true }],
+  subcommands: [
+    {
+      name: "build",
+      args: [{ name: "source" }, { name: "destination", isOptional: true }],
+      options: [{ name: ["-o", "--output"], args: { name: "dir", default: "dist" } }],
+      action({ args: [source, destination], options }) {
+        source; // string
+        destination; // string | undefined
+        options.get("--output"); // string, because the argument has a default
+        options.has("--verbose"); // a persistent option of the root
+        options.has("--outptu"); // compile error
+      },
+    },
+  ],
+});
+```
+
+- `args` is a tuple with one entry for each positional argument. An optional argument without a default can be `undefined`.
+- `options` accepts the names of the command's own options and of the persistent options above it, and your editor suggests them.
+- `options.get()` returns `string` for an option whose argument has a default, or that is required. It returns `string | undefined` for any other option with an argument.
+- This works for a command at any depth.
+
+`CLI.command` does the same for a command defined outside the spec, and for the body a `loadSpec` returns:
+
+```ts
+// remote.ts
+export default CLI.command({
+  requiresSubcommand: true,
+  subcommands: [{ name: "add", args: { name: "url" }, action: ({ args: [url] }) => addRemote(url) }],
+});
+```
+
+Its actions can't read the persistent options of the commands it's placed under, because those aren't in the call.
+
+An action written as a separate function takes `CLI.ActionInit`, where `args` is `string[]` and `options` accepts any name. An option built by a function that returns `CLI.Option` has names the compiler can't see, so a command that uses one accepts any option name.
+
+Typed actions need TypeScript 6.0 or later. A spec annotated `CLI.Spec` works as before.
 
 [← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
 
@@ -1072,7 +1118,7 @@ Help times are for output piped to another program. At a terminal, Node takes lo
 
 ## API and compatibility
 
-The package uses ECMAScript modules (ESM), includes TypeScript declarations and has no runtime dependencies. Its named runtime exports are `run`, `printError`, `help`, `helpCommand` and `completion`. The default export is an object containing those same five values.
+The package uses ECMAScript modules (ESM), includes TypeScript declarations and has no runtime dependencies. Its named runtime exports are `run`, `spec`, `command`, `printError`, `help`, `helpCommand` and `completion`. The default export is an object containing those same seven values.
 
 Public types include `Spec`, `Subcommand`, `Option`, `Arg` and `ActionInit`. The [type definitions](src/types.ts) document each field; the [entry point](src/index.ts) lists all exports.
 

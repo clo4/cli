@@ -1,0 +1,325 @@
+import { expect, test } from "vitest";
+
+import * as CLI from "../src/index.js";
+import { parse } from "../src/parse.js";
+import { testSpec } from "../src/testing.js";
+
+/** Fails to compile unless `Actual` is exactly `Expected`. */
+function is<Expected>() {
+  return <Actual>(
+    _value: Actual,
+    ..._same: (<T>() => T extends Actual ? 1 : 2) extends <T>() => T extends Expected ? 1 : 2 ? [] : [never]
+  ): void => {};
+}
+
+// A description the compiler only knows is a string, like one read from a catalog.
+const described: string = ["Described", "at", "runtime."].join(" ");
+const listTargets = (tokens: string[]): Promise<string[]> => Promise.resolve(tokens);
+
+test("spec and command return the object they're given", () => {
+  const root = { name: "demo" };
+  const sub = { name: "build" };
+  expect(CLI.spec(root)).toBe(root);
+  expect(CLI.command(sub)).toBe(sub);
+});
+
+// Everything below is checked by the compiler. The actions never run.
+
+// A command written outside the spec, with a typed action of its own.
+const status = CLI.command({
+  name: "status",
+  description: "Show status.",
+  args: { name: "switch", isOptional: true, suggestions: ["a", "b"] },
+  options: [{ name: "--all", description: "Show everything." }],
+  action({ args: [name], options }) {
+    is<string | undefined>()(name);
+    return options.has("--all") ? 0 : 1;
+  },
+});
+
+// A named action written against the loose type.
+async function fmt({ options }: CLI.ActionInit): Promise<number> {
+  return options.has("--check") ? 0 : 1;
+}
+
+// A helper that takes the loose options accepts the typed ones.
+function verbose(options: CLI.OptionArgs): boolean {
+  return options.has("--verbose");
+}
+
+// An option made by a function has names the compiler can't see.
+function reason(): CLI.Option {
+  return { name: "--reason", description: "Why.", args: { name: "text" } };
+}
+
+const demo = CLI.spec({
+  name: "demo",
+  description: described,
+  requiresSubcommand: true,
+  options: [
+    CLI.help,
+    { name: ["-v", "--verbose"], description: "Say more.", isPersistent: true },
+    { name: "--root-only", description: "Only on the root." },
+  ],
+  action({ args, options }) {
+    is<[]>()(args);
+    options.has("--root-only");
+    options.has("--help");
+  },
+  subcommands: [
+    CLI.helpCommand,
+    CLI.completion,
+    status,
+    {
+      name: "fmt",
+      description: "Format.",
+      options: [{ name: "--check", description: "Check." }],
+      action: fmt,
+    },
+    {
+      name: "build",
+      description: described,
+      args: {
+        name: "file",
+        isOptional: true,
+        template: ["filepaths", "folders"],
+        generators: { custom: async (tokens) => listTargets(tokens) },
+      },
+      options: [
+        { name: "--watch", description: "Watch." },
+        { name: ["-o", "--output"], description: "Where.", args: { name: "dir", default: "dist" } },
+        { name: "--out", description: "Where.", args: { name: "dir" }, isRequired: true },
+        { name: "--tag", description: "Tag.", args: { name: "t" }, isRepeatable: true },
+        { name: "--size", description: "Size.", args: [{ name: "w" }, { name: "h" }] },
+        {
+          name: "--fit",
+          description: "Fit.",
+          args: [
+            { name: "w", default: "80" },
+            { name: "h", default: "24" },
+          ],
+        },
+        {
+          name: "--inspect",
+          description: "Inspect.",
+          args: { name: "port", isOptional: true, default: "9229" },
+        },
+        {
+          name: "--target",
+          description: "Target.",
+          args: { name: "t", generators: { custom: (tokens) => tokens } },
+        },
+        { name: "--version", description: "Version.", action: ({ help }) => void help() },
+        { name: "--pure", description: "Pure.", args: { name: "c" }, exclusiveOn: ["--watch"] },
+      ],
+      action({ args: [file], options, help, path, argSeparatorIndex }) {
+        is<string | undefined>()(file);
+        is<string>()(options.get("-o"));
+        is<string>()(options.get("--out"));
+        is<string | undefined>()(options.get("--target"));
+        is<string | undefined>()(options.get("--inspect"));
+        is<undefined>()(options.get("--watch"));
+        is<string[]>()(options.all("--tag"));
+        is<string[]>()(options.all("--size"));
+        is<[string, string]>()(options.all("--fit"));
+        is<[string]>()(options.all("--out"));
+        is<boolean>()(options.has("-v"));
+        is<number>()(options.count("--tag"));
+        is<boolean>()(verbose(options));
+        is<string>()(help());
+        is<CLI.CommandPath>()(path);
+        is<number>()(argSeparatorIndex);
+        // @ts-expect-error A misspelled name.
+        options.has("--wach");
+        // @ts-expect-error An option of the root that isn't persistent.
+        options.has("--root-only");
+        // @ts-expect-error A name of another command.
+        options.get("--check");
+      },
+    },
+    {
+      name: "sourcemap",
+      description: "Source maps.",
+      requiresSubcommand: true,
+      options: [{ name: "--raw", description: "Raw.", isPersistent: true }],
+      subcommands: [
+        {
+          name: ["decode", "d"],
+          description: "Decode.",
+          args: [{ name: "map" }, { name: "source", isOptional: true }],
+          options: [{ name: "--json", description: "As JSON." }],
+          action: ({ args, options }) => {
+            is<[string, string?]>()(args);
+            return options.has("--json") || options.has("--raw") || options.has("--verbose") ? 0 : 1;
+          },
+          subcommands: [
+            {
+              name: "deepest",
+              description: "Three levels down.",
+              args: { name: "x", isVariadic: true },
+              action({ args, options }) {
+                is<[string, ...string[]]>()(args);
+                options.has("--raw");
+                options.has("-h");
+                // @ts-expect-error An option of the parent that isn't persistent.
+                options.has("--json");
+              },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: "audit",
+      description: "With an option whose names the compiler can't see.",
+      options: [reason(), { name: "--rotate", description: "Rotate." }],
+      action({ options }) {
+        // Any name is accepted, since `--reason` can't be told from a misspelling.
+        is<string | undefined>()(options.get("--reason"));
+        is<string[]>()(options.all("--reason"));
+        options.has("--rotate");
+      },
+    },
+    {
+      name: "remote",
+      description: "From another file.",
+      loadSpec: () => import("./fixtures/remote-body.js").then((module) => module.default),
+    },
+    {
+      name: "local",
+      description: "From this file.",
+      loadSpec: () =>
+        CLI.command({
+          subcommands: [
+            {
+              name: "add",
+              description: "Add.",
+              args: { name: "url" },
+              action({ args }) {
+                is<[string]>()(args);
+              },
+            },
+          ],
+        }),
+    },
+  ],
+});
+
+test("a spec made with spec parses and passes the spec checks", async () => {
+  expect(parse(["build", "--out", "x"], demo).path.map((command) => command.name)).toEqual(["demo", "build"]);
+  await testSpec(demo, { allowLongDescriptionLines: true })();
+});
+
+// Positional arguments.
+CLI.spec({
+  name: "args",
+  subcommands: [
+    {
+      name: "defaults",
+      args: [{ name: "a" }, { name: "b", isOptional: true, default: "." }, { name: "c", isOptional: true }],
+      action: ({ args }) => is<[string, string, string?]>()(args),
+    },
+    {
+      // The parser stops adding defaults at the first optional argument without one.
+      name: "gap",
+      args: [
+        { name: "a", isOptional: true },
+        { name: "b", isOptional: true, default: "." },
+      ],
+      action: ({ args }) => is<[string?, string?]>()(args),
+    },
+    {
+      name: "rest",
+      args: [{ name: "a" }, { name: "b", isOptional: true, isVariadic: true }],
+      action: ({ args }) => is<[string, ...string[]]>()(args),
+    },
+    { name: "group", requiresSubcommand: true, action: ({ args }) => is<[]>()(args) },
+    { name: "none", action: ({ args }) => is<[]>()(args) },
+  ],
+});
+
+// An argument typed `Arg` doesn't say whether it's optional, so the action gets a list.
+const shared: CLI.Arg = { name: "client" };
+CLI.spec({
+  name: "wide",
+  args: shared,
+  action: ({ args }) => is<string[]>()(args),
+  subcommands: [
+    { name: "spread", args: { ...shared, description: "x" }, action: ({ args }) => is<string[]>()(args) },
+  ],
+});
+
+// Completion callbacks keep their parameter types wherever they are.
+CLI.spec({
+  name: "callbacks",
+  subcommands: [
+    {
+      name: "first",
+      action({ args }) {
+        is<[]>()(args);
+      },
+    },
+    {
+      name: "second",
+      args: { name: "f", generators: [{ custom: async (tokens) => tokens }, { custom: (tokens) => tokens }] },
+    },
+    {
+      name: "third",
+      args: [
+        { name: "f", generators: { custom: (tokens) => tokens } },
+        { name: "g", isOptional: true },
+      ],
+      action: ({ args }) => is<[string, string?]>()(args),
+    },
+  ],
+});
+
+// The ways to write a loadSpec that imports a file.
+CLI.spec({
+  name: "loads",
+  subcommands: [
+    { name: "a", loadSpec: async () => (await import("./fixtures/remote-body.js")).default },
+    { name: "b", loadSpec: () => import("./fixtures/remote-body.js").then((module) => module.default) },
+    {
+      name: "c",
+      action({ args }) {
+        is<[]>()(args);
+      },
+    },
+  ],
+});
+
+// What the shape check rejects.
+// @ts-expect-error A field with the wrong type.
+CLI.spec({ name: "x", subcommands: [{ name: "a", args: { name: "f", isOptional: "yes" } }] });
+// @ts-expect-error A field the schema doesn't have.
+CLI.spec({ name: "x", subcommands: [{ name: "a", arg: { name: "f" } }] });
+CLI.spec({
+  name: "x",
+  subcommands: [
+    {
+      name: "a",
+      // @ts-expect-error A field the schema doesn't have, beside an inline action.
+      arg: { name: "f" },
+      action({ args }) {
+        void args;
+      },
+    },
+  ],
+});
+// @ts-expect-error An alias list with one name.
+CLI.spec({ name: "x", options: [{ name: ["--lonely"] }] });
+// @ts-expect-error An empty list of options.
+CLI.spec({ name: "x", options: [] });
+// @ts-expect-error A list of one argument, which is written without the list.
+CLI.spec({ name: "x", args: [{ name: "f" }] });
+// @ts-expect-error A template that doesn't exist.
+CLI.spec({ name: "x", args: { name: "f", template: "nonsense" } });
+// @ts-expect-error A command body can't set what its parent reads first.
+CLI.command({ description: "x", subcommands: [{ name: "a" }] });
+CLI.spec({
+  name: "x",
+  args: { name: "f", isOptional: true },
+  // @ts-expect-error An action that asks for more than its command gives.
+  action: (init: { args: [string] }) => void init,
+});
