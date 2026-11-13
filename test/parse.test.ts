@@ -1878,3 +1878,46 @@ test("options: options on sibling commands with the same ref are each read by it
   expect(answers(options, "create")).toEqual([true, undefined, [], 0]);
   expect(parse(["-C", "dir", "branch", "old", "new"], spec).options.has("create")).toBe(false);
 });
+
+test("parse: dependsOn and exclusiveOn only count an option in scope where the option is used", () => {
+  // `--root` isn't persistent, so `sub` can't use it, and its options can't refer to it.
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: "--root" }, { name: "--all", isPersistent: true }],
+    subcommands: [
+      {
+        name: "sub",
+        options: [
+          { name: "--needs-root", dependsOn: ["--root"] },
+          { name: "--not-root", exclusiveOn: ["--root"] },
+          { name: "--needs-all", dependsOn: ["--all"] },
+          { name: "--not-all", exclusiveOn: ["--all"] },
+        ],
+      },
+    ],
+  };
+  expect(() => parse(["--root", "sub", "--needs-root"], spec)).toThrow("--needs-root requires --root");
+  parse(["--root", "sub", "--not-root"], spec);
+  parse(["--all", "sub", "--needs-all"], spec);
+  expect(() => parse(["--all", "sub", "--not-all"], spec)).toThrow(
+    "--not-all can't be used together with --all",
+  );
+});
+
+test("parse: an option's rules refer to the options its own command can use", () => {
+  // `-v` means the root's option to `--a`, and a different option inside `sub`.
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "--a", dependsOn: ["-v"] },
+      { name: "--b", exclusiveOn: ["-v"] },
+      { name: ["-v", "--verbose"], isPersistent: true, ref: "verbose" },
+    ],
+    subcommands: [{ name: "sub", options: [{ name: ["-v", "--version"], ref: "version" }] }],
+  };
+  parse(["--a", "-v", "sub"], spec);
+  parse(["--a", "sub", "--verbose"], spec);
+  expect(() => parse(["--a", "sub", "-v"], spec)).toThrow("--a requires -v");
+  parse(["--b", "sub", "-v"], spec);
+  expect(() => parse(["--b", "sub", "--verbose"], spec)).toThrow("--b can't be used together with -v");
+});

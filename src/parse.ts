@@ -141,38 +141,58 @@ function contextAt(path: CommandPath): ErrorContext {
 }
 
 /**
+ * An option used that has a `dependsOn` or `exclusiveOn` rule, with the option
+ * each name in the rule refers to at the command the option was used in, or
+ * null for a name that refers to none there. A name means what it means to the
+ * option's own command, so a parent's option that isn't persistent is out of a
+ * subcommand's reach, and a name a subcommand's option has taken still means
+ * the parent's option to the parent's.
+ */
+interface UsedRules {
+  option: Option;
+  needs: readonly (Option | null)[];
+  excludes: readonly (Option | null)[];
+}
+
+/** The key of each option in `seenOptions`. See {@link optionKey}. */
+function usedKeys(seenOptions: readonly Option[]): Set<string> {
+  const used = new Set<string>();
+  for (let i = 0; i < seenOptions.length; i++) {
+    used.add(optionKey(seenOptions[i]));
+  }
+  return used;
+}
+
+/**
  * Throw if the options used break a `dependsOn` or `exclusiveOn` rule. `path`
  * ends at the current command.
  */
 function checkOptionRules(
-  options: ReadonlyMap<string, string[]>,
+  rules: readonly UsedRules[],
   seenOptions: readonly Option[],
   path: CommandPath,
 ): void {
-  for (let i = 0; i < seenOptions.length; i++) {
-    const option = seenOptions[i];
-    if (!option.dependsOn) {
-      continue;
-    }
-    for (const name of option.dependsOn) {
-      if (!options.has(name)) {
+  const used = usedKeys(seenOptions);
+  for (let i = 0; i < rules.length; i++) {
+    const { option, needs } = rules[i];
+    for (let j = 0; j < needs.length; j++) {
+      const need = needs[j];
+      if (!need || !used.has(optionKey(need))) {
         throw new ParseError(
           contextAt(path),
-          `${asArray(option.name).join("/")} requires ${name}, add it to fix this error`,
+          `${asArray(option.name).join("/")} requires ${option.dependsOn![j]}, add it to fix this error`,
         );
       }
     }
   }
-  for (let i = 0; i < seenOptions.length; i++) {
-    const option = seenOptions[i];
-    if (!option.exclusiveOn) {
-      continue;
-    }
-    for (const name of option.exclusiveOn) {
-      if (options.has(name)) {
+  for (let i = 0; i < rules.length; i++) {
+    const { option, excludes } = rules[i];
+    for (let j = 0; j < excludes.length; j++) {
+      const excluded = excludes[j];
+      if (excluded && used.has(optionKey(excluded))) {
         throw new ParseError(
           contextAt(path),
-          `${asArray(option.name).join("/")} can't be used together with ${name}`,
+          `${asArray(option.name).join("/")} can't be used together with ${option.exclusiveOn![j]}`,
         );
       }
     }
@@ -299,8 +319,8 @@ class Scanner {
   private readonly directives: Directives;
 
   private hasFoundArg = false;
-  // Whether an option used has a `dependsOn` or `exclusiveOn` rule to check.
-  private hasOptionRules = false;
+  // The rules of the options used that have any, or null until one is used.
+  private rules: UsedRules[] | null = null;
   // Whether the next token can be an option. It can't after `--`, or after
   // the first argument when the command's options must precede arguments.
   private optionsAllowed = true;
@@ -444,7 +464,7 @@ class Scanner {
       this.optionAction = option.action;
     }
     if (option.dependsOn || option.exclusiveOn) {
-      this.hasOptionRules = true;
+      this.noteRules(option);
     }
     // A repeatable option collects the values from every use. Otherwise the
     // last use of an option wins, so a user can override a flag that a shell
@@ -479,6 +499,23 @@ class Scanner {
       this.valuesStart = optionValues.length;
       this.valueArgs = option.args;
     }
+  }
+
+  /**
+   * Keep what the rules of `option` refer to at the current command, where it
+   * was just used. It's a method of its own so that a cold parse of a line
+   * without such an option doesn't compile it.
+   */
+  private noteRules(option: Option): void {
+    const needs: (Option | null)[] = [];
+    const excludes: (Option | null)[] = [];
+    for (const name of option.dependsOn ?? []) {
+      needs.push(this.scope.resolve(name));
+    }
+    for (const name of option.exclusiveOn ?? []) {
+      excludes.push(this.scope.resolve(name));
+    }
+    (this.rules ??= []).push({ option, needs, excludes });
   }
 
   /**
@@ -597,8 +634,8 @@ class Scanner {
       throw this.problem();
     }
     if (!skipsChecks) {
-      if (this.hasOptionRules) {
-        checkOptionRules(this.options, this.seenOptions, this.path);
+      if (this.rules) {
+        checkOptionRules(this.rules, this.seenOptions, this.path);
       }
       if (this.scope.hasRequiredOption) {
         checkRequiredOptions(this.options, this.scope, this.path);
@@ -622,25 +659,33 @@ class Scanner {
   }
 
   /** Whether using `option` next would go over its repeat limit or break an `exclusiveOn` rule. */
-  private conflicts(option: Option): boolean {
-    if ((this.repeatedUses?.get(optionKey(option))?.count ?? 0) >= repeatLimit(option)) {
+  private conflicts(option: Option, used: ReadonlySet<string>): boolean {
+    const key = optionKey(option);
+    if ((this.repeatedUses?.get(key)?.count ?? 0) >= repeatLimit(option)) {
       return true;
     }
-    const options = this.options;
-    if (option.exclusiveOn?.some((name) => options.has(name))) {
-      return true;
+    // An option it excludes was used, or an option used excludes it.
+    for (const name of option.exclusiveOn ?? []) {
+      const excluded = this.scope.resolve(name);
+      if (excluded && used.has(optionKey(excluded))) {
+        return true;
+      }
     }
-    const names = asArray(option.name);
-    return this.seenOptions.some((seen) => seen.exclusiveOn?.some((name) => names.includes(name)));
+    for (const { excludes } of this.rules ?? []) {
+      if (excludes.some((excluded) => excluded !== null && optionKey(excluded) === key)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The options the next token can use. See {@link NextToken.options}. */
   private usableOptions(): UsableOption[] {
-    const used = new Set(this.seenOptions.map(optionKey));
+    const used = usedKeys(this.seenOptions);
     const { local, persistent } = this.scope.live(this.subcommandMatching);
     const usable: UsableOption[] = [];
     for (const { option, names } of [...local, ...persistent]) {
-      if (this.conflicts(option)) {
+      if (this.conflicts(option, used)) {
         continue;
       }
       usable.push({ option, forms: this.scope.forms(option, names), used: used.has(optionKey(option)) });
