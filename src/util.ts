@@ -1,4 +1,4 @@
-import type { Arg, NonEmptyArray } from "./types.js";
+import type { Arg } from "./types.js";
 
 /**
  * `Array.isArray`, typed to narrow read-only arrays. `asArray`, `getMinArgs`,
@@ -34,15 +34,6 @@ export function asArray<T>(thing: T | readonly T[] | undefined): readonly T[] {
     return thing;
   }
   return [thing as T];
-}
-
-/** Convert the value to an array with at least one element */
-export function makeArray1<T>(thing: T | NonEmptyArray<T>): [T, ...T[]] {
-  if (isArray(thing)) {
-    // We know that this array has at least one element in it
-    return thing.slice() as [T, ...T[]];
-  }
-  return [thing];
 }
 
 export function assert(expr: unknown, msg = ""): asserts expr {

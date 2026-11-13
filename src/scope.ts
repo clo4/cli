@@ -536,11 +536,6 @@ export class CommandScope {
     return required ? (this.directives.optionArgSeparators[0] ?? "=") : null;
   }
 
-  /** Whether the parser splits an option from its value at `separator` here. */
-  readsSeparator(separator: string): boolean {
-    return this.directives.optionArgSeparators.includes(separator);
-  }
-
   /**
    * Why `option`, used as `name`, can't take a value given after `separator`,
    * or null if it can. A separate token has the separator "".

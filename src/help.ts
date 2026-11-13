@@ -483,7 +483,7 @@ function argumentsAfterName(args: readonly Arg[], join: string | null): string {
   return args.length > 1 ? `${joined} ${summarizeArguments(args.slice(1))}` : joined;
 }
 
-export function summarizeArguments(args: readonly Arg[]): string {
+function summarizeArguments(args: readonly Arg[]): string {
   let text = "";
   for (let i = 0; i < args.length; i++) {
     text += (i === 0 ? "" : " ") + argToString(args[i]);
@@ -491,7 +491,7 @@ export function summarizeArguments(args: readonly Arg[]): string {
   return text;
 }
 
-export function argToString(arg: Arg): string {
+function argToString(arg: Arg): string {
   const name = arg.name || "argument";
   return (arg.isOptional ? `[${name}]` : `<${name}>`) + (arg.isVariadic ? "..." : "");
 }
