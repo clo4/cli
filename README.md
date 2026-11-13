@@ -577,7 +577,7 @@ options: [
 ],
 ```
 
-`--json --quiet` fails in either order. `--sign` fails unless the user also supplies `--output`. Names in these lists include their prefixes. Defaults don't count as supplied options.
+`--json --quiet` fails in either order. `--sign` fails unless the user also supplies `--output`. Names in these lists include their prefixes, and a name that isn't an option the command can use is a compile error. Defaults don't count as supplied options.
 
 <br>
 
