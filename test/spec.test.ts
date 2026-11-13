@@ -152,7 +152,7 @@ const demo = CLI.spec({
           args: [{ name: "map" }, { name: "source", isOptional: true }],
           options: [{ name: "--json", description: "As JSON." }],
           action: ({ args, options }) => {
-            is<[string, string?]>()(args);
+            is<[string] | [string, string]>()(args);
             return options.has("--json") || options.has("--raw") || options.has("--verbose") ? 0 : 1;
           },
           subcommands: [
@@ -220,7 +220,7 @@ CLI.spec({
     {
       name: "defaults",
       args: [{ name: "a" }, { name: "b", isOptional: true, default: "." }, { name: "c", isOptional: true }],
-      action: ({ args }) => is<[string, string, string?]>()(args),
+      action: ({ args }) => is<[string, string] | [string, string, string]>()(args),
     },
     {
       // The parser stops adding defaults at the first optional argument without one.
@@ -229,7 +229,7 @@ CLI.spec({
         { name: "a", isOptional: true },
         { name: "b", isOptional: true, default: "." },
       ],
-      action: ({ args }) => is<[string?, string?]>()(args),
+      action: ({ args }) => is<[] | [string] | [string, string]>()(args),
     },
     {
       name: "rest",
@@ -272,7 +272,7 @@ CLI.spec({
         { name: "f", generators: { custom: (tokens) => tokens } },
         { name: "g", isOptional: true },
       ],
-      action: ({ args }) => is<[string, string?]>()(args),
+      action: ({ args }) => is<[string] | [string, string]>()(args),
     },
   ],
 });
@@ -365,7 +365,7 @@ CLI.spec({
       },
     },
   ],
-  action: ({ args }) => is<[string?]>()(args),
+  action: ({ args }) => is<[] | [string]>()(args),
 });
 
 // An option refers to other options by names the command can use.
@@ -397,6 +397,24 @@ CLI.spec({
   options: [{ name: "--verbose" }],
   action: ({ options }) => is<boolean>()(verbose(options)),
   subcommands: [{ name: "bare", action: ({ options }) => is<boolean>()(verbose(options)) }],
+});
+
+// The typed arguments pass to anything that takes a list of strings, and the whole typed init to a loose action.
+function count(words: string[]): number {
+  return words.length;
+}
+CLI.spec({
+  name: "pass-on",
+  args: [{ name: "a" }, { name: "b", isOptional: true }],
+  action: ({ args }) => count(args),
+  subcommands: [
+    {
+      name: "loose",
+      args: { name: "f", isOptional: true },
+      options: [{ name: "--check" }],
+      action: (init) => fmt(init),
+    },
+  ],
 });
 
 // What the shape check rejects.

@@ -37,6 +37,11 @@ type Unsure<A> = A extends unknown
  * every optional argument so far has a default. The parser adds defaults up to
  * the first optional argument without one, so an argument after that can be
  * missing even if it has a default of its own.
+ *
+ * An argument that can be missing gives two tuples, one without it and one
+ * with it. A single tuple with an optional element, `[string, string?]`,
+ * would say the element can be `undefined`, and TypeScript then refuses to
+ * pass the arguments to anything that takes `string[]`.
  */
 type Positionals<A, Defaults extends boolean = true> = A extends readonly [infer H, ...infer R]
   ? H extends { isVariadic: true }
@@ -47,8 +52,8 @@ type Positionals<A, Defaults extends boolean = true> = A extends readonly [infer
       ? H extends { default: string }
         ? Defaults extends true
           ? [string, ...Positionals<R, true>]
-          : [string?, ...Positionals<R, false>]
-        : [string?, ...Positionals<R, false>]
+          : [] | [string, ...Positionals<R, false>]
+        : [] | [string, ...Positionals<R, false>]
       : [string, ...Positionals<R, Defaults>]
   : A extends readonly []
     ? []
