@@ -209,6 +209,15 @@ export interface Option {
   /** Description shown in help. */
   description?: string;
 
+  /**
+   * A second key to read this option by in an action, for an option that
+   * shares a name with a different option on a command above or below it.
+   * Reading by that name gives whichever of the two was used last, and
+   * reading by the ref always gives this option. The spec checks require a
+   * ref on both options, and allow one nowhere else.
+   */
+  ref?: string;
+
   /** Arguments this option accepts. */
   args?: SingleOrArray<Arg>;
 

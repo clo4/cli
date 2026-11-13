@@ -59,11 +59,11 @@ test("testing: assertOptionsHaveDifferentNamesFromParents", async () => {
   await expect(
     check(withChild({ name: "-C", args: { name: "dir" } }, { name: ["-C", "-D"] })),
   ).rejects.toThrow(
-    "Option `test sub -C|-D` (index 0) has every name of a different option, `test -C`, so the parent's value can't be read. Add a name that only the parent's option uses.",
+    "Option `test sub -C|-D` (index 0) has every name of a different option, `test -C`, so the parent's value can't be read. Add a name that only the parent's option uses, or give each a `ref`.",
   );
   // Every name of the child's option is the parent's too
   await expect(check(withChild({ name: ["-C", "--cd"], args: {} }, { name: "-C" }))).rejects.toThrow(
-    "Option `test sub -C` (index 0) only has names of a different option, `test -C|--cd`, so it can't tell whether it was used. Add a name that only the subcommand's option uses.",
+    "Option `test sub -C` (index 0) only has names of a different option, `test -C|--cd`, so it can't tell whether it was used. Add a name that only the subcommand's option uses, or give each a `ref`.",
   );
   // Same structure doesn't make options with different names one option
   await expect(check(withChild({ name: "--verbose" }, { name: ["-v", "--verbose"] }))).rejects.toThrow();
@@ -81,7 +81,7 @@ test("testing: assertOptionsHaveDifferentNamesFromParents", async () => {
   await check(withChild({ name: "--help", action() {} }, { name: "--help", action() {} }));
   await check(withChild({ name: "-t", args: { name: "tag" } }, { name: "-t", args: { name: "tag" } }));
 
-  // Persistent parents belong to assertOptionsDoNotShadowPersistentOptions
+  // Persistent parents belong to assertShadowingOptionsHaveRefs
   await check(withChild({ name: "-C", isPersistent: true, args: {} }, { name: "-C" }));
 
   // Same shape except for a property that changes the meaning
@@ -123,13 +123,13 @@ test("testing: assertSubcommandsHaveLocallyUniqueNames", async () => {
   ).rejects.toThrow();
 });
 
-test("testing: assertOptionsDoNotShadowPersistentOptions", async () => {
-  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", { name: "test" });
-  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
+test("testing: assertShadowingOptionsHaveRefs", async () => {
+  await runSpecCheck("assertShadowingOptionsHaveRefs", { name: "test" });
+  await runSpecCheck("assertShadowingOptionsHaveRefs", {
     name: "test",
     options: [{ name: "one", isPersistent: true }, { name: "two" }],
   });
-  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
+  await runSpecCheck("assertShadowingOptionsHaveRefs", {
     name: "test",
     options: [{ name: "one", isPersistent: true }],
     subcommands: [
@@ -139,12 +139,12 @@ test("testing: assertOptionsDoNotShadowPersistentOptions", async () => {
       },
     ],
   });
-  await runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
+  await runSpecCheck("assertShadowingOptionsHaveRefs", {
     name: "test",
     options: [{ name: "one", isPersistent: true }, { name: "one" }],
   });
   await expect(
-    runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
+    runSpecCheck("assertShadowingOptionsHaveRefs", {
       name: "test",
       options: [{ name: "one", isPersistent: true }],
       subcommands: [
@@ -155,6 +155,90 @@ test("testing: assertOptionsDoNotShadowPersistentOptions", async () => {
       ],
     }),
   ).rejects.toThrow();
+});
+
+test("testing: an option that shadows a persistent option passes once both have a ref", async () => {
+  const shadowing = (parentRef?: string, childRef?: string): Subcommand => ({
+    name: "test",
+    options: [{ name: ["-v", "--verbose"], isPersistent: true, ref: parentRef }],
+    subcommands: [{ name: "sub", options: [{ name: ["-v", "--version"], ref: childRef }] }],
+  });
+  await runSpecCheck("assertShadowingOptionsHaveRefs", shadowing("verbose", "version"));
+  await expect(runSpecCheck("assertShadowingOptionsHaveRefs", shadowing("verbose"))).rejects.toThrow(
+    /^Option `test sub -v\|--version` \(index 0\) shadows the name "-v" of a persistent option, .* Give it a `ref`/,
+  );
+  await expect(
+    runSpecCheck("assertShadowingOptionsHaveRefs", shadowing(undefined, "version")),
+  ).rejects.toThrow(
+    /^Option `test -v\|--verbose` \(index 0\) has its name "-v" shadowed by .* Give it a `ref`/,
+  );
+});
+
+test("testing: different options with the same names on a parent and a subcommand pass once both have a ref", async () => {
+  const sameNames = (parentRef?: string, childRef?: string): Subcommand => ({
+    name: "test",
+    options: [{ name: "-C", args: {}, ref: parentRef }],
+    subcommands: [{ name: "sub", options: [{ name: "-C", ref: childRef }] }],
+  });
+  await runSpecCheck("assertOptionsHaveDifferentNamesFromParents", sameNames("dir", "color"));
+  await expect(runSpecCheck("assertOptionsHaveDifferentNamesFromParents", sameNames("dir"))).rejects.toThrow(
+    /give each a `ref`/,
+  );
+});
+
+test("testing: assertRefsAreUnique", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertRefsAreUnique", spec);
+  await check({ name: "test" });
+  await check({
+    name: "test",
+    options: [{ name: "-v", isPersistent: true, ref: "verbose" }],
+    subcommands: [{ name: "sub", options: [{ name: "-v", ref: "version" }] }],
+  });
+  // The same option object in two places is one option.
+  const shared = { name: "-v", ref: "verbose" } as const;
+  await check({ name: "test", options: [shared], subcommands: [{ name: "sub", options: [shared] }] });
+  await expect(
+    check({
+      name: "test",
+      options: [{ name: "-v", isPersistent: true, ref: "v" }],
+      subcommands: [{ name: "sub", options: [{ name: "-v", ref: "v" }] }],
+    }),
+  ).rejects.toThrow(/^Option `test sub -v` \(index 0\) has the ref "v", which another option has too/);
+  await expect(
+    check({ name: "test", options: [{ name: "-v", ref: "--quiet" }, { name: "--quiet" }] }),
+  ).rejects.toThrow(/has the ref "--quiet", which is also an option's name/);
+  await expect(check({ name: "test", options: [{ name: "-v", ref: "" }] })).rejects.toThrow(
+    /has an empty `ref`/,
+  );
+});
+
+test("testing: assertRefsAreNeeded", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertRefsAreNeeded", spec);
+  await check({ name: "test", options: [{ name: "-v" }] });
+  await check({
+    name: "test",
+    options: [{ name: ["-v", "--verbose"], isPersistent: true, ref: "verbose" }],
+    subcommands: [{ name: "sub", options: [{ name: ["-v", "--version"], ref: "version" }] }],
+  });
+  // Two levels apart, and the option above isn't persistent.
+  await check({
+    name: "test",
+    options: [{ name: "-C", ref: "dir" }],
+    subcommands: [{ name: "a", subcommands: [{ name: "b", options: [{ name: "-C", ref: "color" }] }] }],
+  });
+  await expect(check({ name: "test", options: [{ name: "-v", ref: "verbose" }] })).rejects.toThrow(
+    /^Option `test -v` \(index 0\) has a `ref`, but shares no name with an option on a command above or below it/,
+  );
+  // Options on sibling commands never meet on one command line.
+  await expect(
+    check({
+      name: "test",
+      subcommands: [
+        { name: "a", options: [{ name: "-v", ref: "one" }] },
+        { name: "b", options: [{ name: "-v", ref: "two" }] },
+      ],
+    }),
+  ).rejects.toThrow(/has a `ref`, but shares no name/);
 });
 
 test("testing: assertRepeatableOptionsArePositiveIntegers", async () => {
@@ -681,8 +765,10 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "The parser can use every default",
     "Repeatable options that are numbers are integers greater than 1",
     "Options have locally unique names",
-    "Options don't shadow persistent options",
+    "An option that shadows a persistent option has a ref, and so does the option it shadows",
     "Different options on a subcommand and its parents have different names",
+    "Each ref belongs to one option and isn't an option's name",
+    "Only an option that shares a name with an option above or below it has a ref",
     "Subcommands have locally unique names",
     "The parser reads every option and subcommand the way it's written",
     "Option arg separators are not an empty string",
@@ -703,8 +789,10 @@ test("testing: testSpec supports function-style step names", async () => {
     "assertDefaultsCanBeUsed",
     "assertRepeatableOptionsArePositiveIntegers",
     "assertOptionsHaveLocallyUniqueNames",
-    "assertOptionsDoNotShadowPersistentOptions",
+    "assertShadowingOptionsHaveRefs",
     "assertOptionsHaveDifferentNamesFromParents",
+    "assertRefsAreUnique",
+    "assertRefsAreNeeded",
     "assertSubcommandsHaveLocallyUniqueNames",
     "assertNamesReadBack",
     "assertOptionArgSeparatorsHaveCharacters",
@@ -743,7 +831,9 @@ test("testing: testSpec config skips optional checks", async () => {
       },
       { allowShadowingPersistentOptions: true },
     ),
-  ).resolves.not.toContain("Options don't shadow persistent options");
+  ).resolves.not.toContain(
+    "An option that shadows a persistent option has a ref, and so does the option it shadows",
+  );
 
   await expect(
     collectSteps(
@@ -932,12 +1022,14 @@ test("testing: option messages start by naming the option the same way", async (
     }),
   ).rejects.toThrow(/^Option `t -v` \(index 0\) has its `isRepeatable` value set to 1/);
   await expect(
-    runSpecCheck("assertOptionsDoNotShadowPersistentOptions", {
+    runSpecCheck("assertShadowingOptionsHaveRefs", {
       name: "t",
       options: [{ name: "-v", isPersistent: true }],
       subcommands: [{ name: "sub", options: [{ name: "-q" }, { name: "-v" }] }],
     }),
-  ).rejects.toThrow(/^Option `t sub -v` \(index 1\) shadows the name of a persistent option, "-v"/);
+  ).rejects.toThrow(
+    /^Option `t sub -v` \(index 1\) shadows the name "-v" of a persistent option, Option `t -v` \(index 0\)/,
+  );
   await expect(
     runSpecCheck("assertOptionsHaveDifferentNamesFromParents", {
       name: "t",

@@ -289,6 +289,27 @@ CLI.spec({
   ],
 });
 
+// Two options that share a name are each read by a ref.
+CLI.spec({
+  name: "refs",
+  options: [{ name: ["-v", "--verbose"], isPersistent: true, isRepeatable: true, ref: "verbose" }],
+  subcommands: [
+    {
+      name: "sub",
+      options: [{ name: ["-v", "--version"], ref: "version", args: { name: "v", default: "1" } }],
+      action({ options }) {
+        is<string>()(options.get("version"));
+        is<undefined>()(options.get("verbose"));
+        is<number>()(options.count("verbose"));
+        // The shared name could be either option.
+        is<string | undefined>()(options.get("-v"));
+        // @ts-expect-error A ref no option has.
+        options.has("verbos");
+      },
+    },
+  ],
+});
+
 // What the shape check rejects.
 // @ts-expect-error A field with the wrong type.
 CLI.spec({ name: "x", subcommands: [{ name: "a", args: { name: "f", isOptional: "yes" } }] });

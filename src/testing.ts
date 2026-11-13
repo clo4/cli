@@ -287,12 +287,9 @@ export type TestNamingStyle = "sentence" | "function";
 /** Options that can be provided to `test` */
 export interface TestOptions {
   /**
-   * Allows options to shadow persistent options.
-   *
-   * This behavior may be desirable if you want to override an option on a
-   * particular subcommand, but not for others.
-   *
-   * Be aware that this is not idiomatic.
+   * Allows an option to take the name of a persistent option above it
+   * without a `ref` on each. An action can then only read whichever of the
+   * two was used last.
    */
   allowShadowingPersistentOptions?: boolean;
 
@@ -459,16 +456,32 @@ const specChecks: readonly SpecCheck[] = [
     },
   },
   {
-    sentence: "Options don't shadow persistent options",
-    name: "assertOptionsDoNotShadowPersistentOptions",
+    /*
+     * A subcommand's option that takes a name of a persistent option hides
+     * that name of the inherited one, and the two then store their values
+     * under the same name. With a ref on each, an action can still read
+     * either one.
+     */
+    sentence: "An option that shadows a persistent option has a ref, and so does the option it shadows",
+    name: "assertShadowingOptionsHaveRefs",
     skippedBy: "allowShadowingPersistentOptions",
     check(spec) {
       forEachCommand(spec, ({ path, own, inherited }) => {
         for (const { option, index } of own) {
           for (const name of makeArray(option.name)) {
+            const shadowed = inherited.find((persistent) => makeArray(persistent.option.name).includes(name));
+            if (!shadowed) {
+              continue;
+            }
+            const where = describeOption(path, index);
+            const other = describeOption(shadowed.definedIn, shadowed.index);
             assert(
-              !inherited.some((persistent) => makeArray(persistent.option.name).includes(name)),
-              `${describeOption(path, index)} shadows the name of a persistent option, ${repr(name)}. Option names can't shadow persistent options.`,
+              option.ref !== undefined,
+              `${where} shadows the name ${repr(name)} of a persistent option, ${other}. Give it a \`ref\` so an action can read it.`,
+            );
+            assert(
+              shadowed.option.ref !== undefined,
+              `${other} has its name ${repr(name)} shadowed by ${where}. Give it a \`ref\` so an action can read it.`,
             );
           }
         }
@@ -489,9 +502,12 @@ const specChecks: readonly SpecCheck[] = [
      * they're identical, such as an option kept in a constant, because the
      * parser treats them as one option.
      *
-     * This skips persistent parent options. The check that options don't
-     * shadow persistent options covers those, and
-     * `allowShadowingPersistentOptions` turns that check off.
+     * Two options that each have a ref are fine too, because each is read by
+     * its ref.
+     *
+     * This skips persistent parent options. The check that shadowing options
+     * have refs covers those, and `allowShadowingPersistentOptions` turns that
+     * check off.
      */
     sentence: "Different options on a subcommand and its parents have different names",
     name: "assertOptionsHaveDifferentNamesFromParents",
@@ -505,7 +521,7 @@ const specChecks: readonly SpecCheck[] = [
         // they're found on the parents themselves.
         for (const parent of path.slice(0, -1)) {
           for (const parentOption of makeArray(parent.options)) {
-            if (parentOption.isPersistent) {
+            if (parentOption.isPersistent || (parentOption.ref !== undefined && option.ref !== undefined)) {
               continue;
             }
             const parentNames = makeArray(parentOption.name);
@@ -513,21 +529,92 @@ const specChecks: readonly SpecCheck[] = [
             if (optionKey(parentOption) === optionKey(option)) {
               assert(
                 isSameStructure({ ...parentOption, name: 0 }, { ...option, name: 0 }),
-                `${where} has the same names as a different option, ${other}, so the parent's value can't be read. Add a name that only one of them uses.`,
+                `${where} has the same names as a different option, ${other}, so the parent's value can't be read. Add a name that only one of them uses, or give each a \`ref\`.`,
               );
               continue;
             }
             assert(
               !parentNames.every((name) => names.includes(name)),
-              `${where} has every name of a different option, ${other}, so the parent's value can't be read. Add a name that only the parent's option uses.`,
+              `${where} has every name of a different option, ${other}, so the parent's value can't be read. Add a name that only the parent's option uses, or give each a \`ref\`.`,
             );
             assert(
               !names.every((name) => parentNames.includes(name)),
-              `${where} only has names of a different option, ${other}, so it can't tell whether it was used. Add a name that only the subcommand's option uses.`,
+              `${where} only has names of a different option, ${other}, so it can't tell whether it was used. Add a name that only the subcommand's option uses, or give each a \`ref\`.`,
             );
           }
         }
       });
+    },
+  },
+  {
+    /*
+     * Values are stored under an option's names and under its ref, so a ref
+     * that another option uses, as a ref or as a name, would hold that
+     * option's values too.
+     */
+    sentence: "Each ref belongs to one option and isn't an option's name",
+    name: "assertRefsAreUnique",
+    check(spec) {
+      const names = new Set<string>();
+      forEachCommand(spec, ({ own }) => {
+        for (const { option } of own) {
+          for (const name of makeArray(option.name)) {
+            names.add(name);
+          }
+        }
+      });
+      const owners = new Map<string, Option>();
+      forEachCommand(spec, ({ path, own }) => {
+        for (const { option, index } of own) {
+          const ref = option.ref;
+          if (ref === undefined) {
+            continue;
+          }
+          const where = describeOption(path, index);
+          assert(ref !== "", `${where} has an empty \`ref\`.`);
+          assert(!names.has(ref), `${where} has the ref ${repr(ref)}, which is also an option's name.`);
+          const owner = owners.get(ref);
+          assert(
+            owner === undefined || owner === option,
+            `${where} has the ref ${repr(ref)}, which another option has too. Each ref belongs to one option.`,
+          );
+          owners.set(ref, option);
+        }
+      });
+    },
+  },
+  {
+    /*
+     * A ref is only for telling apart two options that share a name. Anywhere
+     * else, the option's name already reads it, and a ref would be a second
+     * way to write the same thing.
+     */
+    sentence: "Only an option that shares a name with an option above or below it has a ref",
+    name: "assertRefsAreNeeded",
+    check(spec) {
+      const sharing = new Set<Option>();
+      const withRef: { option: Option; where: string }[] = [];
+      forEachCommand(spec, ({ path, own }) => {
+        for (const { option, index } of own) {
+          if (option.ref !== undefined) {
+            withRef.push({ option, where: describeOption(path, index) });
+          }
+          const names = makeArray(option.name);
+          for (const parent of path.slice(0, -1)) {
+            for (const other of makeArray(parent.options)) {
+              if (other !== option && makeArray(other.name).some((name) => names.includes(name))) {
+                sharing.add(option).add(other);
+              }
+            }
+          }
+        }
+      });
+      for (const { option, where } of withRef) {
+        assert(
+          sharing.has(option),
+          `${where} has a \`ref\`, but shares no name with an option on a command above or below it. Remove the \`ref\` and read the option by its name.`,
+        );
+      }
     },
   },
   {

@@ -231,6 +231,22 @@ export class CommandScope {
   }
 
   /**
+   * The option in scope whose ref is `ref`, if any. An option with a ref
+   * shares a name with another option, so {@link resolve} may not find it by
+   * name.
+   */
+  withRef(ref: string): Option | null {
+    const { local, persistent } = this;
+    for (let i = 0; i < local.length + persistent.length; i++) {
+      const option = i < local.length ? local[i] : persistent[i - local.length];
+      if (option.ref === ref) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  /**
    * What `token` means here: the subcommand it names, the options it uses, or
    * null for an argument or a value. `subcommands` says how the token can name
    * a subcommand, or is null if it can't, and `options` says whether it can

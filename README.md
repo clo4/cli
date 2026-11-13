@@ -501,6 +501,48 @@ true
 
 Help lists persistent options under “Global flags”. When `CLI.help` is added to the root spec, every descendant command inherits `--help`.
 
+<details>
+<summary>Options that share a name</summary>
+<br>
+
+A subcommand's option can take a name that an inherited option also has. Here `-v` means `--verbose` on `demo` and `--version` on `build`. Both store their values under `-v`, so each needs a `ref`, a second key that only it uses:
+
+```ts
+options: [
+  {
+    name: ["-v", "--verbose"],
+    isPersistent: true,
+    ref: "verbose",
+  },
+],
+subcommands: [
+  {
+    name: "build",
+    options: [
+      {
+        name: ["-v", "--version"],
+        ref: "version",
+      },
+    ],
+    action({ options }) {
+      console.log(options.has("verbose"), options.has("version"));
+    },
+  },
+],
+```
+
+```console
+$ demo -v build
+true false
+$ demo build -v
+false true
+```
+
+`options.has("-v")` is `true` in both runs, because it reads whichever option used the name last. [Spec validation](#testing-your-spec) requires a `ref` on both options, and rejects one on an option that shares no name.
+
+<hr>
+</details>
+
 <br>
 
 ### Option relationships
@@ -798,7 +840,7 @@ await testSpec(spec, {
 Three other options disable individual checks:
 
 - `allowLongDescriptionLines`: descriptions can have lines over 68 characters.
-- `allowShadowingPersistentOptions`: a subcommand can replace an inherited option.
+- `allowShadowingPersistentOptions`: a subcommand's option can take the name of an inherited option without a `ref` on each.
 - `allowMatchingSubcommandPrefixAndArgs`: a command can combine positional arguments with subcommands matched by prefix.
 
 All four default to `false`. `namingStyle: "function"` uses check names such as `assertNamesReadBack` in step-based test output.

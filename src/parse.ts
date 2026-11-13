@@ -235,11 +235,11 @@ function optionArgs(options: Map<string, string[]>, scope: CommandScope): Option
 
 /**
  * The defaults of the arguments of the option `name` refers to at the command
- * `scope` is for, when no option of that name was used. Undefined if its
+ * `scope` is for, by name or by ref, when no option of that name was used. Undefined if its
  * first argument is optional or has no default.
  */
 function unusedDefaults(scope: CommandScope, name: string): string[] | undefined {
-  const args = asArray(scope.resolve(name)?.args);
+  const args = asArray((scope.resolve(name) ?? scope.withRef(name))?.args);
   // An option whose first argument is optional, like `--inspect[=port]`,
   // means something different when it's left out than when it's bare, so
   // its defaults are only for the bare option.
@@ -438,6 +438,11 @@ class Scanner implements TokenReader {
       for (let i = 0; i < names.length; i++) {
         this.options.set(names[i], optionValues);
       }
+    }
+    // An option that shares a name with another one is read by its ref, which
+    // no other option sets.
+    if (option.ref !== undefined) {
+      this.options.set(option.ref, optionValues);
     }
     // Each use of a repeatable option without arguments adds an empty string,
     // so its values count the uses.

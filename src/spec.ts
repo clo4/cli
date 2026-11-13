@@ -80,9 +80,12 @@ type Persistent<O> = O extends { isPersistent: true }
         : never
     : never;
 
-type NamesOf<O> = O extends { name: infer N } ? (N extends readonly string[] ? N[number] : N) : never;
+/** What an option can be read by: its names, and its ref if it has one. */
+type NamesOf<O> = O extends { name: infer N }
+  ? (N extends readonly string[] ? N[number] : N) | (O extends { ref: infer R extends string } ? R : never)
+  : never;
 
-/** The names of `O` that are written out in the spec. */
+/** The names and refs of `O` that are written out in the spec. */
 type Known<O> = NamesOf<O> extends infer N ? (string extends N ? never : N) : never;
 
 /**

@@ -1837,3 +1837,30 @@ test("options: each question works when an action takes it off the object", () =
   expect([has("--port"), get("--port"), all("--port"), count("--port")]).toEqual([true, "1", ["1"], 1]);
   expect(options).toEqual(map({ "--port": ["1"] }));
 });
+
+test("options: an option with a ref is read by it, whichever option used a shared name last", () => {
+  const spec: Spec = {
+    name: "test",
+    options: [{ name: ["-v", "--verbose"], isPersistent: true, isRepeatable: true, ref: "verbose" }],
+    subcommands: [
+      {
+        name: "sub",
+        options: [{ name: ["-v", "--version"], ref: "version", args: { name: "v", default: "1" } }],
+      },
+    ],
+  };
+  const both = parse(["-vv", "sub", "-v", "2"], spec).options;
+  expect(answers(both, "verbose")).toEqual([true, "", ["", ""], 2]);
+  expect(answers(both, "version")).toEqual([true, "2", ["2"], 1]);
+  // The shared name holds the option used last.
+  expect(both.all("-v")).toEqual(["2"]);
+
+  const parent = parse(["-v", "sub"], spec).options;
+  expect(answers(parent, "verbose")).toEqual([true, "", [""], 1]);
+  // An unused option's defaults are found by its ref.
+  expect(answers(parent, "version")).toEqual([false, "1", ["1"], 0]);
+
+  const neither = parse(["sub"], spec).options;
+  expect(answers(neither, "verbose")).toEqual([false, undefined, [], 0]);
+  expect(answers(neither, "version")).toEqual([false, "1", ["1"], 0]);
+});

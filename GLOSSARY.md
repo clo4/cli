@@ -22,6 +22,8 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Shadowed**: Said of a name that a nearer option, a later option, or a subcommand has taken, so it no longer refers to the option that defines it.
 
+**Ref**: A second key an action reads an option by, for an option that shares a name with a different option on a command above or below it. No other option uses it, as a ref or as a name.
+
 **Directives**: A command's parsing switches, such as its option arg separators. A subcommand inherits each one until it sets its own.
 
 **Option arg separator**: What joins an option's name to a value in the same token, `=` by default.
