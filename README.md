@@ -1064,26 +1064,26 @@ The [benchmarks](bench/run.ts) compare command execution and startup overhead wi
 <summary>Performance comparison</summary>
 <br>
 
-Each value is relative to `@clo4/cli` in the same run: `2.5x` means the library took 2.5 times as long for the measured work. Lower is better. The run was on an Apple M3 Pro.
+Each value is relative to `@clo4/cli` in the same run: `2.5x` means the library took 2.5 times as long for the measured work. Lower is better. Each column is a separate run, on CI or on the listed hardware.
 
-| Library                                 | Apple M3 Pro |
-| --------------------------------------- | ------------ |
-| `node:util` parseArgs, hand-written CLI | 1.3x         |
-| sade                                    | 1.3x         |
-| Cac                                     | 1.4x         |
-| citty                                   | 1.8x         |
-| brocli                                  | 2.0x         |
-| Stricli                                 | 2.3x         |
-| gunshi                                  | 2.5x         |
-| Cliffy                                  | 3.0x         |
-| Commander                               | 3.4x         |
-| clerc                                   | 3.6x         |
-| cmd-ts                                  | 4.0x         |
-| Clipanion                               | 4.4x         |
-| Optique                                 | 13.9x        |
-| oclif                                   | 16.2x        |
-| Effect                                  | 18.2x        |
-| Yargs                                   | 20.7x        |
+| Library                                 | CI    | Apple M3 Pro |
+| --------------------------------------- | ----- | ------------ |
+| `node:util` parseArgs, hand-written CLI | 1.2x  | 1.3x         |
+| sade                                    | 1.2x  | 1.3x         |
+| Cac                                     | 1.3x  | 1.4x         |
+| citty                                   | 1.6x  | 1.8x         |
+| gunshi                                  | 2.3x  | 2.5x         |
+| Stricli                                 | 2.5x  | 2.3x         |
+| brocli                                  | 2.9x  | 2.0x         |
+| Cliffy                                  | 3.1x  | 3.0x         |
+| Commander                               | 4.4x  | 3.4x         |
+| clerc                                   | 4.6x  | 3.6x         |
+| cmd-ts                                  | 5.2x  | 4.0x         |
+| Clipanion                               | 5.4x  | 4.4x         |
+| Optique                                 | 13.0x | 13.9x        |
+| oclif                                   | 16.0x | 16.2x        |
+| Yargs                                   | 18.0x | 20.7x        |
+| Effect                                  | 18.2x | 18.2x        |
 
 The benchmark runs seven tasks, including help output, nested commands and argument errors. Timing starts before the bundled CLI is loaded and ends when the process exits. Node's own startup time is excluded.
 
