@@ -1,6 +1,6 @@
 # clo4's CLI SDK
 
-`@clo4/cli` is a TypeScript library for building command-line tools. Commands are plain objects that describe accepted arguments and options. Each command can have an action: a function that receives the parsed input.
+`@clo4/cli` is a TypeScript library for building command-line tools. Commands are plain objects that describe accepted arguments and options. Each command can have an action: a function that receives the parsed input. TypeScript types that input from the command's own definition.
 
 Parsing, help and completion need to follow the same argument and option rules. The library reads those rules from the command definitions, with application logic in the action functions.
 
@@ -23,7 +23,7 @@ Save this as `demo.ts` in a project with `"type": "module"` in its `package.json
 ```ts
 import * as CLI from "@clo4/cli";
 
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   description: "A small build tool.",
   options: [CLI.help],
@@ -63,9 +63,9 @@ const spec: CLI.Spec = {
     CLI.helpCommand,
     CLI.completion,
   ],
-};
+});
 
-process.exitCode = await CLI.run(spec);
+CLI.run(spec);
 ```
 
 `build` defaults to `.` for input and `dist` for output:
@@ -108,7 +108,7 @@ Running `demo` without a subcommand displays the CLI's help text, including the 
 <summary>Command-line errors</summary>
 <br>
 
-When parsing fails, `CLI.run` writes an error message and usage to stderr and returns exit code 1. The example assigns that result to `process.exitCode`. For misspelled commands or options, the output may suggest a matching name:
+When parsing fails, `CLI.run` writes an error message and usage to stderr and sets the exit code to 1. For misspelled commands or options, the output may suggest a matching name:
 
 ```console
 $ demo bild
@@ -135,7 +135,7 @@ Global flags:
 
 ## Getting started
 
-A **spec** is a plain object describing your CLI. The top-level (root) command has type `CLI.Spec`. Entries in a command's `subcommands` array have type `CLI.Subcommand`.
+A **spec** is a plain object describing your CLI. `CLI.spec` takes the top-level (root) command and returns it unchanged. `CLI.command` does the same for a command written outside the spec. Both give each action the types of its own command's arguments and options.
 
 For a command line like `demo build src --output dist --watch`:
 
@@ -144,7 +144,7 @@ For a command line like `demo build src --output dist --watch`:
 - `options` describes named inputs: `--output` takes the value `dist`, and `--watch` is a flag with no value.
 - The `build` command's `action` receives these parsed arguments and options and runs after parsing succeeds.
 
-In the spec, `args` and `options` define what a command accepts. Inside an action, `args` is an array of positional values, and `options` has methods to read the named inputs. `CLI.run` reads the command line, validates argument counts and option rules, and calls the selected action.
+In the spec, `args` and `options` define what a command accepts. Inside an action, `args` is an array of positional values, and `options` has methods to read the named inputs. TypeScript knows how many values the command takes and which option names it has. `CLI.run` reads the command line, validates argument counts and option rules, and calls the selected action.
 
 The flag example below is a complete `demo.ts`. Subsequent examples replace its `build` definition. As in the opening example, `demo` stands for `node demo.ts` in command examples.
 
@@ -155,7 +155,7 @@ A flag is an option that takes no value. Add it to the command's `options` array
 ```ts
 import * as CLI from "@clo4/cli";
 
-const build: CLI.Subcommand = {
+const build = CLI.command({
   name: "build",
   options: [
     {
@@ -165,14 +165,14 @@ const build: CLI.Subcommand = {
   action({ options }) {
     console.log(options.has("--debug"));
   },
-};
+});
 
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   subcommands: [build],
-};
+});
 
-process.exitCode = await CLI.run(spec);
+CLI.run(spec);
 ```
 
 ```console
@@ -182,6 +182,8 @@ $ demo build
 false
 ```
 
+A name the command doesn't define, such as `options.has("--debgu")`, is a compile error.
+
 <br>
 
 ### Names
@@ -189,7 +191,7 @@ false
 An option's `name` accepts a string or an array of aliases. This replacement for `build` accepts both `-v` and `--verbose`; keep the import, root spec and `CLI.run` call from the preceding example:
 
 ```ts
-const build: CLI.Subcommand = {
+const build = CLI.command({
   name: "build",
   options: [
     {
@@ -199,7 +201,7 @@ const build: CLI.Subcommand = {
   action({ options }) {
     console.log(options.has("--verbose"));
   },
-};
+});
 ```
 
 ```console
@@ -220,7 +222,7 @@ Short flags can be grouped: `-abc` is equivalent to `-a -b -c` when all three ar
 An option's `args` describes the value it accepts. Here, `file` labels that value in help. The action reads the supplied value with `options.get()`:
 
 ```ts
-const build: CLI.Subcommand = {
+const build = CLI.command({
   name: "build",
   options: [
     {
@@ -233,7 +235,7 @@ const build: CLI.Subcommand = {
   action({ options }) {
     console.log(options.get("--output"));
   },
-};
+});
 ```
 
 ```console
@@ -243,7 +245,7 @@ $ demo build
 undefined
 ```
 
-The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. Supplying `--output` without a value is an error. Setting `isRequired: true` on the option also makes omitting the option an error.
+The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. Supplying `--output` without a value is an error. `options.get("--output")` has the type `string | undefined`, since the option can be omitted. Setting `isRequired: true` on the option makes omitting it an error, and the type becomes `string`.
 
 <br>
 
@@ -252,7 +254,7 @@ The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. Supplying `--o
 A command's `args` describes positional arguments: values supplied without an option name. It accepts one argument definition or an array. Arguments are required by default; `isOptional: true` allows an argument to be omitted. The action receives their values in order:
 
 ```ts
-const build: CLI.Subcommand = {
+const build = CLI.command({
   name: "build",
   args: [
     {
@@ -266,7 +268,7 @@ const build: CLI.Subcommand = {
   action({ args: [source, destination] }) {
     console.log(source, destination);
   },
-};
+});
 ```
 
 ```console
@@ -276,7 +278,7 @@ $ demo build src
 src undefined
 ```
 
-Required arguments must come before optional arguments. Help shows this example as `<source> [destination]`.
+In the action, `source` is a `string` and `destination` is `string | undefined`. Required arguments must come before optional arguments. Help shows this example as `<source> [destination]`.
 
 The `--` separator makes all remaining words positional arguments, including words that match options or subcommands. For example, `demo build -- --help` passes `"--help"` as the source.
 
@@ -309,6 +311,8 @@ $ demo build
 $ demo build --port 3000
 3000
 ```
+
+With a default, `options.get("--port")` has the type `string`.
 
 <details>
 <summary>Defaults for optional option values</summary>
@@ -577,7 +581,7 @@ options: [
 
 ### Actions & errors
 
-Actions receive argument values as strings. Conversion and validation happen inside the action. If it throws an `Error`, `CLI.run` prints its message to stderr and returns exit code 1.
+Actions receive argument values as strings. Conversion and validation happen inside the action. If it throws an `Error`, `CLI.run` prints its message to stderr and sets the exit code to 1.
 
 ```ts
 options: [
@@ -605,7 +609,7 @@ $ demo build --port nope
 Error: Port must be an integer between 1 and 65535
 ```
 
-An action can return a number to set the exit code, or return nothing for success (0). Async actions are awaited. `CLI.run` resolves to the exit code, limited to the range 0–255. Assign the awaited result to `process.exitCode` as in the opening example.
+An action can return a number to set the exit code, or return nothing for success (0). Async actions are awaited. `CLI.run` sets `process.exitCode` to that code, limited to the range 0–255.
 
 <details>
 <summary>Option actions and additional action parameters</summary>
@@ -636,29 +640,29 @@ To report an error without throwing, call `CLI.printError("message")` and return
 
 The action's `help()` function accepts `description: false` to omit the command description and `usage: false` to omit the usage line. `didYouMean: { input, choices }` adds a spelling suggestion. To render help for another command, pass its array of command objects as `path`.
 
-`CLI.run` reads `process.argv.slice(2)` by default. Pass a second argument to supply the command line directly, for example `CLI.run(spec, ["build", "src"])`. It never calls `process.exit`.
+`CLI.run` reads `process.argv.slice(2)` by default. Pass `argv` to supply the command line directly, for example `CLI.run(spec, { argv: ["build", "src"] })`. It returns a promise of the exit code and never calls `process.exit`. With `setExitCode: false`, it leaves `process.exitCode` alone.
 
 <hr>
 </details>
 
-### Typed actions
+### Types in actions
 
-`CLI.spec` takes the same object as `CLI.Spec` and returns it. Each action in it then receives `args` and `options` typed from its own command:
+Each action is typed from its own command, at any depth. Its `options` also accepts the persistent options of the commands above it:
 
 ```ts
 const spec = CLI.spec({
   name: "demo",
-  options: [CLI.help, { name: ["-v", "--verbose"], isPersistent: true }],
+  options: [{ name: "--verbose", isPersistent: true }],
   subcommands: [
     {
       name: "build",
       args: [{ name: "source" }, { name: "destination", isOptional: true }],
-      options: [{ name: ["-o", "--output"], args: { name: "dir", default: "dist" } }],
+      options: [{ name: "--output", args: { name: "dir", default: "dist" } }],
       action({ args: [source, destination], options }) {
         source; // string
         destination; // string | undefined
-        options.get("--output"); // string, because the argument has a default
-        options.has("--verbose"); // a persistent option of the root
+        options.get("--output"); // string
+        options.has("--verbose"); // inherited from demo
         options.has("--outptu"); // compile error
       },
     },
@@ -666,26 +670,9 @@ const spec = CLI.spec({
 });
 ```
 
-- `args` is a tuple with one entry for each positional argument. An optional argument without a default can be `undefined`.
-- `options` accepts the names of the command's own options and of the persistent options above it, and your editor suggests them.
-- `options.get()` returns `string` for an option whose argument has a default, or that is required. It returns `string | undefined` for any other option with an argument.
-- This works for a command at any depth.
+An action in a command made with `CLI.command` knows that command's options only, since the commands above it aren't in the call.
 
-`CLI.command` does the same for a command defined outside the spec, and for the body a `loadSpec` returns:
-
-```ts
-// remote.ts
-export default CLI.command({
-  requiresSubcommand: true,
-  subcommands: [{ name: "add", args: { name: "url" }, action: ({ args: [url] }) => addRemote(url) }],
-});
-```
-
-Its actions can't read the persistent options of the commands it's placed under, because those aren't in the call.
-
-An action written as a separate function takes `CLI.ActionInit`, where `args` is `string[]` and `options` accepts any name. An option built by a function that returns `CLI.Option` has names the compiler can't see, so a command that uses one accepts any option name.
-
-Typed actions need TypeScript 6.0 or later. A spec annotated `CLI.Spec` works as before.
+These types need TypeScript 6.0 or later.
 
 [← Example](#example) · [↑ Contents](#contents) · [Help and completion →](#help-and-completion)
 
@@ -857,7 +844,7 @@ A command's `parserDirectives` field controls how the parser reads its command l
 
 A setting applies to the command that defines it and is inherited by its descendants. A subcommand can override a boolean setting with `false`, or provide its own `optionArgSeparators`.
 
-Each example below defines a separate root `spec`. Keep the `import * as CLI from "@clo4/cli"` and `process.exitCode = await CLI.run(spec)` from the opening example.
+Each example below defines a separate root `spec`. Keep the `import * as CLI from "@clo4/cli"` and `CLI.run(spec)` from the opening example.
 
 ### Options before arguments
 
@@ -866,7 +853,7 @@ Normally, `demo node --verbose` reads `--verbose` as an option and `node` as a p
 With `optionsMustPrecedeArguments: true`, the first positional argument ends option parsing:
 
 ```ts
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   parserDirectives: {
     optionsMustPrecedeArguments: true,
@@ -884,7 +871,7 @@ const spec: CLI.Spec = {
     console.log(`verbose: ${options.has("--verbose")}`);
     console.log(JSON.stringify(args));
   },
-};
+});
 ```
 
 ```console
@@ -905,7 +892,7 @@ With the directive, `demo node --verbose` treats `--verbose` as a positional val
 Subcommands normally require an exact name or alias. `subcommandsMatchUniquePrefix: true` also accepts a prefix when it identifies just one subcommand:
 
 ```ts
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   parserDirectives: {
     subcommandsMatchUniquePrefix: true,
@@ -920,7 +907,7 @@ const spec: CLI.Spec = {
       action: () => console.log("Project information."),
     },
   ],
-};
+});
 ```
 
 ```console
@@ -945,7 +932,7 @@ By default, `--port=3000` attaches a value with `=`, and `--port 3000` supplies 
 This spec adds `:` while keeping `=`:
 
 ```ts
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   parserDirectives: {
     optionArgSeparators: [":", "="],
@@ -961,7 +948,7 @@ const spec: CLI.Spec = {
   action({ options }) {
     console.log(options.get("--port"));
   },
-};
+});
 ```
 
 ```console
@@ -982,7 +969,7 @@ Without the directive, `--port:3000` is an unknown option. `optionArgSeparators:
 Setting `requiresSeparator: true` on an option requires its value to be attached using an enabled separator. This spec uses the default separator, `=`. It accepts `--port=3000` and rejects `--port 3000`:
 
 ```ts
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   options: [
     {
@@ -996,7 +983,7 @@ const spec: CLI.Spec = {
   action({ options }) {
     console.log(options.get("--port"));
   },
-};
+});
 ```
 
 A string requires that particular separator: `requiresSeparator: ":"` accepts `--port:3000` and rejects `--port=3000`. The separator must also be enabled in `parserDirectives.optionArgSeparators`.
@@ -1011,7 +998,7 @@ A string requires that particular separator: `requiresSeparator: ":"` accepts `-
 Normally, `-abc` is read as chained short options: `-a -b -c`. With `flagsArePosixNoncompliant: true`, names are read literally, so you can define an option such as `-name`:
 
 ```ts
-const spec: CLI.Spec = {
+const spec = CLI.spec({
   name: "demo",
   parserDirectives: {
     flagsArePosixNoncompliant: true,
@@ -1033,7 +1020,7 @@ const spec: CLI.Spec = {
     console.log(`pattern: ${options.get("-name")}`);
     console.log(JSON.stringify(args));
   },
-};
+});
 ```
 
 ```console
@@ -1106,15 +1093,15 @@ subcommands: [
 
 ```ts
 // remote.ts
-import type { CommandBody } from "@clo4/cli";
+import * as CLI from "@clo4/cli";
 
-export default {
+export default CLI.command({
   requiresSubcommand: true,
   subcommands: [
     { name: "add", description: "Add a remote.", args: { name: "url" }, action: addRemote },
     { name: "list", description: "List remotes.", action: listRemotes },
   ],
-} satisfies CommandBody;
+});
 ```
 
 The command keeps its `name`, `description`, `hidden` and `isPersistent`, because its parent's help and completion show it before it loads. Everything else goes in the body: `args`, `options`, `subcommands`, `action`, `requiresSubcommand` and `parserDirectives`. A subcommand in a body can have a `loadSpec` of its own.
@@ -1124,10 +1111,12 @@ The command keeps its `name`, `description`, `hidden` and `isPersistent`, becaus
 `loadSpec` can also return the body directly, which keeps the command in the same file and the parser synchronous:
 
 ```ts
-loadSpec: () => ({ requiresSubcommand: true, subcommands: [/* ... */] }),
+loadSpec: () => CLI.command({ requiresSubcommand: true, subcommands: [/* ... */] }),
 ```
 
 Write the `import()` in your own file with a literal path, as above, so a bundler can find the file and emit it as a separate chunk.
+
+Call `CLI.run` without `await`, as every example here does. A command's file can't import the library from an entry that is waiting on a top-level `await`, so a bundler moves the library into a file of its own, and every run loads one more file.
 
 `testSpec` loads every command before it checks the spec.
 
