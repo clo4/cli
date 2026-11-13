@@ -7,31 +7,62 @@ import type { ParseResult } from "./parse.js";
 
 export { printError };
 
+/** How {@link run} reads the command line and reports the exit code. */
+export interface RunOptions {
+  /** The command line to parse. Default: `process.argv.slice(2)`. */
+  argv?: readonly string[];
+
+  /**
+   * Set `process.exitCode` to the exit code once the action has finished.
+   * Default: true. With false, the code is only the value `run` resolves to.
+   */
+  setExitCode?: boolean;
+}
+
 /**
- * Parse argv and execute the selected action.
+ * Parse argv, execute the selected action, and set `process.exitCode` to the
+ * exit code. Resolves to that code.
  *
  * The selected command's action runs unless a parsed option has an action.
  * Option actions take precedence so helpers like `--help` can run without
  * satisfying the selected command's required arguments. A command without an
  * action prints its help.
+ *
+ * An entry file calls `run` without `await`. While a module waits on a
+ * top-level `await`, nothing it loads can import from it, so a bundler has to
+ * move this library out of the entry into a file of its own, which every run
+ * then loads.
  */
-export function run(spec: Spec, args?: readonly string[]): Promise<number> {
+export function run(spec: Spec, options?: RunOptions): Promise<number> {
   // This isn't an async function, because one costs more to compile on a
   // cold start. Anything thrown here still becomes a rejected promise, as it
   // would in an async function.
   try {
-    const input = args === undefined ? defaultArgs() : args;
-    let result: ParseResult | Promise<ParseResult>;
-    try {
-      result = parseOrWait(input, spec);
-    } catch (error: unknown) {
-      return Promise.resolve(reportParseError(error));
-    }
-    // Only a `loadSpec` that returned a promise makes the parse wait.
-    return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
+    const code = exitCodeOf(spec, options?.argv ?? defaultArgs());
+    return options?.setExitCode === false ? code : code.then(setExitCode);
   } catch (error) {
     return Promise.reject(error);
   }
+}
+
+/** The exit code of running `input` against `spec`. */
+function exitCodeOf(spec: Spec, input: readonly string[]): Promise<number> {
+  let result: ParseResult | Promise<ParseResult>;
+  try {
+    result = parseOrWait(input, spec);
+  } catch (error: unknown) {
+    return Promise.resolve(reportParseError(error));
+  }
+  // Only a `loadSpec` that returned a promise makes the parse wait.
+  return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
+}
+
+function setExitCode(code: number): number {
+  const maybeProcess = globalThis as typeof globalThis & { process?: { exitCode?: number } };
+  if (maybeProcess.process) {
+    maybeProcess.process.exitCode = code;
+  }
+  return code;
 }
 
 /**

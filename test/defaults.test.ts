@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 
 import { getHelp } from "../src/help.js";
-import { run } from "../src/index.js";
+
 import { parse } from "../src/parse.js";
 import type { Spec } from "../src/types.js";
-import { captureConsole, expectIncludes, map, runSpecCheck } from "./helpers.js";
+import { captureConsole, expectIncludes, map, run, runSpecCheck } from "./helpers.js";
 
 test("defaults: a missing positional argument gets its default", () => {
   const spec: Spec = {

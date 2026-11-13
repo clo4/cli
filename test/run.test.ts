@@ -1,9 +1,10 @@
 import { expect, test } from "vitest";
 
-import { help, helpCommand, printError, run } from "../src/index.js";
+import * as CLI from "../src/index.js";
+import { help, helpCommand, printError } from "../src/index.js";
 import { parse } from "../src/parse.js";
 import type { ActionInit, Spec, Subcommand } from "../src/types.js";
-import { captureConsole } from "./helpers.js";
+import { captureConsole, run } from "./helpers.js";
 
 test("run: a spec without an action prints its help", async () => {
   const result = await captureConsole(() => run({ name: "test", description: "DESCRIPTION" }, []));
@@ -465,5 +466,46 @@ test("run: a command's name after '--' is an argument, so it isn't ambiguous", a
     const result = await captureConsole(() => run(spec, ["--", command]));
     expect(result.code).toBe(1);
     expect(result.stderr).toMatch(new RegExp(`^Error: Too many arguments, "${command}" was unexpected`));
+  }
+});
+
+test("run: sets process.exitCode to the exit code unless setExitCode is false", async () => {
+  const before = process.exitCode;
+  try {
+    process.exitCode = undefined;
+    const spec: Spec = { name: "demo", action: ({ args }) => Number(args[0]), args: { name: "code" } };
+
+    await expect(CLI.run(spec, { argv: ["7"], setExitCode: false })).resolves.toBe(7);
+    expect(process.exitCode).toBeUndefined();
+
+    await expect(CLI.run(spec, { argv: ["7"] })).resolves.toBe(7);
+    expect(process.exitCode).toBe(7);
+
+    // A usage error is an exit code like any other.
+    const result = await captureConsole(() => CLI.run(spec, { argv: [] }));
+    expect(result.code).toBe(1);
+    expect(process.exitCode).toBe(1);
+
+    await CLI.run(spec, { argv: ["0"] });
+    expect(process.exitCode).toBe(0);
+  } finally {
+    process.exitCode = before;
+  }
+});
+
+test("run: reads process.argv when it's given no argv", async () => {
+  const argv = process.argv;
+  try {
+    process.argv = ["node", "demo", "one", "two"];
+    let received: string[] = [];
+    const spec: Spec = {
+      name: "demo",
+      args: { name: "words", isVariadic: true },
+      action: ({ args }) => void (received = args),
+    };
+    await CLI.run(spec, { setExitCode: false });
+    expect(received).toEqual(["one", "two"]);
+  } finally {
+    process.argv = argv;
   }
 });

@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
-import { help, run } from "../src/index.js";
+import { help } from "../src/index.js";
 import type { Spec } from "../src/types.js";
-import { captureConsole } from "./helpers.js";
+import { captureConsole, run } from "./helpers.js";
 
 /**
  * A realistic, deeply nested CLI exercised by the end-to-end tests below: a fake

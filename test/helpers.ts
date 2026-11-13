@@ -1,7 +1,8 @@
 import { expect } from "vitest";
 
+import { run as runAndSetExitCode } from "../src/run.js";
 import { testSpec } from "../src/testing.js";
-import type { Subcommand } from "../src/types.js";
+import type { Spec, Subcommand } from "../src/types.js";
 import { output } from "../src/util.js";
 
 /**
@@ -86,4 +87,12 @@ export function expectIncludes(value: string, included: string): void {
 
 export function expectNotIncludes(value: string, notIncluded: string): void {
   expect(value, `Expected not to find ${JSON.stringify(notIncluded)}`).not.toContain(notIncluded);
+}
+
+/**
+ * `run` on `argv`, without setting the exit code of the process the tests
+ * run in.
+ */
+export function run(spec: Spec, argv: readonly string[]): Promise<number> {
+  return runAndSetExitCode(spec, { argv, setExitCode: false });
 }

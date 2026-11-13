@@ -16,10 +16,10 @@ import { expect, test } from "vitest";
 import { completeRuntime, completion, formatCandidates, getCompletion } from "../src/completion.js";
 import type { Shell } from "../src/completion.js";
 import { helpCommand } from "../src/help.js";
-import { run } from "../src/index.js";
+
 import { parse } from "../src/parse.js";
 import type { Spec, Subcommand } from "../src/types.js";
-import { captureConsole, expectIncludes, expectNotIncludes } from "./helpers.js";
+import { captureConsole, expectIncludes, expectNotIncludes, run } from "./helpers.js";
 
 const fixture: Spec = {
   name: "forge",

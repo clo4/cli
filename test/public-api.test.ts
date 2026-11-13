@@ -58,6 +58,7 @@ test("the entrypoints export these types", async () => {
     "NonEmptyArray",
     "Option",
     "OptionArgs",
+    "RunOptions",
     "Shell",
     "SingleOrArray",
     "SingleOrArrayOrEmpty",

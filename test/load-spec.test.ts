@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { completeRuntime } from "../src/completion.js";
 import { getHelp } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
-import { help, helpCommand, run } from "../src/index.js";
+import { help, helpCommand } from "../src/index.js";
 import { parse, parseOrWait, readNext, readNextOrWait } from "../src/parse.js";
 import type { ParseResult } from "../src/parse.js";
 import { loadAll } from "../src/scope.js";
@@ -13,7 +13,7 @@ import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator } from "./fuzz/generate.js";
 import { difference, nextDifference } from "./fuzz/snapshot.js";
 import type { Outcome } from "./fuzz/snapshot.js";
-import { captureConsole } from "./helpers.js";
+import { captureConsole, run } from "./helpers.js";
 
 /** A CLI with two groups whose bodies load, and a count of the loads of each. */
 function lazyCli(wrap: (body: CommandBody) => CommandBody | Promise<CommandBody>) {

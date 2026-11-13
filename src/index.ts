@@ -20,6 +20,7 @@ export { completion } from "./completion.js";
 export type { Shell } from "./completion.js";
 export { help, helpCommand } from "./help.js";
 export { printError, run } from "./run.js";
+export type { RunOptions } from "./run.js";
 export { command, spec } from "./spec.js";
 
 import { completion } from "./completion.js";
