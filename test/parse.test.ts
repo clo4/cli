@@ -1864,3 +1864,18 @@ test("options: an option with a ref is read by it, whichever option used a share
   expect(answers(neither, "verbose")).toEqual([false, undefined, [], 0]);
   expect(answers(neither, "version")).toEqual([false, "1", ["1"], 0]);
 });
+
+test("options: options on sibling commands with the same ref are each read by it", () => {
+  const spec: Spec = {
+    name: "git",
+    options: [{ name: "-C", args: { name: "path" }, ref: "directory" }],
+    subcommands: [
+      { name: "switch", args: { name: "branch" }, options: [{ name: "-C", ref: "create" }] },
+      { name: "branch", args: { name: "names", isVariadic: true }, options: [{ name: "-C", ref: "create" }] },
+    ],
+  };
+  const options = parse(["-C", "dir", "switch", "-C", "topic"], spec).options;
+  expect(answers(options, "directory")).toEqual([true, "dir", ["dir"], 1]);
+  expect(answers(options, "create")).toEqual([true, undefined, [], 0]);
+  expect(parse(["-C", "dir", "branch", "old", "new"], spec).options.has("create")).toBe(false);
+});

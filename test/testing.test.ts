@@ -197,16 +197,50 @@ test("testing: assertRefsAreUnique", async () => {
   // The same option object in two places is one option.
   const shared = { name: "-v", ref: "verbose" } as const;
   await check({ name: "test", options: [shared], subcommands: [{ name: "sub", options: [shared] }] });
+  // Sibling commands are never on one command line, so their options can have the same ref:
+  // `git -C dir switch -C branch` and `git -C dir branch -C old new`.
+  await check({
+    name: "git",
+    options: [{ name: "-C", args: { name: "path" }, ref: "directory" }],
+    subcommands: [
+      { name: "switch", options: [{ name: "-C", args: { name: "branch" }, ref: "create" }] },
+      { name: "branch", options: [{ name: "-C", ref: "create" }] },
+    ],
+  });
+
   await expect(
     check({
       name: "test",
       options: [{ name: "-v", isPersistent: true, ref: "v" }],
       subcommands: [{ name: "sub", options: [{ name: "-v", ref: "v" }] }],
     }),
-  ).rejects.toThrow(/^Option `test sub -v` \(index 0\) has the ref "v", which another option has too/);
+  ).rejects.toThrow(
+    /^Option `test sub -v` \(index 0\) has the ref "v", which Option `test -v` \(index 0\) has too/,
+  );
+  // Two levels apart is still one command line.
+  await expect(
+    check({
+      name: "test",
+      options: [{ name: "-C", ref: "c" }],
+      subcommands: [{ name: "a", subcommands: [{ name: "b", options: [{ name: "-C", ref: "c" }] }] }],
+    }),
+  ).rejects.toThrow(/has the ref "c", which Option `test -C` \(index 0\) has too/);
   await expect(
     check({ name: "test", options: [{ name: "-v", ref: "--quiet" }, { name: "--quiet" }] }),
-  ).rejects.toThrow(/has the ref "--quiet", which is also an option's name/);
+  ).rejects.toThrow(/has the ref "--quiet", which is a name of Option `test --quiet` \(index 1\)/);
+  // A name below that is a ref above.
+  await expect(
+    check({
+      name: "test",
+      options: [{ name: "-v", ref: "quiet" }],
+      subcommands: [{ name: "sub", options: [{ name: "quiet" }] }],
+    }),
+  ).rejects.toThrow(
+    /^Option `test sub quiet` \(index 0\) has the name "quiet", which is the ref of Option `test -v`/,
+  );
+  await expect(check({ name: "test", options: [{ name: "-v", ref: "-v" }] })).rejects.toThrow(
+    /has the ref "-v", which is one of its own names/,
+  );
   await expect(check({ name: "test", options: [{ name: "-v", ref: "" }] })).rejects.toThrow(
     /has an empty `ref`/,
   );
@@ -767,7 +801,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Options have locally unique names",
     "An option that shadows a persistent option has a ref, and so does the option it shadows",
     "Different options on a subcommand and its parents have different names",
-    "Each ref belongs to one option and isn't an option's name",
+    "No option a ref can meet on a command line has the same ref, or has it as a name",
     "Only an option that shares a name with an option above or below it has a ref",
     "Subcommands have locally unique names",
     "The parser reads every option and subcommand the way it's written",
@@ -1101,4 +1135,26 @@ test("testing: assertNamesReadBack rejects names the parser reads as something e
   for (const [spec, message] of fails) {
     await expect(check(spec)).rejects.toThrow(message);
   }
+});
+
+test("testing: an option with a ref isn't a common option its subcommands copied", async () => {
+  // Every subcommand has a -C, and each is a different option from the root's.
+  await runSpecCheck("assertCommonOptionsArePersistent", {
+    name: "git",
+    options: [{ name: "-C", args: { name: "path" }, ref: "directory" }],
+    subcommands: [
+      { name: "switch", options: [{ name: "-C", ref: "create" }] },
+      { name: "branch", options: [{ name: "-C", ref: "create" }] },
+    ],
+  });
+  await expect(
+    runSpecCheck("assertCommonOptionsArePersistent", {
+      name: "git",
+      options: [{ name: "-C" }],
+      subcommands: [
+        { name: "switch", options: [{ name: "-C" }] },
+        { name: "branch", options: [{ name: "-C" }] },
+      ],
+    }),
+  ).rejects.toThrow(/define the option once/);
 });

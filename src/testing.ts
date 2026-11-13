@@ -540,36 +540,55 @@ const specChecks: readonly SpecCheck[] = [
   {
     /*
      * Values are stored under an option's names and under its ref, so a ref
-     * that another option uses, as a ref or as a name, would hold that
-     * option's values too.
+     * that another option on the same command line uses, as a ref or as a
+     * name, would hold that option's values too. Only a command and the
+     * commands above it are on one command line, so options on sibling
+     * commands can have the same ref, as `git -C dir switch -C branch` and
+     * `git -C dir branch -C old new` would.
      */
-    sentence: "Each ref belongs to one option and isn't an option's name",
+    sentence: "No option a ref can meet on a command line has the same ref, or has it as a name",
     name: "assertRefsAreUnique",
     check(spec) {
-      const names = new Set<string>();
-      forEachCommand(spec, ({ own }) => {
-        for (const { option } of own) {
-          for (const name of makeArray(option.name)) {
-            names.add(name);
+      forEachCommand(spec, ({ path, own }) => {
+        // Every option that can be on a command line with this command's: its own, and the ones above it.
+        const met: { option: Option; where: string }[] = [];
+        for (let depth = 1; depth <= path.length; depth++) {
+          const definedIn = path.slice(0, depth);
+          for (const [index, option] of makeArray(definedIn[depth - 1].options).entries()) {
+            met.push({ option, where: describeOption(definedIn, index) });
           }
         }
-      });
-      const owners = new Map<string, Option>();
-      forEachCommand(spec, ({ path, own }) => {
         for (const { option, index } of own) {
-          const ref = option.ref;
-          if (ref === undefined) {
-            continue;
-          }
           const where = describeOption(path, index);
+          const ref = option.ref;
           assert(ref !== "", `${where} has an empty \`ref\`.`);
-          assert(!names.has(ref), `${where} has the ref ${repr(ref)}, which is also an option's name.`);
-          const owner = owners.get(ref);
-          assert(
-            owner === undefined || owner === option,
-            `${where} has the ref ${repr(ref)}, which another option has too. Each ref belongs to one option.`,
-          );
-          owners.set(ref, option);
+          for (const other of met) {
+            if (other.option === option) {
+              continue;
+            }
+            const names = makeArray(other.option.name);
+            if (ref !== undefined) {
+              assert(
+                !names.includes(ref),
+                `${where} has the ref ${repr(ref)}, which is a name of ${other.where}.`,
+              );
+              assert(
+                other.option.ref !== ref,
+                `${where} has the ref ${repr(ref)}, which ${other.where} has too. Options that can be on one command line need different refs.`,
+              );
+            }
+            const otherRef = other.option.ref;
+            assert(
+              otherRef === undefined || !makeArray(option.name).includes(otherRef),
+              `${where} has the name ${repr(otherRef)}, which is the ref of ${other.where}.`,
+            );
+          }
+          if (ref !== undefined) {
+            assert(
+              !makeArray(option.name).includes(ref),
+              `${where} has the ref ${repr(ref)}, which is one of its own names.`,
+            );
+          }
         }
       });
     },
@@ -761,8 +780,10 @@ const specChecks: readonly SpecCheck[] = [
         if (!command.subcommands) {
           return;
         }
-        // This command's options that every command below it defines too.
-        let common = makeArray(command.options);
+        // This command's options that every command below it defines too. An
+        // option with a ref is a different option from the ones that share its
+        // names, so it isn't one a subcommand copied.
+        let common = makeArray(command.options).filter((option) => option.ref === undefined);
         forEachCommand(command, ({ command: below }) => {
           const keys = makeArray(below.options).map(optionKey);
           common = common.filter((option) => keys.includes(optionKey(option)));
