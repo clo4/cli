@@ -12,6 +12,7 @@ import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
 import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
+import { formStart } from "../src/scope.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import { asArray, getMinArgs } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
@@ -396,8 +397,8 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
     }
   }
   for (const { option, forms } of next.options) {
-    for (const { name, join } of forms) {
-      const token = name + (join ?? "");
+    for (const form of forms) {
+      const token = formStart(form);
       if (!offered.has(token)) {
         continue;
       }

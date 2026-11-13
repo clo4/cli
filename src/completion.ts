@@ -16,6 +16,7 @@ import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { makeArray, output, print } from "./util.js";
 import { helpCommand, printUsageError } from "./help.js";
 import { readHelpNamesOrWait, readNextOrWait } from "./parse.js";
+import { formStart } from "./scope.js";
 import type { NextToken } from "./parse.js";
 
 /** Shells that {@link getCompletion} can generate scripts for. */
@@ -278,11 +279,10 @@ function optionCandidates(next: NextToken): Candidate[] {
     // like `-` in `-5`, is only the option once the value is typed, so it isn't
     // offered.
     const bucket = option.isRequired ? required : optional;
-    for (const { name, join } of forms) {
-      if (join === "") {
-        continue;
+    for (const form of forms) {
+      if (form.join !== "") {
+        bucket.push({ value: formStart(form), description });
       }
-      bucket.push({ value: name + (join ?? ""), description });
     }
   }
 

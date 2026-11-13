@@ -496,7 +496,8 @@ export class CommandScope {
   /**
    * How each of `names` is written with `option`'s value here. Help shows
    * these, completion offers them, and the spec checker reads each one back
-   * through the parser.
+   * through the parser. {@link formStart} and {@link writeForm} turn a form
+   * into tokens.
    */
   forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
     const takesArgs = getMaxArgs(option.args) !== 0;
@@ -580,6 +581,25 @@ export async function loadAll(command: Spec | Subcommand): Promise<void> {
 function mergeBody(command: Subcommand, body: CommandBody): void {
   command.loadSpec = undefined;
   Object.assign(command, body);
+}
+
+/**
+ * What a user types of `form` up to its first value: the name, and the join
+ * too if the value goes in the same token.
+ */
+export function formStart(form: OptionForm): string {
+  return form.join === null ? form.name : form.name + form.join;
+}
+
+/**
+ * The tokens that write `form` with `values`. The first value goes in the
+ * name's token if the form joins it, and the rest are tokens of their own.
+ */
+export function writeForm(form: OptionForm, values: readonly string[]): string[] {
+  if (form.join === null || values.length === 0) {
+    return [form.name, ...values];
+  }
+  return [formStart(form) + values[0], ...values.slice(1)];
 }
 
 const optionKeys = new WeakMap<Option, string>();

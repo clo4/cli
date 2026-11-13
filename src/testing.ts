@@ -6,8 +6,7 @@
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
-import { CommandScope, loadAll, optionKey } from "./scope.js";
-import type { OptionForm } from "./scope.js";
+import { CommandScope, loadAll, optionKey, writeForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
@@ -307,18 +306,13 @@ function placeholderValue(scope: CommandScope): string {
 }
 
 /**
- * The tokens that write `form` with every value `option` takes, or one more
- * than its minimum if it takes any number. The first value is joined to the
- * name if the form says so, and the rest are separate tokens.
+ * `value` once for every value `option` takes, or for one more than its
+ * minimum if it takes any number.
  */
-function writeForm(option: Option, form: OptionForm, value: string): string[] {
+function everyValue(option: Option, value: string): string[] {
   const max = getMaxArgs(option.args);
   const count = Number.isFinite(max) ? max : getMinArgs(option.args) + 1;
-  const values: string[] = Array.from({ length: count }, () => value);
-  if (form.join === null) {
-    return [form.name, ...values];
-  }
-  return [form.name + form.join + values[0], ...values.slice(1)];
+  return Array.from({ length: count }, () => value);
 }
 
 /**
@@ -329,11 +323,11 @@ function assertOptionFormsReadBack(spec: Subcommand) {
   const root = spec as Spec;
   forEachOption(spec, ({ option, where, scope, path, visit }) => {
     const before = visit.tokens;
-    const value = placeholderValue(scope);
+    const values = everyValue(option, placeholderValue(scope));
     // A name that another option shadows is that option's to check.
     const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
     for (const form of scope.forms(option, names)) {
-      const tokens = writeForm(option, form, value);
+      const tokens = writeForm(form, values);
       const reader = tokenReader(root);
       for (const token of before) {
         reader.read(token);
