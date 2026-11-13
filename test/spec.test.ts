@@ -344,6 +344,26 @@ CLI.spec({
   ],
 });
 
+// Lists of plain values written with a spread.
+const switches: ("east" | "west")[] = ["east", "west"];
+const extra = "all" as const;
+CLI.spec({
+  name: "spreads",
+  args: { name: "switch", isOptional: true, suggestions: [...switches, extra, "none"] },
+  subcommands: [
+    {
+      name: "a",
+      args: { name: "switch", suggestions: ["first", ...switches] },
+      options: [{ name: ["-x", "--extra"], args: { name: "v", suggestions: [...switches] } }],
+      action({ args, options }) {
+        is<[string]>()(args);
+        options.has("--extra");
+      },
+    },
+  ],
+  action: ({ args }) => is<[string?]>()(args),
+});
+
 // What the shape check rejects.
 // @ts-expect-error A field with the wrong type.
 CLI.spec({ name: "x", subcommands: [{ name: "a", args: { name: "f", isOptional: "yes" } }] });

@@ -262,19 +262,28 @@ type Action<Y, Inherited, S> =
       : unknown;
 
 /**
- * The fields of `S` that `Tree` doesn't read one by one, with their schema
- * types. A field it does read is left open, unless nothing of it could be
- * inferred. Then the schema type gives its callbacks their parameter types.
+ * What each field of `S` has to be. A field that `Tree` reads one by one is
+ * left open, unless nothing of it could be inferred. Then the schema type
+ * gives its callbacks their parameter types.
+ *
+ * Any other field has its schema type, but only where the value doesn't
+ * already fit it. Requiring the schema type of a value that fits would add
+ * nothing, and it stops TypeScript reading a list that starts with a spread,
+ * like `suggestions: [...names, "all"]`, as the tuple it inferred for it.
  */
 type Fields<Y, S> = {
   [K in keyof S]: K extends "action"
     ? unknown
-    : [Child<S, K>] extends [never]
-      ? S[K]
-      : K extends keyof Y
-        ? unknown extends Y[K]
+    : K extends keyof Y
+      ? [Child<S, K>] extends [never]
+        ? Y[K] extends S[K]
+          ? unknown
+          : S[K]
+        : unknown extends Y[K]
           ? S[K]
           : unknown
+      : [Child<S, K>] extends [never]
+        ? S[K]
         : unknown;
 };
 
