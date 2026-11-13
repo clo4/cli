@@ -310,6 +310,40 @@ CLI.spec({
   ],
 });
 
+// An option's action reads the options of its command by name, and gets a list of arguments.
+function loose({ options }: CLI.ActionInit): number {
+  return options.has("--anything") ? 0 : 1;
+}
+CLI.spec({
+  name: "option-actions",
+  options: [{ name: "--verbose", isPersistent: true }],
+  subcommands: [
+    {
+      name: "build",
+      args: [{ name: "source" }, { name: "destination" }],
+      options: [
+        { name: "--output", args: { name: "dir", default: "dist" }, isRequired: true },
+        {
+          name: "--version",
+          action({ args, options, help }) {
+            // The checks for argument counts and required options haven't run.
+            is<string[]>()(args);
+            is<string | undefined>()(options.get("--output"));
+            is<string[]>()(options.all("--output"));
+            is<boolean>()(options.has("--verbose"));
+            is<number>()(options.count("--version"));
+            is<string>()(help());
+            // @ts-expect-error A misspelled name.
+            options.has("--outptu");
+          },
+        },
+        // An action written against the loose type is still accepted.
+        { name: "--about", action: loose },
+      ],
+    },
+  ],
+});
+
 // What the shape check rejects.
 // @ts-expect-error A field with the wrong type.
 CLI.spec({ name: "x", subcommands: [{ name: "a", args: { name: "f", isOptional: "yes" } }] });

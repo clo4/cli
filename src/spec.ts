@@ -213,8 +213,40 @@ type Child<S, K> = K extends keyof S
 /** The typed action of command `Y`. */
 type Typed<Y, Inherited> = { action?: (init: InitFor<Y, Inherited>) => Result };
 
-/** The action of an option, or of a command whose action was written against `ActionInit`. */
+/** The action of a command whose action was written against `ActionInit`. */
 type Loose = { action?: (init: ActionInit) => Result };
+
+/**
+ * The options an option's action can read: the ones in `O`, by name. Each
+ * value is as loose as `OptionArgs` gives it, because an option's action
+ * runs without the checks for required options.
+ */
+interface OptionsIn<O> {
+  /** Escape hatch: the underlying map of option names to values. */
+  readonly options: Map<string, string[]>;
+
+  /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
+  all(name: Name<O>): string[];
+
+  /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
+  get(name: Name<O>): string | undefined;
+
+  /** Whether an option was supplied. Defaults don't count. */
+  has(name: Name<O>): boolean;
+
+  /** How many values an option has, or how many times a repeatable option without arguments was used. */
+  count(name: Name<O>): number;
+}
+
+/**
+ * The action of an option on a command that can read the options in `Scope`.
+ * `Tree` gives an option that scope as what it inherits. An option's action runs in place of the command's, without the
+ * checks for argument counts, so `args` is a list of any length. The option
+ * names are the same either way, so they're still checked.
+ */
+type OfOption<Scope> = {
+  action?: (init: Omit<ActionInit, "options"> & { options: OptionsIn<Scope> }) => Result;
+};
 
 type Action<Y, Inherited, S> =
   IsCommand<S> extends true
@@ -226,7 +258,7 @@ type Action<Y, Inherited, S> =
           : Typed<Y, Inherited>
       : Typed<Y, Inherited>
     : IsOption<S> extends true
-      ? Loose
+      ? OfOption<Inherited>
       : unknown;
 
 /**
@@ -283,10 +315,20 @@ type Whole<X, V, S> = V extends object
       : V
     : V;
 
+/**
+ * The options that the values under key `I` of `X` are given as inherited. A
+ * command's subcommands inherit its persistent options. Its own `options` are
+ * given every option the command can read, so that an option's action can
+ * read them by name.
+ */
+type Passed<X, I, Inherited> = I extends "options"
+  ? Inherited | OptionsOf<X>
+  : Inherited | Persistent<OptionsOf<X>>;
+
 /** `S` is the schema of `X`, or of the elements of `X` where it's a list. */
 type Tree<X, Inherited, S> = {
   [I in keyof X]: Whole<X, X[I], S> &
-    Tree<X[I], Inherited | Persistent<OptionsOf<X>>, X extends readonly unknown[] ? S : Child<S, I>>;
+    Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
 } & (X extends readonly unknown[] | Primitive ? unknown : Checked<X, Inherited, S>);
 
 // }}}

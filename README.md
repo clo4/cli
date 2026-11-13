@@ -626,7 +626,7 @@ options: [
 ],
 ```
 
-When several supplied options have actions, the last one is selected. It bypasses checks for positional argument counts, required options and option relationships. This allows `--help` to display usage without supplying required inputs. Unknown options and malformed option values still produce parsing errors.
+When several supplied options have actions, the last one is selected. It bypasses checks for positional argument counts, required options and option relationships. For that reason an option's action receives `args` as `string[]` and `options.get()` as `string | undefined`. Its option names are still checked, like a command's. This allows `--help` to display usage without supplying required inputs. Unknown options and malformed option values still produce parsing errors.
 
 Actions also receive:
 
