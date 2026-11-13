@@ -1,7 +1,7 @@
 {
   "name": "@clo4/cli",
   "version": "4.0.0",
-  "description": "clo4's CLI framework: fully declarative, fast",
+  "description": "clo4's CLI framework: fully declarative, typed from your spec, fast",
   "keywords": [
     "arg-parser",
     "args",
@@ -12,6 +12,7 @@
     "options",
     "shell-completion",
     "subcommands",
+    "type-safe",
     "typescript"
   ],
   "license": "MIT",
