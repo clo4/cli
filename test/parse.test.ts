@@ -1719,10 +1719,7 @@ test("parse: an attached value is the option's only value", () => {
 });
 
 /** What `has`, `get`, `all` and `count` say about `name`, in that order. */
-function answers(
-  options: OptionArgs,
-  name: string,
-): [boolean, string | undefined, string[] | undefined, number] {
+function answers(options: OptionArgs, name: string): [boolean, string | undefined, string[], number] {
   return [options.has(name), options.get(name), options.all(name), options.count(name)];
 }
 
@@ -1732,7 +1729,7 @@ test("options: a bare flag is there with no values", () => {
   // count counts values, and a flag that isn't repeatable stores none.
   expect(answers(options, "-f")).toEqual([true, undefined, [], 0]);
   expect(answers(options, "--force")).toEqual([true, undefined, [], 0]);
-  expect(answers(options, "--dry-run")).toEqual([false, undefined, undefined, 0]);
+  expect(answers(options, "--dry-run")).toEqual([false, undefined, [], 0]);
 });
 
 test("options: count gives the uses of a repeatable option without arguments", () => {
@@ -1740,7 +1737,7 @@ test("options: count gives the uses of a repeatable option without arguments", (
   const { options } = parse(["-vv", "--verbose"], spec);
   expect(answers(options, "-v")).toEqual([true, "", ["", "", ""], 3]);
   expect(answers(options, "--verbose")).toEqual([true, "", ["", "", ""], 3]);
-  expect(answers(parse([], spec).options, "-v")).toEqual([false, undefined, undefined, 0]);
+  expect(answers(parse([], spec).options, "-v")).toEqual([false, undefined, [], 0]);
 });
 
 test("options: a repeatable option with arguments gives the values of every use", () => {
@@ -1770,8 +1767,8 @@ test("options: get and all give the defaults of an unused option", () => {
   const { options } = parse([], spec);
   expect(answers(options, "--port")).toEqual([false, "8080", ["8080"], 0]);
   expect(answers(options, "--size")).toEqual([false, "80", ["80", "24"], 0]);
-  expect(answers(options, "--host")).toEqual([false, undefined, undefined, 0]);
-  expect(answers(options, "--nope")).toEqual([false, undefined, undefined, 0]);
+  expect(answers(options, "--host")).toEqual([false, undefined, [], 0]);
+  expect(answers(options, "--nope")).toEqual([false, undefined, [], 0]);
   expect(answers(parse(["--port", "1"], spec).options, "--port")).toEqual([true, "1", ["1"], 1]);
 });
 
@@ -1783,7 +1780,7 @@ test("options: an option whose first argument is optional only gets its default 
       { name: "--log", args: { isOptional: true } },
     ],
   };
-  expect(answers(parse([], spec).options, "--color")).toEqual([false, undefined, undefined, 0]);
+  expect(answers(parse([], spec).options, "--color")).toEqual([false, undefined, [], 0]);
   expect(answers(parse(["--color"], spec).options, "--color")).toEqual([true, "auto", ["auto"], 1]);
   expect(answers(parse(["--color", "never"], spec).options, "--color")).toEqual([
     true,

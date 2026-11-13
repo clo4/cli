@@ -45,9 +45,10 @@ export interface OptionArgs {
 
   /**
    * Get every argument supplied to a option, or the defaults of its arguments
-   * if it wasn't supplied.
+   * if it wasn't supplied. Empty for an option that wasn't supplied and has
+   * no defaults.
    */
-  all(name: string): string[] | undefined;
+  all(name: string): string[];
 
   /**
    * Get the first argument supplied to a option, or the default of its first

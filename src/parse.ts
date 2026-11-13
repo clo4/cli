@@ -226,7 +226,7 @@ function optionArgs(options: Map<string, string[]>, scope: CommandScope): Option
     options,
     has: (name) => options.has(name),
     get: (name) => (options.get(name) ?? unusedDefaults(scope, name))?.[0],
-    all: (name) => options.get(name) ?? unusedDefaults(scope, name),
+    all: (name) => options.get(name) ?? unusedDefaults(scope, name) ?? [],
     // A repeatable option without arguments stores an empty string for each
     // use, so its values count the uses.
     count: (name) => options.get(name)?.length ?? 0,

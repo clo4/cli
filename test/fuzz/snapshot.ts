@@ -98,10 +98,10 @@ export function difference(
   const [argsA, argsB] = [optionArgsOf(x), optionArgsOf(y)];
   for (const name of optionNames) {
     for (const question of ["has", "get", "all", "count"] as const) {
-      const [answerA, answerB] = [
-        JSON.stringify(argsA[question](name)),
-        JSON.stringify(argsB[question](name)),
-      ];
+      // Before `all` gave an empty list for an unused option without defaults, it gave undefined.
+      const answer = (args: OptionArgs): unknown =>
+        question === "all" ? ((args.all(name) as string[] | undefined) ?? []) : args[question](name);
+      const [answerA, answerB] = [JSON.stringify(answer(argsA)), JSON.stringify(answer(argsB))];
       if (answerA !== answerB) {
         return `${question}(${JSON.stringify(name)}) differs: ${answerA} vs ${answerB}`;
       }
@@ -131,7 +131,11 @@ function defaultsOf(result: AnyParseResult): ((name: string) => string[] | undef
   if (options instanceof Map) {
     return result.defaults;
   }
-  return (name) => (options.has(name) ? undefined : options.all(name));
+  // Before `all` gave an empty list for an option without defaults, it gave undefined.
+  return (name) => {
+    const all: string[] | undefined = options.has(name) ? undefined : options.all(name);
+    return all && all.length > 0 ? all : undefined;
+  };
 }
 
 /**
@@ -148,7 +152,7 @@ function optionArgsOf(result: AnyParseResult): OptionArgs {
     options,
     has: (name) => options.has(name),
     get: (name) => (options.get(name) ?? defaults(name))?.[0],
-    all: (name) => options.get(name) ?? defaults(name),
+    all: (name) => options.get(name) ?? defaults(name) ?? [],
     count: (name) => options.get(name)?.length ?? 0,
   };
 }

@@ -87,7 +87,7 @@ test("defaults: an option whose first argument is optional gets nothing when it'
   expect([absent.has("--inspect"), absent.get("--inspect"), absent.all("--inspect")]).toEqual([
     false,
     undefined,
-    undefined,
+    [],
   ]);
   const bare = parse(["--inspect"], spec).options;
   expect([bare.has("--inspect"), bare.get("--inspect"), bare.count("--inspect")]).toEqual([true, "9229", 1]);
@@ -129,8 +129,8 @@ test("defaults: an option that isn't used has its defaults looked up by name", (
   expect(options.options).toEqual(map({}));
   expect(options.all("-p")).toEqual(["8080"]);
   expect(options.all("--port")).toEqual(["8080"]);
-  expect(options.all("--host")).toBeUndefined();
-  expect(options.all("--nope")).toBeUndefined();
+  expect(options.all("--host")).toEqual([]);
+  expect(options.all("--nope")).toEqual([]);
   expect(parse(["--port", "1"], spec).options.all("-p")).toEqual(["1"]);
 });
 

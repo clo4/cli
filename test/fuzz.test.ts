@@ -291,8 +291,8 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
     const option = stored ? undefined : optionNamed(path, name);
     const first = asArray(option?.args)[0];
     const defaults = first && !first.isOptional ? leadingDefaults(option!.args, 0) : [];
-    const all = stored ?? (defaults.length > 0 ? defaults : undefined);
-    const want = JSON.stringify([stored !== undefined, all?.[0], all, stored?.length ?? 0]);
+    const all = stored ?? defaults;
+    const want = JSON.stringify([stored !== undefined, all[0], all, stored?.length ?? 0]);
     const got = JSON.stringify([
       options.has(name),
       options.get(name),
