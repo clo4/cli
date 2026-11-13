@@ -1,12 +1,12 @@
-import { help } from "../dist/index.js";
+import * as CLI from "../dist/index.js";
 
 // The CLI every adapter builds: nested commands, variadic arguments, an alias,
 // a repeatable option, a required option and two command groups. The
 // completion adapter adds completion to it.
-export const spec = {
+export const spec = CLI.spec({
   name: "forge",
   description: "Build orchestrator.",
-  options: [help],
+  options: [CLI.help],
   subcommands: [
     {
       name: ["build", "b"],
@@ -90,4 +90,4 @@ export const spec = {
       ],
     },
   ],
-};
+});

@@ -1,4 +1,4 @@
-import { run } from "../dist/index.js";
+import * as CLI from "../dist/index.js";
 import { spec } from "./clo4-spec.mjs";
 
-process.exitCode = await run(spec);
+CLI.run(spec);

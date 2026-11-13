@@ -288,7 +288,7 @@ const completionScenario: Scenario = {
   ],
 };
 
-process.exitCode = await CLI.run({
+void CLI.run({
   name: "clo4-cli-bench",
   description: "Benchmark @clo4/cli against other JavaScript CLI libraries.",
   options: [

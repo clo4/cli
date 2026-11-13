@@ -91,22 +91,22 @@ ${range(commands)
 
 /** The @clo4/cli CLI, with `group` writing each group after its name and description. */
 const clo4Cli = (shape: LargeShape, group: (g: number) => string, before = ""): string => `
-import { help, run } from "../dist/index.js";
-${before}process.exitCode = await run({
-  name: "forge", description: "Big CLI.", options: [help],
+import * as CLI from "../dist/index.js";
+${before}CLI.run(CLI.spec({
+  name: "forge", description: "Big CLI.", options: [CLI.help],
   subcommands: [
 ${range(shape.groups)
   .map((g) => `    { name: "g${g}", description: "Group ${g}.", ${group(g)} },`)
   .join("\n")}
   ],
-});
+}));
 `;
 
 export const clo4WholeSpec: Generate = oneFile((shape) => clo4Cli(shape, (g) => clo4GroupBody(g, shape)));
 
 /** README.md, "Loading commands on demand", returning the body from the same file. */
 const clo4: Generate = oneFile((shape) =>
-  clo4Cli(shape, (g) => `loadSpec: () => ({ ${clo4GroupBody(g, shape)} })`),
+  clo4Cli(shape, (g) => `loadSpec: () => CLI.command({ ${clo4GroupBody(g, shape)} })`),
 );
 
 /** README.md, "Loading commands on demand", with `loadSpec` importing the group's file. */
@@ -117,7 +117,8 @@ const clo4Split: Generate = filePerGroup(
       (g) => `loadSpec: () => import("${groupFile(g)}").then(body)`,
       "const body = (module) => module.default;\n",
     ),
-  (g, shape) => `export default { ${clo4GroupBody(g, shape)} };`,
+  (g, shape) =>
+    `import * as CLI from "../dist/index.js";\nexport default CLI.command({ ${clo4GroupBody(g, shape)} });`,
 );
 
 // sade
