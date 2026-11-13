@@ -118,7 +118,10 @@ const demo = CLI.spec({
         is<string>()(options.get("--out"));
         is<string | undefined>()(options.get("--target"));
         is<string | undefined>()(options.get("--inspect"));
-        is<undefined>()(options.get("--watch"));
+        // @ts-expect-error A flag has no value to get.
+        options.get("--watch");
+        // @ts-expect-error A flag has no values either.
+        options.all("--watch");
         is<string[]>()(options.all("--tag"));
         is<string[]>()(options.all("--size"));
         is<[string, string]>()(options.all("--fit"));
@@ -299,7 +302,8 @@ CLI.spec({
       options: [{ name: ["-v", "--version"], ref: "version", args: { name: "v", default: "1" } }],
       action({ options }) {
         is<string>()(options.get("version"));
-        is<undefined>()(options.get("verbose"));
+        // @ts-expect-error A flag has no value to get, by its ref either.
+        options.get("verbose");
         is<number>()(options.count("verbose"));
         // The shared name could be either option.
         is<string | undefined>()(options.get("-v"));
@@ -362,6 +366,37 @@ CLI.spec({
     },
   ],
   action: ({ args }) => is<[string?]>()(args),
+});
+
+// An option refers to other options by names the command can use.
+CLI.spec({
+  name: "relations",
+  options: [{ name: ["-q", "--quiet"], isPersistent: true }, { name: "--root-only" }],
+  subcommands: [
+    {
+      name: "build",
+      options: [
+        { name: "--json", exclusiveOn: ["--quiet", "--pretty"] },
+        { name: "--pretty", ref: "pretty" },
+        { name: "--sign", dependsOn: ["--output"] },
+        { name: "--output", args: { name: "file" } },
+        // @ts-expect-error A misspelled name.
+        { name: "--a", dependsOn: ["--outptu"] },
+        // @ts-expect-error An option of the root that isn't persistent.
+        { name: "--b", exclusiveOn: ["--root-only"] },
+        // @ts-expect-error A ref isn't a name.
+        { name: "--c", exclusiveOn: ["pretty"] },
+      ],
+    },
+  ],
+});
+
+// A command with only flags still passes its options to a helper that takes the loose ones.
+CLI.spec({
+  name: "flags",
+  options: [{ name: "--verbose" }],
+  action: ({ options }) => is<boolean>()(verbose(options)),
+  subcommands: [{ name: "bare", action: ({ options }) => is<boolean>()(verbose(options)) }],
 });
 
 // What the shape check rejects.

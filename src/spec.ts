@@ -80,23 +80,46 @@ type Persistent<O> = O extends { isPersistent: true }
         : never
     : never;
 
-/** What an option can be read by: its names, and its ref if it has one. */
-type NamesOf<O> = O extends { name: infer N }
-  ? (N extends readonly string[] ? N[number] : N) | (O extends { ref: infer R extends string } ? R : never)
-  : never;
-
-/** The names and refs of `O` that are written out in the spec. */
-type Known<O> = NamesOf<O> extends infer N ? (string extends N ? never : N) : never;
+/** The names of the options in `O`. */
+type NamesOf<O> = O extends { name: infer N } ? (N extends readonly string[] ? N[number] : N) : never;
 
 /**
- * A name to read an option by. Where every option in scope has its names
+ * What the options in `O` can be read by: their names, and the ref of each
+ * one that has one.
+ *
+ * This and the other types an editor shows are written as conditional types.
+ * TypeScript shows the result of a conditional type, and shows any other
+ * alias by its name and arguments, which here would be every option's
+ * definition.
+ */
+type KeysOf<O> = O extends unknown
+  ? NamesOf<O> | (O extends { ref: infer R extends string } ? R : never)
+  : never;
+
+/** `N` without `string`, which is the name of an option whose names aren't written out in the spec. */
+type Written<N> = N extends unknown ? (string extends N ? never : N) : never;
+
+/**
+ * `N`, as what a caller can pass. Where every option in scope has its names
  * written out, only those names. An option typed `Option` could have any name,
- * so with one in scope any string is accepted, and the known names are still
+ * so with one in scope any string is accepted, and the written names are still
  * suggested.
  */
-type Name<O> = string extends NamesOf<O> ? Known<O> | (string & {}) : Known<O>;
+type OneOf<N> = string extends N ? Written<N> | (string & {}) : N;
 
-type Named<O, K> = O extends unknown ? (K extends Known<O> ? O : never) : never;
+/** A name or ref to read an option in `O` by. */
+type Name<O> = OneOf<KeysOf<O>>;
+
+/** The options in `O` that take a value. An option typed `Option` might. */
+type Valued<O> = O extends { args: object } ? O : string extends NamesOf<O> ? O : never;
+
+/** A name or ref to read the value of an option in `O` by. A flag has no value to read. */
+type ValueName<O> = OneOf<KeysOf<Valued<O>>>;
+
+/** A name of an option in `O`, for another option to refer to it by. */
+type Referred<O> = OneOf<NamesOf<O>>;
+
+type Named<O, K> = O extends unknown ? (K extends Written<KeysOf<O>> ? O : never) : never;
 
 /** What `get` returns for option `O`. */
 type Get<O> = O extends { args: infer A }
@@ -144,32 +167,59 @@ type All<O> = O extends { isRepeatable: true | number }
       : string[]
     : string[];
 
-/** The options an action can read: its command's own, and the persistent ones above it. */
-interface OptionsFor<O> {
+/**
+ * The options an action can read. Its type arguments are worked out from the
+ * options before they get here, so that an editor shows the names and what
+ * each one gives, and not every option's definition.
+ *
+ * - `Name`: what any option can be read by.
+ * - `ValueName`: what an option with a value can be read by.
+ * - `Value`: what `get` returns, for each of those.
+ * - `Values`: what `all` returns, for each of those.
+ */
+interface OptionReader<Name, ValueName, Value, Values> {
   /** Escape hatch: the underlying map of option names to values. */
   readonly options: Map<string, string[]>;
 
   /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
-  all<K extends Name<O>>(name: K): [Named<O, K>] extends [never] ? string[] : All<Named<O, K>>;
+  all<K extends ValueName>(name: K): K extends keyof Values ? Values[K] : string[];
 
   /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
-  get<K extends Name<O>>(name: K): [Named<O, K>] extends [never] ? string | undefined : Get<Named<O, K>>;
+  get<K extends ValueName>(name: K): K extends keyof Value ? Value[K] : string | undefined;
 
   /** Whether an option was supplied. Defaults don't count. */
-  has(name: Name<O>): boolean;
+  has(name: Name): boolean;
 
   /** How many values an option has, or how many times a repeatable option without arguments was used. */
-  count(name: Name<O>): number;
+  count(name: Name): number;
+}
+
+/** The options a command's action can read: the command's own, and the persistent ones above it. */
+type OptionsFor<O> = [O] extends [never]
+  ? OptionReader<never, never, unknown, unknown>
+  : OptionReader<
+      Name<O>,
+      ValueName<O>,
+      { [K in Extract<Written<KeysOf<Valued<O>>>, string>]: Get<Named<O, K>> },
+      { [K in Extract<Written<KeysOf<Valued<O>>>, string>]: All<Named<O, K>> }
+    >;
+
+/**
+ * What an action receives: `ActionInit`, with the positional arguments as
+ * `Args` and the options as `Options`.
+ */
+interface Init<Args, Options> extends Omit<ActionInit, "args" | "options"> {
+  /** Positional arguments found for the selected command. */
+  args: Args;
+
+  /** Options found for this invocation. */
+  options: Options;
 }
 
 /** What the action of command `Y` receives, below ancestors whose persistent options are `Inherited`. */
-interface InitFor<Y, Inherited> extends Omit<ActionInit, "args" | "options"> {
-  /** Positional arguments found for the selected command. */
-  args: ArgsOf<Y>;
-
-  /** Options found for this invocation. */
-  options: OptionsFor<OptionsOf<Y> | Inherited>;
-}
+type InitFor<Y, Inherited> = Y extends unknown
+  ? Init<ArgsOf<Y>, OptionsFor<OptionsOf<Y> | Inherited>>
+  : never;
 
 // }}}
 
@@ -221,22 +271,9 @@ type Loose = { action?: (init: ActionInit) => Result };
  * value is as loose as `OptionArgs` gives it, because an option's action
  * runs without the checks for required options.
  */
-interface OptionsIn<O> {
-  /** Escape hatch: the underlying map of option names to values. */
-  readonly options: Map<string, string[]>;
-
-  /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
-  all(name: Name<O>): string[];
-
-  /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
-  get(name: Name<O>): string | undefined;
-
-  /** Whether an option was supplied. Defaults don't count. */
-  has(name: Name<O>): boolean;
-
-  /** How many values an option has, or how many times a repeatable option without arguments was used. */
-  count(name: Name<O>): number;
-}
+type OptionsIn<O> = [O] extends [never]
+  ? OptionReader<never, never, unknown, unknown>
+  : OptionReader<Name<O>, ValueName<O>, unknown, unknown>;
 
 /**
  * The action of an option on a command that can read the options in `Scope`.
@@ -244,9 +281,21 @@ interface OptionsIn<O> {
  * checks for argument counts, so `args` is a list of any length. The option
  * names are the same either way, so they're still checked.
  */
-type OfOption<Scope> = {
-  action?: (init: Omit<ActionInit, "options"> & { options: OptionsIn<Scope> }) => Result;
-};
+type OfOption<Y, Scope> = {
+  action?: (init: Init<string[], OptionsIn<Scope>>) => Result;
+} & Refers<Y, Scope, "dependsOn"> &
+  Refers<Y, Scope, "exclusiveOn">;
+
+/**
+ * Field `K` of option `Y`, which lists other options by name, as names of
+ * options the command can use. An option typed `Option` lists plain strings,
+ * and isn't checked.
+ */
+type Refers<Y, Scope, K extends "dependsOn" | "exclusiveOn"> = Y extends { [P in K]: readonly (infer N)[] }
+  ? string extends N
+    ? unknown
+    : { [P in K]?: readonly Referred<Scope>[] }
+  : unknown;
 
 type Action<Y, Inherited, S> =
   IsCommand<S> extends true
@@ -258,7 +307,7 @@ type Action<Y, Inherited, S> =
           : Typed<Y, Inherited>
       : Typed<Y, Inherited>
     : IsOption<S> extends true
-      ? OfOption<Inherited>
+      ? OfOption<Y, Inherited>
       : unknown;
 
 /**
@@ -278,7 +327,9 @@ type Fields<Y, S> = {
       ? [Child<S, K>] extends [never]
         ? Y[K] extends S[K]
           ? unknown
-          : S[K]
+          : Y[K] extends Primitive
+            ? Expected<S[K]>
+            : S[K]
         : unknown extends Y[K]
           ? S[K]
           : unknown
@@ -287,8 +338,33 @@ type Fields<Y, S> = {
         : unknown;
 };
 
+/**
+ * What a plain value of the wrong type has to be, so that TypeScript names
+ * the type it should have had. Requiring `T` itself of a value like `"yes"`
+ * leaves it nothing it could be, and TypeScript then reports every other
+ * field of the object too.
+ */
+interface Expected<T> {
+  readonly [problem]: T;
+}
+
+declare const problem: unique symbol;
+
+/**
+ * What a value with something wrong with it has to be, so that it never
+ * fits. TypeScript names this type in the error, and `Problem` is the
+ * message. It's an object type and not `never`, because a field that can
+ * only be `never` makes TypeScript report every other field of the object
+ * too.
+ */
+interface Invalid<Problem extends string> {
+  readonly [problem]: Problem;
+}
+
 /** A key the schema doesn't have. */
-type Unknown<Y, S> = { [K in Exclude<keyof Y, keyof S>]: never };
+type Unknown<Y, S> = {
+  [K in Exclude<keyof Y, keyof S>]: Invalid<`'${K & string}' isn't a field here. Check its spelling.`>;
+};
 
 /**
  * A list the schema says is too short: an empty one where it wants at least
@@ -302,11 +378,11 @@ type TooShort<Y, S> = {
     : Y[K] extends readonly []
       ? [] extends NonNullable<S[K]>
         ? unknown
-        : never
+        : Invalid<`'${K & string}' is empty. Leave it out instead.`>
       : Y[K] extends readonly [unknown]
         ? [Child<S, K>] extends NonNullable<S[K]>
           ? unknown
-          : never
+          : Invalid<`'${K & string}' is a list of one. Write the one value without the list.`>
         : unknown;
 };
 
