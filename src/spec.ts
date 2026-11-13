@@ -328,7 +328,7 @@ type Fields<Y, S> = {
         ? Y[K] extends S[K]
           ? unknown
           : Y[K] extends Primitive
-            ? Expected<S[K]>
+            ? Expected<NonNullable<S[K]>>
             : S[K]
         : unknown extends Y[K]
           ? S[K]
@@ -361,9 +361,31 @@ interface Invalid<Problem extends string> {
   readonly [problem]: Problem;
 }
 
-/** A key the schema doesn't have. */
+/** What schema `S` describes, for a message. */
+type Described<S> =
+  IsCommand<S> extends true
+    ? "a command"
+    : IsOption<S> extends true
+      ? "an option"
+      : "isVariadic" extends keyof S
+        ? "an argument"
+        : "custom" extends keyof S
+          ? "a generator"
+          : "optionArgSeparators" extends keyof S
+            ? "parserDirectives"
+            : "this object";
+
+/**
+ * A key the schema doesn't have. In the body a `loadSpec` returns, a key like
+ * `description` is a field of a command, but one its parent reads before the
+ * body loads.
+ */
 type Unknown<Y, S> = {
-  [K in Exclude<keyof Y, keyof S>]: Invalid<`'${K & string}' isn't a field here. Check its spelling.`>;
+  [K in Exclude<keyof Y, keyof S>]: IsCommand<S> extends true
+    ? K extends keyof Subcommand
+      ? Invalid<`'${K & string}' goes on the command that has the loadSpec, beside its name.`>
+      : Invalid<`'${K & string}' isn't a field of a command. Check its spelling.`>
+    : Invalid<`'${K & string}' isn't a field of ${Described<S>}. Check its spelling.`>;
 };
 
 /**
