@@ -16,3 +16,5 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
+      - run: pnpm --filter docs check
+      - run: pnpm --filter docs build
