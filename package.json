@@ -15,6 +15,7 @@
     "type-safe",
     "typescript"
   ],
+  "homepage": "https://clo4.github.io/cli/",
   "license": "MIT",
   "repository": {
     "type": "git",

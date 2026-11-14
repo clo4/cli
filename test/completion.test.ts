@@ -1424,7 +1424,7 @@ test.skipIf(!hasShell("zsh") || process.platform === "win32")(
   () => {
     const dir = trickyDir("zsh", ["", "a:", "ht", "my f", "back", "$("]);
     try {
-      // The script goes on fpath as _forge, the way the README installs it.
+      // The script goes on fpath as _forge, the way the docs install it.
       mkdirSync(join(dir, "fpath"));
       writeFileSync(join(dir, "fpath", "_forge"), getCompletion(fixture, "zsh"));
       writeFileSync(join(dir, "setup.zsh"), zshSetup);
