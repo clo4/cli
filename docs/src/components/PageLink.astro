@@ -1,0 +1,12 @@
+---
+import { base } from "@/lib/shared";
+
+const { href, ...rest } = Astro.props;
+const [version] = (Astro.params.slug ?? "").split("/");
+const match = typeof href === "string" ? href.match(/^\.\/([\w-]+)\.mdx(#.*)?$/) : null;
+const resolved = match
+  ? `${base}/${version}${match[1] === "index" ? "" : `/${match[1]}`}${match[2] ?? ""}`
+  : href;
+---
+
+<a href={resolved} {...rest}><slot /></a>

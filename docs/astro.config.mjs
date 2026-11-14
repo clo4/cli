@@ -6,6 +6,7 @@ export default defineConfig({
   site: "https://clo4.github.io",
   base: "/cli",
   prefetch: { prefetchAll: true },
+  redirects: { "/": "/cli/v6" },
   integrations: [
     fumadocs({
       components: "./src/components/mdx.tsx",

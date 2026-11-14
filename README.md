@@ -14,14 +14,14 @@ npm install @clo4/cli
 
 The full documentation is at [clo4.github.io/cli](https://clo4.github.io/cli/).
 
-- [Options](https://clo4.github.io/cli/options): flags, names, values, defaults, repeats and relationships
-- [Arguments](https://clo4.github.io/cli/arguments): positional and variadic arguments
-- [Subcommands](https://clo4.github.io/cli/subcommands): nested commands and global options
-- [Actions](https://clo4.github.io/cli/actions): errors, exit codes and types
-- [Help and completion](https://clo4.github.io/cli/help-and-completion): the built-in help and shell completion
-- [Testing](https://clo4.github.io/cli/testing): checks for mistakes that types can't express
-- [Parser settings](https://clo4.github.io/cli/parser-settings): changes to how a command line is read
-- [Performance](https://clo4.github.io/cli/performance): benchmarks and loading commands on demand
+- [Options](https://clo4.github.io/cli/v6/options): flags, names, values, defaults, repeats and relationships
+- [Arguments](https://clo4.github.io/cli/v6/arguments): positional and variadic arguments
+- [Subcommands](https://clo4.github.io/cli/v6/subcommands): nested commands and global options
+- [Actions](https://clo4.github.io/cli/v6/actions): errors, exit codes and types
+- [Help and completion](https://clo4.github.io/cli/v6/help-and-completion): the built-in help and shell completion
+- [Testing](https://clo4.github.io/cli/v6/testing): checks for mistakes that types can't express
+- [Parser settings](https://clo4.github.io/cli/v6/parser-settings): changes to how a command line is read
+- [Performance](https://clo4.github.io/cli/v6/performance): benchmarks and loading commands on demand
 
 ## Example
 
@@ -115,7 +115,7 @@ Running `demo` without a subcommand displays the CLI's help text, including the 
 
 ## Performance
 
-In the [benchmarks](https://clo4.github.io/cli/performance), Commander takes 3.4 to 4.4 times as long as `@clo4/cli` for the same work, and Yargs takes 18.0 to 20.7 times as long.
+In the [benchmarks](https://clo4.github.io/cli/v6/performance), Commander takes 3.4 to 4.4 times as long as `@clo4/cli` for the same work, and Yargs takes 18.0 to 20.7 times as long.
 
 ## License
 
