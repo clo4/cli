@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm reference && astro dev",
-    "build": "pnpm reference && astro build",
+    "build": "pnpm reference && astro build && cp _redirects dist/_redirects",
     "preview": "astro preview",
     "check": "pnpm reference && astro sync && tsc --noEmit",
     "reference": "node scripts/generate-reference.mjs",

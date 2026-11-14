@@ -8,7 +8,6 @@ export default defineConfig({
   outDir: "./dist/cli",
   build: { format: "file" },
   prefetch: { prefetchAll: true },
-  redirects: { "/": "/cli/v6" },
   integrations: [
     fumadocs({
       components: "./src/components/mdx.tsx",
