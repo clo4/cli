@@ -26,7 +26,7 @@ const pageTree = await source.serializePageTree(source.getPageTree());
   <Docs
     client:load
     transition:persist="docs"
-    pathname={Astro.url.pathname}
+    pathname={page.url}
     params={Astro.params}
     tree={pageTree}
     title={page.data.title}

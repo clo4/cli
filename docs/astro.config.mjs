@@ -3,8 +3,10 @@ import tailwindcss from "@tailwindcss/vite";
 import fumadocs from "@fumadocs/astro";
 
 export default defineConfig({
-  site: "https://clo4.github.io",
+  site: "https://clo4.net",
   base: "/cli",
+  outDir: "./dist/cli",
+  build: { format: "file" },
   prefetch: { prefetchAll: true },
   redirects: { "/": "/cli/v6" },
   integrations: [
