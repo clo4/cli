@@ -632,7 +632,7 @@ When several supplied options have actions, the last one is selected. It bypasse
 
 Actions also receive:
 
-- `path`: the command objects from the root spec to the selected command.
+- `path`: the commands from the root spec to the selected command, for an action that works from the command line it was run on, as help does. Read the names and fields of its entries. An entry can be a copy of the command in your spec, so comparing one with a command object by identity is unreliable.
 - `argSeparatorIndex`: the index in `args` where values after `--` begin, or `-1` if `--` was not supplied.
 - `help(config?)`: a function that returns help text for the selected command.
 
