@@ -5,7 +5,11 @@ description: What an action receives, how it reports errors, and how it's typed.
 
 These examples show fields inside the `build` command of the [complete flag example](./options.mdx#flags).
 
-Actions receive argument values as strings. Conversion and validation happen inside the action. If it throws an `Error`, `CLI.run` prints its message to stderr and sets the exit code to 1.
+The parser checks a command line against the command's rules: which arguments and options it accepts, which are required, and how they relate. The action receives the values that pass those checks. Argument values are strings, and TypeScript knows which ones can be absent.
+
+The action converts and validates those values. The parser can require a value for `--port`, and the action decides whether that value is a valid TCP port. Use plain TypeScript or the validation library your application already uses.
+
+If an action throws an `Error`, `CLI.run` prints its message to stderr and sets the exit code to 1:
 
 ```ts
 options: [

@@ -1,0 +1,55 @@
+---
+title: Choosing a CLI library
+description: How @clo4/cli compares with Commander, citty, Yargs and oclif, and when each one fits.
+---
+
+You can build Node.js CLIs in TypeScript with several libraries. They differ in which work they take on and which they leave to application code.
+
+`@clo4/cli` describes and parses command-line syntax, infers TypeScript types from it, and generates help and shell completion. Your code converts and validates values, and decides what runs before and after each command's action, the function that handles it.
+
+This page describes Commander 15.1, citty 0.2.2, Yargs 18.2 and `@oclif/core` 5.1, the versions in this repository's benchmarks.
+
+## Commander
+
+[Commander](https://github.com/tj/commander.js) defines commands, arguments and options by chaining method calls. It supports custom option processing, lifecycle hooks such as `preAction`, subcommands that run as separate executables, and detailed help configuration. [`@commander-js/extra-typings`](https://github.com/commander-js/extra-typings) adds TypeScript inference. Commander has no built-in shell completion.
+
+Choose Commander if you prefer its chained API or need one of those features.
+
+## citty
+
+[citty](https://github.com/unjs/citty) is a small declarative CLI library from UnJS. It supports nested commands, lazy command loading and TypeScript inference. It also runs `setup` and `cleanup` hooks around a command, supports plugins that add reusable hooks, and checks `enum` arguments against their allowed values. citty has no built-in shell completion.
+
+Choose citty if you want those hooks and plugins built in. Choose `@clo4/cli` if you need shell completion, or want setup, cleanup and value conversion written as ordinary code in your actions.
+
+## Yargs
+
+[Yargs](https://github.com/yargs/yargs) offers configurable parsing, command builders, value coercion, validation, and shell completion for Bash, Zsh and Fish. Its completion takes one custom function for the whole CLI, which receives the current word and the parsed arguments. `@clo4/cli` instead attaches completion generators, functions that return suggestions, to each argument, and works out which argument the user is completing.
+
+Choose Yargs if you need its coercion and validation, or prefer its command-builder API.
+
+## oclif
+
+[oclif](https://oclif.io/) is an application framework. Besides parsing, it provides plugins that users can install, hooks, a project generator, and tools for packaging and distribution. Shell completion comes from a separate plugin, `@oclif/plugin-autocomplete`.
+
+Choose oclif if you need those platform features in one framework. `@clo4/cli` has no plugin system.
+
+## When @clo4/cli fits
+
+Use `@clo4/cli` when you want:
+
+- Commands defined as plain objects, with action types inferred from them.
+- Completion generators written as ordinary sync or async functions.
+- Parsing, help and completion that follow the same rules.
+- Low startup overhead, no runtime dependencies, and commands loaded on demand.
+- A library that leaves your application's structure to you.
+
+## Limitations
+
+- **Modules and TypeScript.** The package is ESM-only. Its type inference needs TypeScript 6.0 or later.
+- **Values.** Argument values stay strings. Your code converts and validates them.
+- **Inference across modules.** A command made separately with `CLI.command` has types for its own options only. Its action's types don't include persistent options, which a parent command shares with its subcommands. Commands written inline in the root `CLI.spec` get those types.
+- **Application infrastructure.** The library has no plugin system, lifecycle hooks or project generator.
+
+## Performance
+
+The [performance page](./performance.mdx#performance-comparison) compares these libraries and others. In those benchmarks, citty takes 1.6 to 1.8 times as long as `@clo4/cli` for the same tasks, on CI and on an Apple M3 Pro, Commander 3.4 to 4.4 times, oclif 16.0 to 16.2 times and Yargs 18.0 to 20.7 times. Startup time matters most for commands that exit quickly and for shell completion, which starts the CLI on each request.

@@ -11,6 +11,8 @@
     "help-and-completion",
     "testing",
     "parser-settings",
-    "performance"
+    "performance",
+    "---",
+    "choosing-a-cli-library"
   ]
 }

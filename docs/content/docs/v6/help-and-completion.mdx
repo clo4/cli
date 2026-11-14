@@ -20,25 +20,11 @@ To pass an inherited command's name as the first positional argument, put `--` b
 
 ## Completion suggestions
 
-An argument's `suggestions` field supplies values offered by shell completion. It works on both positional and option arguments:
+Shell completion reads the same command definitions as the parser, and follows the parser's rules for option scope, conflicts and repeat limits. An argument's suggestions can come from a function you write, a fixed list, or the shell's file path completion. Each of these works on both positional and option arguments.
 
-```ts
-options: [
-  {
-    name: "--mode",
-    args: {
-      name: "mode",
-      suggestions: ["debug", "release"],
-    },
-  },
-],
-```
+### Dynamic suggestions
 
-Suggestions don't restrict accepted values. Validate allowed values in the action if the option must accept only a fixed set.
-
-On an argument, `template: "filepaths"` completes files and directories; `template: "folders"` completes directories only.
-
-Dynamic suggestions come from `generators.custom`. Here, `listTargets(tokens)` is an application function that returns the currently available targets:
+A completion generator is a sync or async function in `generators.custom`. It can query an API, read a config file or call any other application code. Here, `listTargets(tokens)` is an application function that returns the currently available targets:
 
 ```ts
 options: [
@@ -54,9 +40,51 @@ options: [
 ],
 ```
 
-Static suggestions and generator results can be strings or `{ name, description }` objects. A generator receives the words after the program name, ending with the partial value being completed. For `--target=prod`, its last token is `"prod"`. An argument can have multiple generators by supplying an array.
+A generator returns strings or `{ name, description }` objects:
 
-Each completion request starts a new CLI process. The completion resolver follows the parser's rules for option scope, conflicts and repeat limits. Put application initialisation inside actions to avoid running it on completion requests.
+```ts
+[
+  { name: "staging", description: "Staging environment" },
+  { name: "production", description: "Production environment" },
+];
+```
+
+A generator receives the words after the program name, ending with the partial value being completed. For `--target=prod`, its last token is `"prod"`. To give an argument several generators, pass an array.
+
+You write no shell-specific code. The library finds the argument being completed and calls its generators.
+
+### Static suggestions
+
+For a fixed list, use the argument's `suggestions` field. Like generator results, static suggestions can be strings or `{ name, description }` objects:
+
+```ts
+options: [
+  {
+    name: "--mode",
+    args: {
+      name: "mode",
+      suggestions: ["debug", "release"],
+    },
+  },
+],
+```
+
+Suggestions don't restrict accepted values. Validate allowed values in the action if the option must accept only a fixed set.
+
+### Files and directories
+
+`template: "filepaths"` on an argument completes files and directories. `template: "folders"` completes directories only:
+
+```ts
+args: {
+  name: "config",
+  template: "filepaths",
+},
+```
+
+### Completion startup
+
+Each completion request starts a new CLI process, and completion never runs a command's action. Put application initialisation inside actions so that completion requests skip it.
 
 The completion scripts set `SHELL_COMPLETION_GENERATOR` to the shell's name, such as `bash` or `nushell`, while the CLI answers a completion request. Code that runs before `CLI.run` can check it to skip work that completion doesn't need:
 
