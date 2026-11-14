@@ -391,6 +391,17 @@ class Scanner {
     return pending.then(resume);
   }
 
+  /**
+   * Put the command the scope is at on the path once `loading` settles, in
+   * place of the command whose `loadSpec` is loading it. It's a method of its
+   * own so that a cold parse that waits for nothing doesn't compile it.
+   */
+  private placeLoaded(loading: Promise<void>): Promise<void> {
+    return loading.then(() => {
+      this.path[this.path.length - 1] = this.scope.command as Subcommand;
+    });
+  }
+
   // A copy of the path, since reading carries on after a problem and can
   // enter a subcommand before the error is made.
   private ctx(): ErrorContext {
@@ -736,7 +747,13 @@ class Scanner {
       this.endOption();
       this.open = noOpenOption;
       this.path.push(meaning.command);
-      this.pending = this.scope.enter(meaning.command, this.loads);
+      const loading = this.scope.enter(meaning.command, this.loads);
+      // The path has the command the scope is at, which for a command with a
+      // `loadSpec` is the one that loaded in its place.
+      this.pending = loading && this.placeLoaded(loading);
+      if (!loading) {
+        this.path[this.path.length - 1] = this.scope.command as Subcommand;
+      }
       return meaning;
     }
 
@@ -812,9 +829,9 @@ class Scanner {
     const help = path[path.length - 1];
     if (from < 0) {
       for (let i = 1; i < path.length - 1; i++) {
-        this.path.push(path[i]);
         // The parser entered these on the way to help, so they're loaded.
         this.scope.enterNow(path[i]);
+        this.path.push(this.scope.command as Subcommand);
       }
       // The parser read the names as arguments of help, so none is an option.
       this.optionsAllowed = false;

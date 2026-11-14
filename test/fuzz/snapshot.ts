@@ -2,7 +2,10 @@
 // reads of the same command line can be checked for differences.
 
 import type { NextToken, ParseResult } from "../../src/parse.js";
-import type { Action, Spec } from "../../src/types.js";
+import type { Action, Spec, Subcommand } from "../../src/types.js";
+
+/** Whether two commands are the same one, for specs that hold the same commands as different objects. */
+type SameCommand = (x: Spec | Subcommand, y: Spec | Subcommand) => boolean;
 
 type Parse = (input: readonly string[], spec: Spec) => ParseResult;
 
@@ -21,14 +24,16 @@ export function attempt(parse: Parse, input: readonly string[], spec: Spec): Out
 /**
  * Describe how two outcomes of `parse` differ, or return null if they match.
  * Spec objects (path entries, options, actions) must be the same objects.
- * `sameAction` decides whether two actions match. What `has`, `get`, `all`
- * and `count` return for each of `optionNames` is compared too.
+ * `sameAction` decides whether two actions match, and `sameCommand` whether
+ * two commands on a path do. What `has`, `get`, `all` and `count` return for
+ * each of `optionNames` is compared too.
  */
 export function difference(
   a: Outcome,
   b: Outcome,
   sameAction: (x: Action, y: Action) => boolean = Object.is,
   optionNames: readonly string[] = [],
+  sameCommand: SameCommand = Object.is,
 ): string | null {
   if (a.ok !== b.ok) {
     return a.ok ? `only the second threw: ${describe(b)}` : `only the first threw: ${describe(a)}`;
@@ -39,13 +44,13 @@ export function difference(
     if (JSON.stringify(x) !== JSON.stringify(y)) {
       return `errors differ: ${JSON.stringify(x)} vs ${JSON.stringify(y)}`;
     }
-    const pathA = (a.ok ? null : (a.error.context as { path: unknown[] } | undefined))?.path ?? [];
-    const pathB = (b.ok ? null : (b.error.context as { path: unknown[] } | undefined))?.path ?? [];
-    return sameItems(pathA, pathB) ? null : "error paths differ";
+    const pathA = (a.ok ? null : (a.error.context as { path: Subcommand[] } | undefined))?.path ?? [];
+    const pathB = (b.ok ? null : (b.error.context as { path: Subcommand[] } | undefined))?.path ?? [];
+    return sameItems(pathA, pathB, sameCommand) ? null : "error paths differ";
   }
   const x = a.result;
   const y = b.result;
-  if (!sameItems(x.path, y.path)) {
+  if (!sameItems(x.path, y.path, sameCommand)) {
     return "path differs";
   }
   if (!sameAction(x.action, y.action)) {
@@ -74,9 +79,16 @@ export function difference(
   return null;
 }
 
-/** Describe how two results of `readNext` differ, or return null if they match. */
-export function nextDifference(x: NextToken, y: NextToken): string | null {
-  if (!sameItems(x.path, y.path)) {
+/**
+ * Describe how two results of `readNext` differ, or return null if they
+ * match. `sameCommand` decides whether two commands match.
+ */
+export function nextDifference(
+  x: NextToken,
+  y: NextToken,
+  sameCommand: SameCommand = Object.is,
+): string | null {
+  if (!sameItems(x.path, y.path, sameCommand)) {
     return "path differs";
   }
   if (JSON.stringify(x.directives) !== JSON.stringify(y.directives)) {
@@ -86,7 +98,7 @@ export function nextDifference(x: NextToken, y: NextToken): string | null {
     return "optionsAllowed differs";
   }
   const sameSubcommand = (a: NextToken["subcommands"][number], b: NextToken["subcommands"][number]) =>
-    a.command === b.command && sameItems(a.names, b.names);
+    sameCommand(a.command, b.command) && sameItems(a.names, b.names);
   if (!sameItems(x.subcommands, y.subcommands, sameSubcommand)) {
     return "subcommands differ";
   }

@@ -1123,9 +1123,11 @@ export default CLI.command({
 
 The command with the `loadSpec` sets only its `name`, `description`, `hidden` and `isPersistent`, because its parent's help and completion show it before it loads. Everything else goes in the loaded command: `args`, `options`, `subcommands`, `action`, `requiresSubcommand` and `parserDirectives`. A subcommand of a loaded command can have a `loadSpec` of its own.
 
-The loaded command is an ordinary command, so it has the same `name`. It can leave out `description`, `hidden` and `isPersistent`. If it sets one, the value on the command with the `loadSpec` is the one used, and `testSpec` fails when the two differ. `testSpec` also fails when a command sets anything else beside its `loadSpec`.
+The loaded command is an ordinary command, so it has the same `name`. It can leave out `description`, `hidden` and `isPersistent`. If it sets one, the command with the `loadSpec` has to set it to the same value, and `testSpec` fails when the two differ. `testSpec` also fails when a command sets anything else beside its `loadSpec`.
 
-`loadSpec` runs once, the first time the parser, help or completion enters the command. `demo remote add`, `demo remote --help`, `demo help remote` and pressing Tab after `demo remote` all load `remote` and nothing else. `demo --help` loads nothing.
+`loadSpec` runs when the parser, help or completion enters the command, once for each command line. `demo remote add`, `demo remote --help`, `demo help remote` and pressing Tab after `demo remote` all load `remote` and nothing else. `demo --help` loads nothing.
+
+Loading never changes your spec. The parser carries on with a copy of the loaded command, with the `name`, `description`, `hidden` and `isPersistent` of the command that has the `loadSpec` on top, and that copy is the command on an action's `path`.
 
 `loadSpec` can also return the command directly, which keeps it in the same file and the parser synchronous:
 
@@ -1137,9 +1139,9 @@ Write the `import()` in your own file with a literal path, as above, so a bundle
 
 Call `CLI.run` without `await`, as every example here does. A command's file can't import the library from an entry that is waiting on a top-level `await`, so a bundler moves the library into a file of its own, and every run loads one more file.
 
-An action that calls `help({ path })` for another command loads the commands on that path too. `help` returns a string, so it can't wait for a `loadSpec` that returns a promise. For a command like that which no command line has entered yet, `help` throws an error with the command's name in its message.
+An action that calls `help({ path })` for another command loads the commands on that path too. `help` returns a string, so it can't wait for a `loadSpec` that returns a promise, and throws an error with the command's name in its message. The commands on the action's own `path` are loaded already.
 
-`testSpec` loads every command before it checks the spec.
+`testSpec` loads every command and checks the loaded CLI, whatever else has used the spec before.
 
 #### When loading on demand is faster
 

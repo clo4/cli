@@ -379,8 +379,8 @@ const readBeforeLoading = ["name", "description", "hidden", "isPersistent"] as c
 
 /**
  * What's wrong with the command at the end of `path`, which has a `loadSpec`,
- * and with `loaded`, the command that gave. The two are merged after this, and
- * what the parent read before then stays as it was.
+ * and with `loaded`, the command that gave. The parser carries on with
+ * `loaded` under what the parent read before then.
  */
 function loadProblems(path: Subcommand[], loaded: Subcommand): string[] {
   const command = path[path.length - 1];
@@ -1019,8 +1019,8 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   const checks = specChecks.filter(({ skippedBy }) => !(skippedBy && options[skippedBy]));
   return async (t) => {
     const problems: string[] = [];
-    await loadAll(spec, (path, loaded) => problems.push(...loadProblems(path, loaded)));
-    const walk = new SpecWalk(spec, problems);
+    const whole = await loadAll(spec, (path, loaded) => problems.push(...loadProblems(path, loaded)));
+    const walk = new SpecWalk(whole, problems);
     for (const { sentence, name, check } of checks) {
       await runStep(t, namingStyle === "function" ? name : sentence, () => check(walk));
     }

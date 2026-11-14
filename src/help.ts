@@ -129,10 +129,10 @@ function helpText(
   showUsage: boolean,
   didYouMean: DidYouMean | undefined,
 ): string {
-  const command = commands[commands.length - 1];
-  // The scope loads any command on the path that isn't loaded yet, so it's
-  // made before anything reads the command.
+  // The scope loads any command on the path that isn't loaded yet, so the
+  // command is read from the scope.
   const scope = CommandScope.at(commands);
+  const command = scope.command;
 
   const commandsSection = command.subcommands ? subcommandRows(command.subcommands) : "";
 

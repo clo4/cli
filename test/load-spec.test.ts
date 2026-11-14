@@ -6,7 +6,6 @@ import type { HelpConfig } from "../src/help.js";
 import { help, helpCommand } from "../src/index.js";
 import { parse, parseOrWait, readNext, readNextOrWait, readToken } from "../src/parse.js";
 import type { ParseResult } from "../src/parse.js";
-import { loadAll } from "../src/scope.js";
 import * as Testing from "../src/testing.js";
 import type { ActionInit, NonEmptyArray, Spec, Subcommand } from "../src/types.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
@@ -86,12 +85,23 @@ for (const [kind, wrap] of kinds) {
     expect(loads).toEqual({ remote: 1, add: 1, config: 0 });
   });
 
-  test(`loadSpec returning ${kind}: a command is loaded once`, async () => {
+  test(`loadSpec returning ${kind}: a command is loaded once for each command line that enters it`, async () => {
     const { spec, loads, ran } = lazyCli(wrap);
     await run(spec, ["remote", "list"]);
     await run(spec, ["remote", "add", "x"]);
     expect(ran).toEqual(["list", "add:x:false:false"]);
-    expect(loads).toEqual({ remote: 1, add: 1, config: 0 });
+    expect(loads).toEqual({ remote: 2, add: 1, config: 0 });
+  });
+
+  test(`loadSpec returning ${kind}: the spec is left as it was written`, async () => {
+    const { spec } = lazyCli(wrap);
+    const remote = spec.subcommands![1];
+    const written = { ...remote };
+    await run(spec, ["remote", "add", "x"]);
+    await Testing.test(spec as Subcommand, { allowNoDescription: true })();
+    expect(spec.subcommands![1]).toBe(remote);
+    expect(remote).toEqual(written);
+    expect(remote.loadSpec).toBe(written.loadSpec);
   });
 
   test(`loadSpec returning ${kind}: a usage error after a load shows the loaded command`, async () => {
@@ -140,7 +150,8 @@ for (const [kind, wrap] of kinds) {
     expect(await names(["remote"], "")).toEqual(expect.arrayContaining(["add", "list"]));
     expect(await names(["remote", "add"], "--f")).toContain("--force");
     expect(await names(["help", "remote"], "")).toEqual(expect.arrayContaining(["add", "list"]));
-    expect(loads).toEqual({ remote: 1, add: 1, config: 0 });
+    // Once for each of the three lines that enter `remote`.
+    expect(loads).toEqual({ remote: 3, add: 1, config: 0 });
   });
 
   test(`loadSpec returning ${kind}: the spec checks load every command`, async () => {
@@ -187,36 +198,44 @@ test("loadSpec: a load that fails is reported like an action that throws", async
 // The same spec and command line, read eagerly and then with every
 // subcommand behind a loadSpec, must come out the same.
 
-/** What stays on a command beside its `loadSpec`. */
-const readBeforeLoading = ["name", "description", "hidden", "isPersistent"];
+/** The command a lazy copy stands for. Spreading a command into another carries it along. */
+const origin = Symbol("origin");
+
+/** The command of the original spec that `command` is, or stands in place of. */
+function originOf(command: Spec | Subcommand): Spec | Subcommand {
+  return (command as { [origin]?: Spec | Subcommand })[origin] ?? command;
+}
+
+const sameCommand = (x: Spec | Subcommand, y: Spec | Subcommand) => originOf(x) === originOf(y);
 
 /**
- * Move every subcommand below `command` behind a `loadSpec`, in place, so the
- * commands are the same objects before and after. Each one keeps what its
- * parent reads before it loads, and loads a command with the same name and
- * everything else it had.
+ * A copy of `command` with every subcommand below it behind a `loadSpec`. The
+ * spec it's given stays as it was. Each subcommand keeps what its parent
+ * reads before it loads, and loads the whole command, with the commands
+ * below that behind a `loadSpec` in turn. A subcommand listed in two places
+ * is one lazy command in both.
  */
-function unload(command: Spec | Subcommand, wrap: Wrap) {
-  const seen = new Set<Subcommand>();
-  const visit = (parent: Spec | Subcommand) => {
-    for (const subcommand of parent.subcommands ?? []) {
-      if (seen.has(subcommand)) {
-        continue;
-      }
-      seen.add(subcommand);
-      visit(subcommand);
-      const fields = subcommand as unknown as Record<string, unknown>;
-      const loaded: Record<string, unknown> = { name: subcommand.name };
-      for (const key of Object.keys(fields)) {
-        if (!readBeforeLoading.includes(key) && fields[key] !== undefined) {
-          loaded[key] = fields[key];
-          delete fields[key];
-        }
-      }
-      subcommand.loadSpec = () => wrap(loaded as unknown as Subcommand);
+function lazy<C extends Spec | Subcommand>(
+  command: C,
+  wrap: Wrap,
+  made = new Map<Subcommand, Subcommand>(),
+): C {
+  if (!command.subcommands) {
+    return command;
+  }
+  const subcommands = command.subcommands.map((subcommand) => {
+    let stub = made.get(subcommand);
+    if (!stub) {
+      const { name, description, hidden, isPersistent } = subcommand;
+      stub = { name, [origin]: subcommand } as Subcommand;
+      Object.assign(stub, JSON.parse(JSON.stringify({ description, hidden, isPersistent })));
+      made.set(subcommand, stub);
+      const whole = lazy(subcommand, wrap, made);
+      stub.loadSpec = () => wrap(whole);
     }
-  };
-  visit(command);
+    return stub;
+  });
+  return { ...command, subcommands, [origin]: command } as unknown as C;
 }
 
 async function attemptOrWait(input: readonly string[], spec: Spec): Promise<Outcome> {
@@ -297,10 +316,9 @@ test("random specs read, complete, print help and check the same with every subc
       eagerViews.push(await view(spec, input));
     }
     for (const [kind, wrap] of kinds) {
+      const lazySpec = lazy(spec, wrap);
       for (let i = 0; i < views.length; i++) {
-        unload(spec, wrap);
-        const lazyView = await views[i](spec, input);
-        await loadAll(spec);
+        const lazyView = await views[i](lazySpec, input);
         if (lazyView !== eagerViews[i]) {
           const what = ["the help command", "completion", "the spec checks"][i];
           expect.fail(
@@ -314,19 +332,14 @@ test("random specs read, complete, print help and check the same with every subc
         }
       }
 
-      unload(spec, wrap);
-      const lazy = await attemptOrWait(input, spec);
-      const problem = difference(eager, lazy, Object.is, OPTION_NAMES);
+      const lazyParse = await attemptOrWait(input, lazySpec);
+      const problem = difference(eager, lazyParse, Object.is, OPTION_NAMES, sameCommand);
       if (problem) {
         expect.fail(report(n, spec, input, `with loadSpec returning ${kind}, parse: ${problem}`));
       }
-      await loadAll(spec);
 
-      unload(spec, wrap);
-      const lazyNext = await readNextOrWait(spec, before, partial);
-      await loadAll(spec);
-      // The lazy read is compared after loading, since it lists stubs that weren't entered.
-      const nextProblem = nextDifference(eagerNext, lazyNext);
+      const lazyNext = await readNextOrWait(lazySpec, before, partial);
+      const nextProblem = nextDifference(eagerNext, lazyNext, sameCommand);
       if (nextProblem) {
         expect.fail(report(n, spec, input, `with loadSpec returning ${kind}, readNext: ${nextProblem}`));
       }
@@ -362,9 +375,6 @@ test("loadSpec: help for a path whose loadSpec gives a promise says it isn't loa
   expect(result.code).toBe(1);
   expect(result.stdout).toBe("");
   expect(result.stderr).toContain("'sub' isn't loaded");
-  // The load it started still finishes, so the path can be read after it.
-  await Promise.resolve();
-  expect(getHelp([spec, sub])).toContain("Commands:\n  leaf");
 });
 
 test("loadSpec: reading tokens one at a time refuses to read past a loadSpec that gives a promise", () => {
@@ -378,29 +388,51 @@ test("loadSpec: reading tokens one at a time refuses to read past a loadSpec tha
   expect(() => readToken(spec, ["sub"], "--force")).toThrow(/can't be read synchronously/);
 });
 
-test("loadSpec: what the parent read before the load stays as the parent has it", async () => {
+test("loadSpec: the command on the path has what the parent read, over what loaded", async () => {
+  let entered: Subcommand | undefined;
+  const loaded: Subcommand = {
+    name: "other",
+    description: "Something else.",
+    hidden: true,
+    args: { name: "url" },
+    action: ({ path }) => void (entered = path[path.length - 1]),
+  };
+  const remote: Subcommand = {
+    name: ["remote", "r"],
+    description: "Manage remotes.",
+    loadSpec: () => loaded,
+  };
+  const spec: Spec = { name: "forge", subcommands: [remote] };
+  await run(spec, ["r", "origin"]);
+  expect(entered).toMatchObject({
+    name: ["remote", "r"],
+    description: "Manage remotes.",
+    args: { name: "url" },
+  });
+  // What the parent's command leaves unset comes from the loaded command.
+  // The spec checks report a loaded command that sets one of these differently.
+  expect(entered!.hidden).toBe(true);
+  expect(entered!.loadSpec).toBeUndefined();
+  // Neither command is changed.
+  expect(remote).toEqual({
+    name: ["remote", "r"],
+    description: "Manage remotes.",
+    loadSpec: remote.loadSpec,
+  });
+  expect(loaded.name).toBe("other");
+});
+
+test("loadSpec: the spec checks compare a loaded command however often the spec has been used", async () => {
   const spec: Spec = {
     name: "forge",
-    subcommands: [
-      {
-        name: ["remote", "r"],
-        description: "Manage remotes.",
-        loadSpec: () => ({
-          name: "other",
-          description: "Something else.",
-          hidden: true,
-          args: { name: "url" },
-        }),
-      },
-    ],
+    subcommands: [{ name: "remote", loadSpec: () => ({ name: "remotes", action: () => {} }) }],
   };
-  const result = await captureConsole(() => run(spec, ["r", "--help"]));
-  expect(result.stderr).toContain("forge remote <url>");
-  const remote = spec.subcommands![0];
-  expect(remote.name).toEqual(["remote", "r"]);
-  expect(remote.description).toBe("Manage remotes.");
-  expect(remote.hidden).toBeUndefined();
-  expect(remote.loadSpec).toBeUndefined();
+  await run(spec, ["remote"]);
+  for (let i = 0; i < 2; i++) {
+    await expect(runSpecCheck("assertLoadedCommandsMatch", spec)).rejects.toThrow(
+      /loads a command named "remotes"/,
+    );
+  }
 });
 
 test("loadSpec: the spec checks compare a loaded command with the command that loads it", async () => {

@@ -85,7 +85,7 @@ export class CommandScope {
   readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
   readonly directives: Directives = defaultDirectives();
-  /** The current command. */
+  /** The current command. For one that has a `loadSpec`, it's the command that loaded in its place. */
   command: Spec | Subcommand;
   /** Whether the current command has subcommands of its own or inherits any. */
   hasSubcommands = false;
@@ -137,9 +137,10 @@ export class CommandScope {
 
   /**
    * Move to `command`, a subcommand of the current one. A command with a
-   * `loadSpec` is loaded first, unless `load` is false. If the `loadSpec`
-   * gives a promise, so does this, and the scope can't be asked anything
-   * until it settles.
+   * `loadSpec` is loaded first, unless `load` is false, and the scope moves
+   * to the command that stands in its place, which is then {@link command}.
+   * If the `loadSpec` gives a promise, so does this, and the scope can't be
+   * asked anything until it settles.
    */
   enter(command: Spec | Subcommand, load = true): Promise<void> | null {
     const parentSubcommands = this.command.subcommands;
@@ -152,13 +153,15 @@ export class CommandScope {
         }
       }
     }
-    this.command = command;
     if ((command as Subcommand).loadSpec !== undefined && load) {
-      const loading = loadCommand(command as Subcommand);
-      if (loading) {
-        return loading.then(() => this.select(command));
+      const loaded = loadCommand(command as Subcommand);
+      if (typeof (loaded as Promise<Subcommand>).then === "function") {
+        this.command = command;
+        return (loaded as Promise<Subcommand>).then((whole) => this.select((this.command = whole)));
       }
+      command = loaded as Subcommand;
     }
+    this.command = command;
     this.select(command);
     return null;
   }
@@ -561,18 +564,26 @@ export class CommandScope {
 }
 
 /**
- * Call `command`'s `loadSpec` and merge the command it gives into `command`,
- * so every reader of the spec sees one loaded command from then on. Returns a
- * promise only if `loadSpec` did. It's a function of its own so that a cold
- * parse of a spec without `loadSpec` doesn't compile it.
+ * Call the `loadSpec` of `stub` and give the command the parser carries on
+ * with in its place, as a promise only if `loadSpec` gave one. It's a function
+ * of its own so that a cold parse of a spec without `loadSpec` doesn't compile
+ * it.
  */
-function loadCommand(command: Subcommand): Promise<void> | null {
-  const loaded = command.loadSpec!();
-  if (typeof (loaded as Promise<Subcommand>).then === "function") {
-    return Promise.resolve(loaded).then((whole) => mergeLoaded(command, whole));
-  }
-  mergeLoaded(command, loaded as Subcommand);
-  return null;
+function loadCommand(stub: Subcommand): Subcommand | Promise<Subcommand> {
+  const loaded = stub.loadSpec!();
+  return typeof (loaded as Promise<Subcommand>).then === "function"
+    ? Promise.resolve(loaded).then((whole) => inPlaceOf(stub, whole))
+    : inPlaceOf(stub, loaded as Subcommand);
+}
+
+/**
+ * The command that stands in place of `stub` once its `loadSpec` has given
+ * `loaded`: everything `loaded` has, under everything `stub` sets. A parent's
+ * help and completion have shown the stub's name and description, so those
+ * are the ones used. Neither object is changed.
+ */
+function inPlaceOf(stub: Subcommand, loaded: Subcommand): Subcommand {
+  return { ...loaded, ...stub, loadSpec: undefined };
 }
 
 /**
@@ -589,34 +600,34 @@ function notLoaded(loading: Promise<void>, command: Spec | Subcommand): Error {
 }
 
 /**
- * Load every command below `command` that has a `loadSpec`, so the spec
- * checks see the whole CLI. `each` is given the path to each such command and
- * the command its `loadSpec` gave, before the two are merged.
+ * `command` with every command below it loaded, so the spec checks see the
+ * whole CLI. It's a copy wherever a command below has a `loadSpec`, and the
+ * spec it was given stays as it was. `each` is given the path to each command
+ * with a `loadSpec` and the command that gave.
  */
-export async function loadAll(
-  command: Spec | Subcommand,
+export async function loadAll<C extends Spec | Subcommand>(
+  command: C,
   each?: (path: Subcommand[], loaded: Subcommand) => void,
   path: Subcommand[] = [command],
-): Promise<void> {
-  for (const subcommand of command.subcommands ?? []) {
-    const below = [...path, subcommand];
+): Promise<C> {
+  const subcommands = command.subcommands;
+  if (!subcommands) {
+    return command;
+  }
+  let changed = false;
+  const all: Subcommand[] = [];
+  for (const subcommand of subcommands) {
+    let whole = subcommand;
     if (subcommand.loadSpec !== undefined) {
       const loaded = await subcommand.loadSpec();
-      each?.(below, loaded);
-      mergeLoaded(subcommand, loaded);
+      each?.([...path, subcommand], loaded);
+      whole = inPlaceOf(subcommand, loaded);
     }
-    await loadAll(subcommand, each, below);
+    const below = await loadAll(whole, each, [...path, whole]);
+    changed ||= below !== subcommand;
+    all.push(below);
   }
-}
-
-/**
- * Give `command` everything `loaded` has, except what the parent of `command`
- * read before it loaded. A parent's help and completion have shown those, so
- * they stay as `command` has them.
- */
-function mergeLoaded(command: Subcommand, loaded: Subcommand): void {
-  const { name, description, hidden, isPersistent } = command;
-  Object.assign(command, loaded, { name, description, hidden, isPersistent, loadSpec: undefined });
+  return changed ? { ...command, subcommands: all as unknown as C["subcommands"] } : command;
 }
 
 /**

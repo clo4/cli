@@ -173,18 +173,19 @@ export interface Subcommand {
 
   /**
    * Give this command in full when a command line enters it, so a large CLI
-   * only builds the commands it uses. The loaded command is merged into this
-   * one the first time the parser, help or completion enters it, and
-   * `loadSpec` is never called again.
+   * only builds the commands it uses. The parser, help and completion carry
+   * on with the loaded command in place of this one. Neither object is
+   * changed, and `loadSpec` is called once for each command line that enters
+   * the command.
    *
    * Return the command itself to stay synchronous, or a promise of it to
    * load it from another file with `import()`. Parsing only waits when a
    * command on the command line returns a promise.
    *
    * A command with a `loadSpec` sets only what its parent reads before then:
-   * its `name`, `description`, `hidden` and `isPersistent`. Those stay as
-   * they are here. The loaded command has the same name, and the spec checks
-   * report one that sets any of the others differently.
+   * its `name`, `description`, `hidden` and `isPersistent`. Those are used
+   * as they are here. The loaded command has the same name, and the spec
+   * checks report one that sets any of the others differently.
    */
   loadSpec?: () => Subcommand | Promise<Subcommand>;
 
