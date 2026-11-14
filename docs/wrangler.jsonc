@@ -1,14 +1,18 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "clo4-net",
+  "name": "clo4-cli-docs",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": "./dist",
   },
   "routes": [
     {
-      "pattern": "clo4.net",
-      "custom_domain": true,
+      "pattern": "clo4.net/cli",
+      "zone_name": "clo4.net",
+    },
+    {
+      "pattern": "clo4.net/cli/*",
+      "zone_name": "clo4.net",
     },
   ],
 }
