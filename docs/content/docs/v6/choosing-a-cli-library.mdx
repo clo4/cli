@@ -1,55 +1,79 @@
 ---
 title: Choosing a CLI library
-description: How @clo4/cli compares with Commander, citty, Yargs and oclif, and when each one fits.
+description: Compare the responsibilities of the library and your application.
 ---
 
-You can build Node.js CLIs in TypeScript with several libraries. They differ in which work they take on and which they leave to application code.
+`@clo4/cli` handles command-line syntax, inferred action types, help and shell completion. Actions handle value conversion, application setup and the work of each command.
 
-`@clo4/cli` describes and parses command-line syntax, infers TypeScript types from it, and generates help and shell completion. Your code converts and validates values, and decides what runs before and after each command's action, the function that handles it.
+This division keeps application code in ordinary functions. It also means that features such as validation and lifecycle hooks are responsibilities you keep in your code.
 
-This page describes Commander 15.1, citty 0.2.2, Yargs 18.2 and `@oclif/core` 5.1, the versions in this repository's benchmarks.
+## Value conversion and validation
 
-## Commander
+An action receives strings. To accept a number, parse it. To restrict a value to a set, test it:
 
-[Commander](https://github.com/tj/commander.js) defines commands, arguments and options by chaining method calls. It supports custom option processing, lifecycle hooks such as `preAction`, subcommands that run as separate executables, and detailed help configuration. [`@commander-js/extra-typings`](https://github.com/commander-js/extra-typings) adds TypeScript inference. Commander has no built-in shell completion.
+```ts
+import * as CLI from "@clo4/cli";
 
-Choose Commander if you prefer its chained API or need one of those features.
+const spec = CLI.spec({
+  name: "deploy",
+  options: [
+    {
+      name: "--mode",
+      description: "Build mode: debug or release.",
+      args: { name: "mode", default: "debug", suggestions: ["debug", "release"] },
+    },
+  ],
+  action({ options }) {
+    const mode = options.get("--mode");
+    if (mode !== "debug" && mode !== "release") {
+      throw new Error("--mode must be debug or release");
+    }
+    // mode is now "debug" | "release".
+    console.log(mode);
+  },
+});
 
-## citty
+CLI.run(spec);
+```
 
-[citty](https://github.com/unjs/citty) is a small declarative CLI library from UnJS. It supports nested commands, lazy command loading and TypeScript inference. It also runs `setup` and `cleanup` hooks around a command, supports plugins that add reusable hooks, and checks `enum` arguments against their allowed values. citty has no built-in shell completion.
+The description tells users which values are valid. Suggestions offer those values during completion. The action enforces the restriction. Neither help nor completion inspects the action's code.
 
-Choose citty if you want those hooks and plugins built in. Choose `@clo4/cli` if you need shell completion, or want setup, cleanup and value conversion written as ordinary code in your actions.
+Yargs provides `coerce` and `choices`. citty provides enum arguments. Commander supports custom option processing. If you want conversion and validation in the command definition, those APIs offer a different approach.
 
-## Yargs
+## Setup and cleanup
 
-[Yargs](https://github.com/yargs/yargs) offers configurable parsing, command builders, value coercion, validation, and shell completion for Bash, Zsh and Fish. Its completion takes one custom function for the whole CLI, which receives the current word and the parsed arguments. `@clo4/cli` instead attaches completion generators, functions that return suggestions, to each argument, and works out which argument the user is completing.
+Call setup code from an action. Use `try` and `finally` for resources that need cleanup. Shared setup can be a function called by several actions.
 
-Choose Yargs if you need its coercion and validation, or prefer its command-builder API.
+Commander provides lifecycle hooks such as `preAction`. citty provides `setup`, `cleanup` and plugins for shared hooks. `@clo4/cli` has no lifecycle hooks or built-in plugin system.
 
-## oclif
+oclif also provides a project generator, packaging tools and user-installable plugins. A CLI that needs those facilities must provide them itself with `@clo4/cli`, or choose a framework that includes them.
 
-[oclif](https://oclif.io/) is an application framework. Besides parsing, it provides plugins that users can install, hooks, a project generator, and tools for packaging and distribution. Shell completion comes from a separate plugin, `@oclif/plugin-autocomplete`.
+## Completion
 
-Choose oclif if you need those platform features in one framework. `@clo4/cli` has no plugin system.
+`@clo4/cli` generates completion for Bash, Zsh, Fish, PowerShell and Nushell. A custom generator belongs to the argument it completes. The library selects the argument, calls its generator and formats the results for the shell.
 
-## When @clo4/cli fits
+Commander and citty have no built-in shell completion. oclif provides completion through a separate plugin. Yargs uses a custom completion function for the CLI rather than a generator attached to each argument.
 
-Use `@clo4/cli` when you want:
+[Generate completion suggestions](./completion-generators.mdx) shows a custom generator. [Install shell completion](./install-completion.mdx) covers shell setup.
 
-- Commands defined as plain objects, with action types inferred from them.
-- Completion generators written as ordinary sync or async functions.
-- Parsing, help and completion that follow the same rules.
-- Low startup overhead, no runtime dependencies, and commands loaded on demand.
-- A library that leaves your application's structure to you.
+## Type inference
 
-## Limitations
+`CLI.spec` infers action inputs from plain command objects. Types include positional argument counts, defaults and persistent options inherited by inline commands. A separately defined `CLI.command` infers its own options but cannot infer options from a parent outside its definition.
 
-- **Modules and TypeScript.** The package is ESM-only. Its type inference needs TypeScript 6.0 or later.
-- **Values.** Argument values stay strings. Your code converts and validates them.
-- **Inference across modules.** A command made separately with `CLI.command` has types for its own options only. Its action's types don't include persistent options, which a parent command shares with its subcommands. Commands written inline in the root `CLI.spec` get those types.
-- **Application infrastructure.** The library has no plugin system, lifecycle hooks or project generator.
+Commander offers inference through `@commander-js/extra-typings`. Yargs 18 does not ship types, and the `@types/yargs` package targets Yargs 17. The comparisons here refer to the versions used in this repository: Commander 15.1, citty 0.2.2, Yargs 18.2 and `@oclif/core` 5.1.
 
-## Performance
+`@clo4/cli` is ESM-only. Its inference requires TypeScript 6.0 or later.
 
-The [performance page](./performance.mdx#performance-comparison) compares these libraries and others. In those benchmarks, citty takes 1.6 to 1.8 times as long as `@clo4/cli` for the same tasks, on CI and on an Apple M3 Pro, Commander 3.4 to 4.4 times, oclif 16.0 to 16.2 times and Yargs 18.0 to 20.7 times. Startup time matters most for commands that exit quickly and for shell completion, which starts the CLI on each request.
+## Startup
+
+Short commands and shell completion spend a larger fraction of their time starting up. Every completion request starts a new CLI process.
+
+In the repository's benchmarks, citty takes 1.6–1.8 times as long as `@clo4/cli` for the measured work. Commander takes 3.4–4.4 times, oclif 16.0–16.2 times and Yargs 18.0–20.7 times. [Performance](./performance.mdx) describes the workload and exclusions.
+
+For larger CLIs, `loadSpec` defers command construction or imports until a run needs them. This also keeps root help and completion from loading every command.
+
+## Spec format
+
+The field names come from Fig's autocomplete spec format. The [withfig/autocomplete](https://github.com/withfig/autocomplete) repository contains examples of that format for hundreds of tools.
+
+`@clo4/cli` continues [clo4/fig-cli](https://github.com/clo4/fig-cli), started in April 2022. Its supported fields are listed in the [API reference](./reference/index.mdx).

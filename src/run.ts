@@ -20,18 +20,24 @@ export interface RunOptions {
 }
 
 /**
- * Parse argv, execute the selected action, and set `process.exitCode` to the
- * exit code. Resolves to that code.
+ * Parse a command line, run the selected action and resolve to its exit code.
+ * Set `process.exitCode` unless `options.setExitCode` is `false`. Never call
+ * `process.exit`.
  *
- * The selected command's action runs unless a parsed option has an action.
- * Option actions take precedence so helpers like `--help` can run without
- * satisfying the selected command's required arguments. A command without an
- * action prints its help.
+ * A command without an action prints help. The last supplied option action
+ * takes precedence over the command action and bypasses required-input checks.
+ * Sync and async actions are supported. Returning nothing means code 0.
+ * Numeric return values are limited to 0–255.
  *
- * An entry file calls `run` without `await`. While a module waits on a
- * top-level `await`, nothing it loads can import from it, so a bundler has to
- * move this library out of the entry into a file of its own, which every run
- * then loads.
+ * Parse errors print a message and usage to stderr, with code 1. Errors thrown
+ * by actions or loaders print their message without a stack trace, with code 1.
+ *
+ * In a CLI entry file, call without top-level `await`. This lets a bundler keep
+ * the library in the entry chunk when loaded commands also import it.
+ *
+ * @param spec - The root command definition.
+ * @param options - Command-line input and process exit-code behavior.
+ * @returns The selected action's exit code, or 1 on a reported error.
  */
 export function run(spec: Spec, options?: RunOptions): Promise<number> {
   // This isn't an async function, because one costs more to compile on a

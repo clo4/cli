@@ -1,0 +1,52 @@
+---
+title: Wrap another executable
+description: Parse wrapper options and forward the remaining tokens to another program.
+---
+
+A wrapper needs a boundary between its own options and another program's arguments. Set `optionsMustPrecedeArguments: true` so the first positional argument ends option parsing.
+
+## Forward the command line
+
+The first argument below selects the program. The remaining arguments go to that program unchanged:
+
+```ts
+import { spawnSync } from "node:child_process";
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "with-log",
+  parserDirectives: { optionsMustPrecedeArguments: true },
+  options: [CLI.help, { name: "--verbose", description: "Print the command before running it." }],
+  args: [{ name: "program" }, { name: "argument", isOptional: true, isVariadic: true }],
+  action({ args: [program, ...args], options }) {
+    if (options.has("--verbose")) {
+      console.error(program, args);
+    }
+    const result = spawnSync(program, args, { stdio: "inherit" });
+    if (result.error) {
+      throw result.error;
+    }
+    return result.status ?? 1;
+  },
+});
+
+CLI.run(spec);
+```
+
+```sh
+node with-log.ts --verbose node --version
+```
+
+`--verbose` belongs to the wrapper. `node` becomes the program argument and stops option parsing. `--version` is forwarded to Node.
+
+Do not enable a shell just to forward arguments. `spawnSync` accepts the program and its argument array separately, so spaces inside an argument remain part of that argument.
+
+## Choose the boundary
+
+With the directive, wrapper options must precede the program. `with-log node --verbose` forwards `--verbose` rather than enabling the wrapper's logging.
+
+A `--` before the program also ends option parsing. After the first positional argument already ends it, a later `--` is forwarded like any other argument. This preserves separators intended for the wrapped program.
+
+Without the directive, users can still use `--` explicitly to separate wrapper options from positional values. Choose that form when the wrapper needs to accept its own options after other positional arguments.
+
+See [Parsing behavior](./parsing-behavior.mdx) for token boundaries and [Actions](./actions.mdx#errors-and-exit-codes) for exit status handling.

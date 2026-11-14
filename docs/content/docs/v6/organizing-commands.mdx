@@ -1,0 +1,82 @@
+---
+title: Organize commands into modules
+description: Separate command definitions, shared inputs and the executable entry file.
+---
+
+Keep the spec separate from the file that runs it. This lets tests import the definition without executing the CLI. Define command groups in their own modules when the root spec becomes difficult to navigate.
+
+## Define a command module
+
+Use `CLI.command` to infer action types within a separately defined command:
+
+```ts
+// src/build.ts
+import * as CLI from "@clo4/cli";
+
+export const build = CLI.command({
+  name: "build",
+  description: "Build a project.",
+  args: { name: "directory", isOptional: true, default: "." },
+  action({ args: [directory] }) {
+    console.log(`Building ${directory}`);
+  },
+});
+```
+
+Import the command into the root spec:
+
+```ts
+// src/spec.ts
+import * as CLI from "@clo4/cli";
+import { build } from "./build.ts";
+
+export const spec = CLI.spec({
+  name: "demo",
+  description: "Project tools.",
+  options: [CLI.help],
+  subcommands: [build, CLI.helpCommand, CLI.completion],
+});
+```
+
+Run it from a separate entry file:
+
+```ts
+// src/main.ts
+import * as CLI from "@clo4/cli";
+import { spec } from "./spec.ts";
+
+CLI.run(spec);
+```
+
+`CLI.command` returns the object unchanged. Importing `build.ts` still constructs the definition at startup. To defer that work or its imports, [load the command on demand](./loading-commands.mdx).
+
+## Share an input definition
+
+Use `as const` to preserve literal names and fields when exporting an option or argument:
+
+```ts
+// src/inputs.ts
+export const output = {
+  name: ["-o", "--output"],
+  description: "Output directory.",
+  args: { name: "directory", default: "dist" },
+} as const;
+```
+
+Sibling commands can import `output` and include it in their `options` arrays. Their actions then know its aliases and default value.
+
+Without `as const`, TypeScript widens names to `string`. The inferred option reader then accepts arbitrary strings rather than checking known names.
+
+## Keep parent options in scope
+
+A command defined inside `CLI.spec` gets types for persistent options on its ancestors. A command created in a separate `CLI.command` call only sees its own definition.
+
+If an action needs inferred access to a parent option, keep that action inside the root definition and call a separately exported application function from it. Pass the parsed values that the function needs. This separates application logic without losing the parent context during inference.
+
+Moving the whole command to another module trades that inherited inference for a smaller root definition. The option remains available at runtime. Do not copy the persistent option into the child to make it visible to the types; spec validation rejects redundant inherited definitions.
+
+## Validate the assembled spec
+
+[Test the root spec](./testing.mdx) after combining command modules. This catches collisions between definitions that are valid in isolation.
+
+For loaded commands, `testSpec` loads all modules before validating them. It also compares the loading definition's metadata with the command it returns.

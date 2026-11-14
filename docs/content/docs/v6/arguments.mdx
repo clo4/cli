@@ -1,64 +1,107 @@
 ---
 title: Arguments
-description: Positional and variadic arguments.
+description: Define positional inputs and values accepted by options.
 ---
 
-These examples replace the `build` command in the [complete flag example](./options.mdx#flags).
+Arguments describe values. A command's arguments are positional: their order identifies them. An option's arguments follow its name.
+
+Both use the same definition fields. Values reach the action as strings, regardless of their names or completion suggestions.
 
 ## Positional arguments
 
-A command's `args` describes positional arguments: values supplied without an option name. It accepts one argument definition or an array. Arguments are required by default; `isOptional: true` allows an argument to be omitted. The action receives their values in order:
-
 ```ts
-const build = CLI.command({
-  name: "build",
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "copy",
   args: [
-    {
-      name: "source",
-    },
-    {
-      name: "destination",
-      isOptional: true,
-    },
+    { name: "source", description: "File to copy." },
+    { name: "destination", description: "Destination path.", isOptional: true },
   ],
   action({ args: [source, destination] }) {
     console.log(source, destination);
   },
 });
+
+CLI.run(spec);
 ```
 
 ```console
-$ demo build src dist
+$ node copy.ts src dist
 src dist
-$ demo build src
+$ node copy.ts src
 src undefined
 ```
 
-In the action, `source` is a `string` and `destination` is `string | undefined`. Required arguments must come before optional arguments. Help shows this example as `<source> [destination]`.
+Arguments are required by default. `isOptional: true` allows omission. Required arguments must precede optional arguments.
 
-The `--` separator makes all remaining words positional arguments, including words that match options or subcommands. For example, `demo build -- --help` passes `"--help"` as the source.
+The action receives positional values in `args`, in definition order. Here, `source` is a `string` and `destination` is `string | undefined`. Help displays them as `<source> [destination]`.
+
+For one argument, set `args` to the argument object directly. Use an array for two or more arguments. The argument's `name` labels it in help. Its `description` appears in the Arguments section.
 
 ## Variadic arguments
 
-A variadic argument accepts one or more values. Set `isVariadic: true` on the last argument; its values appear in the same array as the other positional arguments.
+A variadic argument accepts multiple values. Set `isVariadic: true` on the final argument:
 
 ```ts
-args: {
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
   name: "files",
-  isVariadic: true,
-},
-action({ args }) {
-  console.log(args.join(", "));
-},
+  args: { name: "file", isVariadic: true },
+  action({ args }) {
+    console.log(args.join(", "));
+  },
+});
+
+CLI.run(spec);
 ```
 
 ```console
-$ demo build index.ts utils.ts
+$ node files.ts index.ts utils.ts
 index.ts, utils.ts
 ```
 
-An argument can be both optional and variadic to accept zero or more values. Option arguments support the same fields, including `isOptional` and `isVariadic`.
+A required variadic argument takes at least one value. Add `isOptional: true` to accept zero or more.
+
+The values remain in the same `args` array. For a fixed argument followed by a variadic argument, destructure them as `[first, ...rest]`.
 
 ## Defaults
 
-An optional argument can have a default, which the action receives when the argument is omitted. [Defaults](./options.mdx#defaults) covers arguments and options together.
+An optional positional argument can define a string default:
+
+```ts
+args: { name: "directory", isOptional: true, default: "." },
+```
+
+When the user omits this argument, the action receives `"."`. For multiple omitted arguments, the parser fills defaults in order. It stops at the first argument without a default.
+
+A variadic argument's default supplies one value. Help displays positional defaults beside their descriptions.
+
+## Option arguments
+
+An option's `args` accepts the same definitions as a command's `args`. This option takes two required values:
+
+```ts
+options: [
+  {
+    name: "--size",
+    description: "Set width and height.",
+    args: [{ name: "width" }, { name: "height" }],
+  },
+],
+```
+
+`--size 80 24` supplies both values. In the action, `options.all("--size")` reads them and `options.get("--size")` reads the first.
+
+An attached value, such as `--size=80`, ends that option's values in the same token. It cannot supply both required arguments. Use separate tokens for options that take several values.
+
+Optional option arguments have different default behavior from required option arguments. [Options](./options.mdx#defaults) explains both cases.
+
+## Values that look like options
+
+The `--` separator makes every remaining token a positional argument, even if it matches an option or subcommand. For a command that accepts a filename, `demo -- --help` passes the filename `"--help"`.
+
+The action's `argSeparatorIndex` identifies the first value after `--`. It is `-1` when the user did not supply the separator. [Wrap another executable](./wrapping-commands.mdx) shows how to pass through the rest of a command line without requiring `--`.
+
+See [Arg](./reference/cli/interfaces/Arg.mdx) for all argument fields, including completion metadata.

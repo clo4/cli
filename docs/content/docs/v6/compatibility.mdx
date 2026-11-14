@@ -1,0 +1,30 @@
+---
+title: Compatibility
+description: Module format, TypeScript requirements and API stability.
+---
+
+The package uses ECMAScript modules and has no runtime dependencies. It includes TypeScript declarations. Type inference requires TypeScript 6.0 or later.
+
+## Entry points
+
+`@clo4/cli` exports the runtime API and public types. Its default export contains the same runtime values as its named exports.
+
+`@clo4/cli/testing` exports spec validation. Import it in tests rather than in the CLI's entry file.
+
+## API stability
+
+The runtime API follows semantic versioning. The testing module can add stricter validation in minor or patch releases when a check identifies incorrect or undefined behavior.
+
+A CLI that passes validation can therefore need a spec correction after a testing-module update, even when its runtime API remains compatible.
+
+## Inference boundaries
+
+`CLI.spec` infers persistent options from parent commands for actions defined inside the spec. A separately defined `CLI.command` cannot infer options from a parent outside its definition.
+
+The parser still makes persistent options available at runtime. The limitation concerns the action's inferred option names. [Organize commands into modules](./organizing-commands.mdx) covers this tradeoff.
+
+## Shell completion
+
+Generated completion scripts communicate with the installed CLI through an internal protocol. That protocol and the scripts can change between releases.
+
+[Generate and load completion at shell startup](./install-completion.mdx) so the shell uses the script from the installed CLI. Restart existing shell sessions after updating the executable.

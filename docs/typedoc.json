@@ -1,0 +1,21 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["../src/index.ts", "../src/testing.ts"],
+  "tsconfig": "../tsconfig.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "name": "API reference",
+  "readme": "none",
+  "fileExtension": ".mdx",
+  "entryFileName": "index.mdx",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "useCodeBlocks": true,
+  "expandParameters": true,
+  "sanitizeComments": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeReferences": true,
+  "disableSources": true,
+  "validation": { "notExported": false },
+  "compilerOptions": { "ignoreDeprecations": "6.0" }
+}

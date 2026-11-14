@@ -1,3 +1,9 @@
+/**
+ * The default export contains the same runtime values as the named exports.
+ *
+ * @module cli
+ */
+
 export type {
   Action,
   ActionInit,

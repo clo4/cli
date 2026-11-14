@@ -1,7 +1,10 @@
 /**
- * Supplementary module to make testing your CLI easier.
+ * Spec validation for use in a test suite.
  *
- * @module
+ * Checks can become stricter in minor or patch releases to catch incorrect
+ * or undefined behavior.
+ *
+ * @module testing
  */
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
@@ -417,36 +420,35 @@ function loadProblems(path: Subcommand[], loaded: Subcommand): string[] {
 
 export type TestNamingStyle = "sentence" | "function";
 
-/** Options that can be provided to `test` */
+/** Configuration for `testSpec`. All validation relaxations default to `false`. */
 export interface TestOptions {
   /**
-   * Allows subcommands and options to not have a description
+   * Permit commands and options without descriptions. Default: `false`.
    */
   allowNoDescription?: boolean;
 
   /**
-   * Allows descriptions to have lines over 68 characters long
+   * Permit description lines longer than 68 characters. Default: `false`.
+   * This includes positional argument descriptions.
    */
   allowLongDescriptionLines?: boolean;
 
   /**
-   * Allow commands to have `parserDirectives.subcommandsMatchUniquePrefix` with args
-   *
-   * This is not allowed by default because it's probably a mistake. It makes
-   * arguments ambiguous, users may not know if their invocation will run a
-   * subcommand or the command.
+   * Permit positional arguments on commands with prefix matching enabled.
+   * A word can then be an argument or a subcommand prefix. Default: `false`.
    */
   allowMatchingSubcommandPrefixAndArgs?: boolean;
 
   /**
    * Change the naming style of the tests.
    *
-   * - `sentence`: Use proper sentence casing, punctuation, etc
-   * - `function`: Use the name of the assert function that will be executed
+   * - `sentence`: Describe each check in a sentence. This is the default.
+   * - `function`: Use the assertion function name.
    */
   namingStyle?: TestNamingStyle;
 }
 
+/** Optional test-runner context for reporting checks as named steps. */
 export interface TestContextLike {
   step(name: string, fn: () => unknown | Promise<unknown>): unknown | Promise<unknown>;
 }
@@ -1008,11 +1010,17 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
 ];
 
 /**
- * Validate your CLI in your test suite
+ * Return an async function that validates a spec and throws on failure.
  *
- * This enforces certain constraints that the type system cannot. The parser
- * may ignore these issues, producing correct output that _appears_ to be
- * wrong.
+ * Call the returned function from a test and await or return its promise.
+ * It loads every command, including commands behind `loadSpec`, and checks
+ * names, argument order, defaults, option relationships and references.
+ * Persistent subcommands are also checked where descendants inherit them.
+ * Paths entering multiple inherited subcommands in succession are not checked.
+ *
+ * @param spec - The root command to validate. Import it without running the CLI.
+ * @param options - Validation relaxations and step naming.
+ * @returns A function that runs the checks, optionally in named test-runner steps.
  */
 export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestContextLike) => Promise<void> {
   const { namingStyle = "sentence" } = options;
@@ -1027,4 +1035,5 @@ export function test(spec: Subcommand, options: TestOptions = {}): (t?: TestCont
   };
 }
 
+/** Alias of {@link test}. */
 export const testSpec = test;

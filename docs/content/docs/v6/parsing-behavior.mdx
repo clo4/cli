@@ -1,0 +1,91 @@
+---
+title: Parsing behavior
+description: Rules for defaults, option presence, command scope and action selection.
+---
+
+These tables describe interactions between command and argument fields. The generated reference documents the fields themselves: [Arg](./reference/cli/interfaces/Arg.mdx), [Option](./reference/cli/interfaces/Option.mdx) and [Subcommand](./reference/cli/interfaces/Subcommand.mdx).
+
+## Defaults and presence
+
+For an option with a required argument, a default supplies the value when the option is omitted. For an optional argument, the default supplies the value when the option is present without that argument.
+
+Assume `--port` has a required argument with default `"8080"`. Assume `--inspect` has an optional argument with default `"9229"`.
+
+| Input                       | `get`         | `all`         | `has`         | `count`       |
+| --------------------------- | ------------- | ------------- | ------------- | ------------- |
+| `--port` omitted            | `"8080"`      | `["8080"]`    | `false`       | `0`           |
+| `--port 3000`               | `"3000"`      | `["3000"]`    | `true`        | `1`           |
+| `--port` without a value    | Parsing error | Parsing error | Parsing error | Parsing error |
+| `--inspect` omitted         | `undefined`   | `[]`          | `false`       | `0`           |
+| `--inspect` without a value | `"9229"`      | `["9229"]`    | `true`        | `1`           |
+| `--inspect=9000`            | `"9000"`      | `["9000"]`    | `true`        | `1`           |
+
+`count` reports stored values for supplied options, including defaults added to a bare optional argument. It is not always the number of option occurrences.
+
+A default for an omitted option never satisfies `isRequired` or `dependsOn`, and never creates an `exclusiveOn` conflict. Those rules use explicit option presence.
+
+### Consecutive defaults
+
+Defaults fill omitted arguments in order. Filling stops at the first argument without a default, even if later arguments define defaults.
+
+A positional argument needs `isOptional: true` to use a default. A variadic default contributes one value. Help shows the defaults that the parser can use.
+
+## Repeated options
+
+| Definition                              | Repeated use                             | Reading the result                                                           |
+| --------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------- |
+| No `isRepeatable`                       | The latest use replaces previous values. | `get` and `all` read the latest use.                                         |
+| `isRepeatable: true`, with arguments    | Values accumulate in order.              | `get` reads the first value, `all` reads every value, `count` counts values. |
+| `isRepeatable: true`, without arguments | Each use records one flag occurrence.    | `has` reports presence and `count` counts occurrences.                       |
+| `isRepeatable: n`                       | At most `n` uses are accepted.           | The limit counts uses, even when each use takes several values.              |
+
+For repeatable flags, chained names count separately. `-vvv` records three uses of a repeatable `-v` flag.
+
+Completion stops suggesting an option at its repeat limit. It also stops suggesting a used nonrepeatable option, although parsing permits a later use to replace it.
+
+## Name resolution
+
+A token is interpreted in the command scope where it appears. Entering a subcommand changes which options and commands its names select.
+
+| Situation                                            | Resolution                                                                       |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| A local option and a persistent option share a name. | The local option wins.                                                           |
+| Options in the same list share a name.               | The later definition wins for parsing. Spec checks reject duplicate local names. |
+| A local and an inherited subcommand share a name.    | The local subcommand wins for that name.                                         |
+| A subcommand name also names an option.              | The subcommand wins where a subcommand can be selected.                          |
+| A name is an alias that no nearer definition takes.  | That alias continues to select its original definition.                          |
+| A token follows the first positional argument.       | It cannot select a subcommand. Option parsing can continue unless disabled.      |
+
+A nonpersistent parent option can be supplied before entering a child, but cannot be supplied after entering it. Persistent options remain available in descendant scopes.
+
+Parsed values remain available under their recorded keys. When different options share a name, that shared lookup key reads the option used last. A unique `ref` always reads its own option. Spec checks require refs for these collisions.
+
+## Token boundaries
+
+| Input or rule                                                      | Effect                                                                                                                 |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `--` while option parsing is enabled                               | Ends option and subcommand parsing. Remaining tokens are positional values, subject to argument limits.                |
+| First positional argument with `optionsMustPrecedeArguments: true` | Ends option parsing. Later `--` tokens are positional values too.                                                      |
+| An attached option value, such as `--port=3000`                    | Ends that option's values in the same token. Later tokens cannot supply additional values for that use.                |
+| An open option requires another separate value.                    | A subcommand name is read as that value. A recognized option can still interrupt it and produce a missing-value error. |
+| An open option has a variadic argument.                            | Non-option tokens remain its values rather than selecting subcommands.                                                 |
+
+An option-like token that does not match a known option can be a value of an open option. This permits values such as negative numbers. With no open option, unknown option-like tokens normally fail parsing.
+
+With `flagsArePosixNoncompliant: true`, unrecognized option-like tokens become positional arguments instead. The declared argument limits still apply.
+
+## Action selection and validation
+
+The last supplied option with an action takes precedence over the selected command's action. A command without an action prints help after the applicable parsing checks.
+
+| Check                             | Command action | Option action |
+| --------------------------------- | -------------- | ------------- |
+| Unknown option                    | Enforced       | Enforced      |
+| Missing or malformed option value | Enforced       | Enforced      |
+| Positional argument count         | Enforced       | Skipped       |
+| Required options                  | Enforced       | Skipped       |
+| Option dependencies and conflicts | Enforced       | Skipped       |
+
+A command with `requiresSubcommand: true`, no action and no positional values prints help without requiring its options. If it defines an action, that action runs with the normal required-input checks.
+
+An option action receives broader types because required inputs can be missing. [Actions](./actions.mdx#option-actions) explains this distinction.

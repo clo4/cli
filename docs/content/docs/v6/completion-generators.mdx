@@ -1,0 +1,81 @@
+---
+title: Generate completion suggestions
+description: Read application data to complete an argument and test the result.
+---
+
+Put a generator on the argument whose values come from application data. The library selects that argument and calls the generator when the shell requests suggestions.
+
+This example reads deployment targets from a JSON file beside the CLI module. Create `targets.json` with an array of names:
+
+```json
+["staging", "production"]
+```
+
+## Write the generator
+
+Export the generator as an ordinary function so it can be tested without invoking a shell:
+
+```ts
+// targets.ts
+import { readFile } from "node:fs/promises";
+
+export async function targetSuggestions(tokens: string[]) {
+  const names: string[] = JSON.parse(await readFile(new URL("./targets.json", import.meta.url), "utf8"));
+  const partial = tokens.at(-1) ?? "";
+  return names.filter((name) => name.startsWith(partial));
+}
+```
+
+The generator receives words after the program name, with the partial value last. For `--target=prod`, the last token is `"prod"`. Earlier tokens describe the input before the value.
+
+Return strings, or return objects with `name` and `description` when the shell can display more context. Both synchronous and asynchronous functions are accepted.
+
+## Attach it to the argument
+
+```ts
+// demo.ts
+import * as CLI from "@clo4/cli";
+import { targetSuggestions } from "./targets.ts";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--target",
+      description: "Deployment target.",
+      args: { name: "target", generators: { custom: targetSuggestions } },
+    },
+  ],
+  subcommands: [CLI.completion],
+  action({ options }) {
+    console.log(options.get("--target"));
+  },
+});
+
+CLI.run(spec);
+```
+
+The same `generators` field works on positional arguments. [Install the completion script](./install-completion.mdx), then complete a value after `demo --target`.
+
+Suggestions do not constrain parsing. If execution must reject an unknown target, validate the supplied name in the action.
+
+## Test the generator
+
+With the example's `targets.json` available beside `targets.ts`, test the function directly:
+
+```ts
+import { expect, test } from "vitest";
+import { targetSuggestions } from "./targets.ts";
+
+test("target completion filters by the partial value", async () => {
+  expect(await targetSuggestions(["--target", "prod"])).toEqual(["production"]);
+});
+```
+
+This tests application data and filtering. A separate shell check confirms installation and insertion behavior.
+
+## Keep completion responsive
+
+Each request starts a fresh process. Move execution-only initialization into actions and avoid expensive imports at module scope.
+
+If a generator queries a remote service, choose how your application handles an unavailable service. Returning an empty list lets completion continue without suggestions from that source. Keep error reporting out of stdout because the completion script reads it as suggestion data.

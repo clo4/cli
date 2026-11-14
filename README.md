@@ -2,58 +2,19 @@
 
 _A magical CLI framework, with no magic._
 
-`@clo4/cli` is a TypeScript library for building command-line tools from plain objects. Parsing, TypeScript types, help, and shell completion for Bash, Zsh, Fish, PowerShell and Nushell all come from one command definition. Your application logic lives in ordinary functions.
+Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings and run your application code.
 
-- **Typed from the definition.** TypeScript infers each action's arguments, options and defaults from its command, with no separate schema to keep in sync. For commands written inside the root spec, the types also include persistent options, which a command shares with all its subcommands.
-- **Custom completion.** An argument's suggestions can come from a fixed list, the shell's file path completion, or a sync or async function you write. You write no shell-specific code.
-- **Fast startup.** The package has no runtime dependencies, and a large CLI can load each command only when it's used. See [Performance](#performance) for benchmarks.
-- **Plain TypeScript.** There are no decorators, classes or lifecycle hooks. The library parses the command line, and your code converts and validates the values.
+The package has no runtime dependencies. It supports completion for Bash, Zsh, Fish, PowerShell and Nushell, with static suggestions, file paths and sync or async generators on individual arguments. Large CLIs can load command definitions on demand.
 
-```bash
+```sh
 npm install @clo4/cli
 ```
 
-## Custom shell completion
-
-A completion generator is a function on an argument. This deployment tool suggests targets from an API:
-
-```ts
-options: [
-  {
-    name: "--target",
-    args: {
-      name: "target",
-      generators: {
-        custom: async (tokens) => listTargets(tokens),
-      },
-    },
-  },
-],
-```
-
-`listTargets` is your own function, and it returns strings or `{ name, description }` objects. The library finds the argument the user is completing, applies the command's parsing rules, and calls that argument's generator. Add the built-in `CLI.completion` subcommand to print a completion script for the user's shell.
-
-[Help and completion](https://clo4.net/cli/v6/help-and-completion) covers installing the scripts and writing generators.
-
-## Documentation
-
-The full documentation is at [clo4.net/cli](https://clo4.net/cli/).
-
-- [Options](https://clo4.net/cli/v6/options): flags, names, values, defaults, repeats and relationships
-- [Arguments](https://clo4.net/cli/v6/arguments): positional and variadic arguments
-- [Subcommands](https://clo4.net/cli/v6/subcommands): nested commands and global options
-- [Actions](https://clo4.net/cli/v6/actions): errors, exit codes and types
-- [Help and completion](https://clo4.net/cli/v6/help-and-completion): the built-in help and shell completion, with custom suggestions
-- [Testing](https://clo4.net/cli/v6/testing): checks for mistakes that types can't express
-- [Parser settings](https://clo4.net/cli/v6/parser-settings): changes to how a command line is read
-- [Performance](https://clo4.net/cli/v6/performance): benchmarks and loading commands on demand
-- [Choosing a CLI library](https://clo4.net/cli/v6/choosing-a-cli-library): how it compares with Commander, citty, Yargs and oclif
+The package is ESM-only. Type inference requires TypeScript 6.0 or later.
 
 ## Example
 
-This example defines `demo build`, with an input directory, an output option and a watch flag. The action prints the selected paths and whether watch mode was requested.
-
-Save this as `demo.ts` in a project with `"type": "module"` in its `package.json`. Run the examples with Node.js 24 or later using its [built-in TypeScript support](https://nodejs.org/api/typescript.html#type-stripping):
+Save this as `demo.ts` in a project with `"type": "module"` in `package.json`. Run it with Node.js 24 or later using its [built-in TypeScript support](https://nodejs.org/api/typescript.html#type-stripping).
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -74,18 +35,11 @@ const spec = CLI.spec({
         template: "folders",
       },
       options: [
-        {
-          name: ["-w", "--watch"],
-          description: "Watch for changes.",
-        },
+        { name: ["-w", "--watch"], description: "Watch for changes." },
         {
           name: ["-o", "--output"],
           description: "Output directory.",
-          args: {
-            name: "dir",
-            default: "dist",
-            template: "folders",
-          },
+          args: { name: "dir", default: "dist", template: "folders" },
         },
       ],
       action({ args: [input], options }) {
@@ -103,8 +57,6 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
-`build` defaults to `.` for input and `dist` for output:
-
 ```console
 $ node demo.ts build
 . -> dist
@@ -113,35 +65,47 @@ src -> public
 Watch mode enabled.
 ```
 
-In the remaining command examples, `demo` stands for `node demo.ts`.
+`CLI.spec` returns the definition unchanged and infers the action's inputs. Here, `input` and the output value are strings because they have defaults. TypeScript rejects unknown option names.
 
-Adding `CLI.help` to the root command's `options` makes `-h` and `--help` available on all its subcommands. The generated help lists the command's arguments and options:
+`CLI.run` parses the command line and runs the selected action. `demo build --help` and `demo help build` print help for `build`. Running `demo` without a subcommand prints root help.
 
-```console
-$ demo build --help
-Build a project.
+## Custom completion
 
-Usage:
-  demo build [flags] [input]
+Attach a generator to the argument it completes. This option asks application code for deployment targets:
 
-Arguments:
-  input  Source directory. (default: .)
-
-Flags:
-  -w, --watch         Watch for changes.
-  -o, --output <dir>  Output directory. (default: dist)
-
-Global flags:
-  -h, --help          Print a help message
+```ts
+{
+  name: "--target",
+  args: {
+    name: "target",
+    generators: {
+      custom: async (tokens) => listTargets(tokens),
+    },
+  },
+}
 ```
 
-Running `demo` without a subcommand displays the CLI's help text, including the available commands and global options. This is the default behavior for a command without an `action`.
+`listTargets` is your function. It receives the command-line tokens and returns strings or `{ name, description }` objects. The library selects the argument and formats suggestions for the shell.
 
-`demo help build` displays help for the `build` subcommand. `demo completion <shell>` prints a completion script for the specified shell.
+Add `CLI.completion` to the root's subcommands. Generate and load its script at shell startup so completion stays matched to the installed CLI. See [Install shell completion](https://clo4.net/cli/v6/install-completion) for shell configuration and [Help and completion](https://clo4.net/cli/v6/help-and-completion) for generator details.
+
+## Documentation
+
+Read the [introduction](https://clo4.net/cli/v6) or go directly to a topic:
+
+- [Options](https://clo4.net/cli/v6/options): names, values, defaults, repetition and relationships.
+- [Arguments](https://clo4.net/cli/v6/arguments): positional and variadic inputs.
+- [Subcommands](https://clo4.net/cli/v6/subcommands): command trees and persistent options.
+- [Actions](https://clo4.net/cli/v6/actions): input types, validation, errors and exit codes.
+- [Help and completion](https://clo4.net/cli/v6/help-and-completion): built-ins, suggestions and shell setup.
+- [Testing](https://clo4.net/cli/v6/testing): validate a spec against the parser's rules.
+- [Parser settings](https://clo4.net/cli/v6/parser-settings): token parsing, abbreviations and separators.
+- [Performance](https://clo4.net/cli/v6/performance): benchmarks and loading commands on demand.
+- [Choosing a CLI library](https://clo4.net/cli/v6/choosing-a-cli-library): features and application responsibilities.
 
 ## Performance
 
-In the [benchmarks](https://clo4.net/cli/v6/performance), Commander takes 3.4 to 4.4 times as long as `@clo4/cli` for the same work, and Yargs takes 18.0 to 20.7 times as long.
+The [benchmarks](https://clo4.net/cli/v6/performance) measure bundled CLI startup and command execution, excluding Node startup. For the measured workload, Commander takes 3.4–4.4 times as long as `@clo4/cli`, and Yargs takes 18.0–20.7 times as long.
 
 ## License
 

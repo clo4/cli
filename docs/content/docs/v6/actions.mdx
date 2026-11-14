@@ -1,78 +1,99 @@
 ---
 title: Actions
-description: What an action receives, how it reports errors, and how it's typed.
+description: Read parsed input, validate values and control exit status.
 ---
 
-These examples show fields inside the `build` command of the [complete flag example](./options.mdx#flags).
+An action is the function attached to a command or option. The parser selects it after reading the command line.
 
-The parser checks a command line against the command's rules: which arguments and options it accepts, which are required, and how they relate. The action receives the values that pass those checks. Argument values are strings, and TypeScript knows which ones can be absent.
+A command action receives input that satisfies the command's argument counts and option rules. Values are strings. Convert and validate them in the action, with ordinary TypeScript or your preferred validation library.
 
-The action converts and validates those values. The parser can require a value for `--port`, and the action decides whether that value is a valid TCP port. Use plain TypeScript or the validation library your application already uses.
-
-If an action throws an `Error`, `CLI.run` prints its message to stderr and sets the exit code to 1:
+## Validating values
 
 ```ts
-options: [
-  {
-    name: "--port",
-    args: {
-      name: "port",
-      default: "8080",
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "serve",
+  options: [
+    {
+      name: "--port",
+      description: "Listen on this port.",
+      args: { name: "port", default: "8080" },
     },
+  ],
+  action({ options }) {
+    const port = Number(options.get("--port"));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error("Port must be an integer between 1 and 65535");
+    }
+    console.log(`Port: ${port}`);
   },
-],
-action({ options }) {
-  const port = Number(options.get("--port"));
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error("Port must be an integer between 1 and 65535");
-  }
-  console.log(`Port: ${port}`);
-},
+});
+
+CLI.run(spec);
 ```
 
 ```console
-$ demo build --port 3000
+$ node serve.ts --port 3000
 Port: 3000
-$ demo build --port nope
+$ node serve.ts --port nope
 Error: Port must be an integer between 1 and 65535
 ```
 
-An action can return a number to set the exit code, or return nothing for success (0). Async actions are awaited. `CLI.run` sets `process.exitCode` to that code, limited to the range 0–255.
+The parser requires a value after `--port`. The action decides whether that value is a valid port.
 
-## Option actions and additional action parameters
+Completion suggestions do not restrict accepted values. If a value must belong to a fixed set, enforce that set in the action.
 
-An option can have an action, too. This runs **instead of** the command's action:
+## Errors and exit codes
+
+If an action throws an `Error`, `CLI.run` prints its message to stderr and returns exit code `1`. It does not print a stack trace. To report an error without throwing, call `CLI.printError("message")` and return `1`.
+
+Return a number to set the exit code. Returning nothing means success, code `0`. Async actions are awaited. Exit codes are limited to `0`–`255`.
+
+Parsing errors also return `1`. They include usage information and, when a close match exists, a spelling suggestion. Errors thrown by an action do not include usage automatically.
+
+`CLI.run` resolves to the exit code and sets `process.exitCode`. It never calls `process.exit`, so the process can finish pending work.
+
+## Option actions
+
+An option can define an action. This takes precedence over the command's action:
 
 ```ts
-options: [
-  {
-    name: "--version",
-    action: () => console.log("1.0.0"),
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  args: { name: "input" },
+  options: [{ name: "--version", action: () => console.log("1.0.0") }],
+  action({ args: [input] }) {
+    console.log(input);
   },
-],
+});
+
+CLI.run(spec);
 ```
 
-When several supplied options have actions, the last one is selected. It bypasses checks for positional argument counts, required options and option relationships. For that reason an option's action receives `args` as `string[]` and `options.get()` as `string | undefined`. Its option names are still checked, like a command's. This allows `--help` to display usage without supplying required inputs. Unknown options and malformed option values still produce parsing errors.
+`demo --version` prints the version without requiring `input`. If several supplied options have actions, the last one wins.
 
-Actions also receive:
+Option actions bypass positional argument counts, required options and option relationships. They still reject unknown options and malformed option values. This is how `--help` works without requiring the rest of the command's inputs.
 
-- `path`: the commands from the root spec to the selected command, for an action that works from the command line it was run on, as help does. Read the names and fields of its entries. An entry can be a copy of the command in your spec, so comparing one with a command object by identity is unreliable.
-- `argSeparatorIndex`: the index in `args` where values after `--` begin, or `-1` if `--` was not supplied.
-- `help(config?)`: a function that returns help text for the selected command.
+Because those checks are skipped, option actions receive `args` as `string[]`, and `options.get` can return `undefined`. TypeScript still checks option names.
 
-`options.options` exposes the underlying `Map<string, string[]>`. Supplied options have entries for every alias; omitted options have no entry, including those with defaults.
+## Execution context
 
-To report an error without throwing, call `CLI.printError("message")` and return 1.
+An action receives the command's positional values in `args` and named inputs through `options`. It also receives the selected command path, the position of `--`, and a function that returns help text.
 
-The action's `help()` function accepts `description: false` to omit the command description and `usage: false` to omit the usage line. `didYouMean: { input, choices }` adds a spelling suggestion. To render help for another command, pass its array of command objects as `path`.
+The path describes the invocation, from the root to the selected command. Loaded commands can appear as copies, so read their fields rather than comparing object identity.
 
-`CLI.run` reads `process.argv.slice(2)` by default. Pass `argv` to supply the command line directly, for example `CLI.run(spec, { argv: ["build", "src"] })`. It returns a promise of the exit code and never calls `process.exit`. With `setExitCode: false`, it leaves `process.exitCode` alone.
+[ActionInit](./reference/cli/interfaces/ActionInit.mdx) documents these fields. [OptionArgs](./reference/cli/interfaces/OptionArgs.mdx) documents the option reader and its underlying map.
 
 ## Types in actions
 
-Each action is typed from its own command, at any depth. Its `options` also accepts the persistent options of the commands above it:
+`CLI.spec` infers each action's inputs from its command, including persistent options inherited from ancestors:
 
 ```ts
+import * as CLI from "@clo4/cli";
+
 const spec = CLI.spec({
   name: "demo",
   options: [{ name: "--verbose", isPersistent: true }],
@@ -85,26 +106,33 @@ const spec = CLI.spec({
         source; // string
         destination; // string | undefined
         options.get("--output"); // string
-        options.has("--verbose"); // inherited from demo
-        options.has("--outptu"); // compile error
+        options.has("--verbose"); // boolean
       },
     },
   ],
 });
+
+CLI.run(spec);
 ```
 
-An action in a command made with `CLI.command` knows that command's options only, since the commands above it aren't in the call.
+`CLI.command` provides the same inference for a separately defined command. Its types only include options visible in that definition. Placing it under a parent does not add inherited option names to its action's types.
 
-An option or argument that several commands share is written outside the spec. Mark it `as const`, so that its name and fields keep their exact types:
+When sharing an option or argument between commands, preserve its literal types with `as const`:
 
 ```ts
 const reason = {
   name: "--reason",
-  description: "Why, for the audit log.",
+  description: "Reason for the change.",
   args: { name: "text" },
 } as const;
 ```
 
-Without `as const`, TypeScript reads the option's name as `string`, and a command that uses the option accepts any option name. An argument with `isOptional: true` doesn't compile without it, because `true` becomes `boolean`.
+Without `as const`, the name widens to `string`. The action then accepts any option name. Fields such as `isOptional: true` also need their literal types preserved.
 
-These types need TypeScript 6.0 or later.
+## Running a command line
+
+`CLI.run` reads `process.argv.slice(2)` by default. A caller can supply `argv` and disable changes to `process.exitCode`. This lets tests invoke the CLI without starting another process.
+
+[Test command invocations](./testing-commands.mdx) shows that pattern. [RunOptions](./reference/cli/interfaces/RunOptions.mdx) lists the runner's configuration.
+
+In an entry file that uses [loaded commands](./loading-commands.mdx), call `CLI.run(spec)` without top-level `await` to avoid an extra shared chunk when bundling.

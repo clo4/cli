@@ -1,0 +1,97 @@
+---
+title: Load commands on demand
+description: Defer command construction and imports until a run needs them.
+---
+
+A normal spec constructs every command at startup. A subcommand with `loadSpec` provides its full definition only when the parser, help or completion enters it:
+
+```ts
+// main.ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [CLI.help],
+  subcommands: [
+    {
+      name: "remote",
+      description: "Manage remotes.",
+      loadSpec: () => import("./remote.ts").then((module) => module.default),
+    },
+    CLI.helpCommand,
+    CLI.completion,
+  ],
+});
+
+CLI.run(spec);
+```
+
+```ts
+// remote.ts
+import * as CLI from "@clo4/cli";
+
+export default CLI.command({
+  name: "remote",
+  requiresSubcommand: true,
+  subcommands: [
+    {
+      name: "add",
+      description: "Add a remote.",
+      args: { name: "url" },
+      action({ args: [url] }) {
+        console.log(`Adding ${url}`);
+      },
+    },
+    {
+      name: "list",
+      description: "List remotes.",
+      action() {
+        console.log("No remotes configured.");
+      },
+    },
+  ],
+});
+```
+
+`demo --help` lists `remote` without loading its file. `demo remote add`, `demo remote --help` and `demo help remote` load it. Completion loads it when resolving words inside `remote`.
+
+## Keep metadata on the loading definition
+
+Alongside `loadSpec`, define only `name`, `description`, `hidden` and `isPersistent`. Parent help and completion read these fields before loading. Put arguments, options, actions, directives and child commands in the returned definition.
+
+The returned command must have the same name. It can omit `description`, `hidden` and `isPersistent`. If it supplies them, they must match the loading definition. Spec checks enforce these rules.
+
+The parser uses a copy of the returned command with the loading definition's metadata applied. Neither object changes. The copy appears on the action's `path`.
+
+A loader runs once per command-line invocation that enters it. It does not cache the result across invocations. A loaded command can contain more commands with their own loaders.
+
+## Defer construction within one file
+
+A loader can return a command directly. This defers construction without adding a file read:
+
+```ts
+{
+  name: "remote",
+  description: "Manage remotes.",
+  loadSpec: () => CLI.command({
+    name: "remote",
+    subcommands: [
+      { name: "list", action: () => console.log("No remotes configured.") },
+    ],
+  }),
+}
+```
+
+Parsing stays synchronous until a selected loader returns a promise. `CLI.run` still returns a promise in either case.
+
+The action's `help()` returns a string synchronously. Its own path is already loaded. If you pass another path, help cannot wait for an async loader on that path and throws an error naming the command.
+
+`testSpec` loads every command before validation, regardless of earlier uses of the spec.
+
+## Bundle the CLI
+
+Use a literal path in `import()` so the bundler can discover the module and emit a separate chunk.
+
+In the entry file, call `CLI.run(spec)` without top-level `await`. Waiting at the top level creates an import cycle when a loaded command needs the library from the entry. Bundlers then move the library into a shared file, which adds another file load to every invocation.
+
+See [Performance](./performance.mdx#when-loading-on-demand-is-faster) for measurements of both loading strategies.

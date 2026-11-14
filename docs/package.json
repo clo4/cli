@@ -3,10 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "dev": "pnpm reference && astro dev",
+    "build": "pnpm reference && astro build",
     "preview": "astro preview",
-    "check": "astro sync && tsc --noEmit"
+    "check": "pnpm reference && astro sync && tsc --noEmit",
+    "reference": "node scripts/generate-reference.mjs",
+    "reference:freeze": "node scripts/generate-reference.mjs --freeze",
+    "reference:check": "node scripts/check-reference.mjs"
   },
   "dependencies": {
     "@astrojs/react": "^7.1.7",
@@ -23,7 +26,9 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.5",
-    "typescript": "^7.0.2",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.14.1",
+    "typescript": "^6.0.3",
     "wrangler": "^4.161.0"
   }
 }

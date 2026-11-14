@@ -44,29 +44,41 @@ export interface OptionArgs {
   readonly options: Map<string, string[]>;
 
   /**
-   * Get every argument supplied to a option, or the defaults of its arguments
-   * if it wasn't supplied. Empty for an option that wasn't supplied and has
-   * no defaults.
+   * Read all values collected for an option, in order.
+   *
+   * For an omitted option, return consecutive argument defaults from the
+   * first argument. Return an empty array if the first argument is optional
+   * or has no default. A repeatable option collects values from every use.
    */
   all(name: string): string[];
 
   /**
-   * Get the first argument supplied to a option, or the default of its first
-   * argument if it wasn't supplied.
+   * Read the first value of an option.
+   *
+   * For an omitted option, return its first argument's default only when
+   * that argument is required. Otherwise return `undefined`.
    */
   get(name: string): string | undefined;
 
-  /** Check whether a option was supplied. Defaults don't count. */
+  /** Return whether the option was supplied. Defaults do not count. */
   has(name: string): boolean;
 
   /**
-   * Count option values, useful for repeatable options. It's 0 for an option
-   * that wasn't supplied, even if its arguments have defaults.
+   * Count supplied values. For a repeatable flag, count occurrences instead.
+   *
+   * An option with multiple arguments can contribute several values per use.
+   * An omitted option returns 0, even when it has defaults.
    */
   count(name: string): number;
 }
 
-/** The data an action receives. */
+/**
+ * Input for an action.
+ *
+ * `spec` and `command` infer more specific argument and option types for
+ * command actions. Option actions use broader types because they can run
+ * without satisfying required inputs.
+ */
 export interface ActionInit {
   /** Options found for this invocation. */
   options: OptionArgs;
@@ -74,13 +86,21 @@ export interface ActionInit {
   /** Positional arguments found for the selected command. */
   args: string[];
 
-  /** Commands used leading up to the selected action. */
+  /**
+   * Commands from the root to the selected command. A loaded command can be
+   * a copy of its definition. Do not rely on object identity.
+   */
   path: CommandPath;
 
   /** Index of the `--` argument separator, or -1 if it was not supplied. */
   argSeparatorIndex: number;
 
-  /** Get help text for the currently executing command. */
+  /**
+   * Return help text for the selected command, or for `config.path`.
+   *
+   * This method is synchronous. An alternative path with an unloaded async
+   * `loadSpec` throws an error. The action's own path is already loaded.
+   */
   help(config?: {
     /** Include the command description? Default: true. */
     description?: boolean;
@@ -100,21 +120,34 @@ export interface ActionInit {
   }): string;
 }
 
-/** A top-level command. */
+/**
+ * The root command of a CLI. Its name is a single string.
+ *
+ * It accepts the fields of a subcommand except `loadSpec`. Use `spec` to
+ * infer action types from a root definition.
+ */
 export interface Spec extends Omit<Subcommand, "name" | "loadSpec"> {
   /** Name of the CLI. */
   name: string;
 }
 
-/** A subcommand that can be executed. */
+/**
+ * A command definition. Commands can nest through `subcommands`.
+ *
+ * Use `command` for a separately defined command with inferred action types.
+ * A parent action does not run when a child command is selected.
+ */
 export interface Subcommand {
-  /** Name or aliases used for matching. */
+  /**
+   * A case-sensitive name or list of aliases. Use a string for one name and
+   * an array for two or more.
+   */
   name: SingleOrArray<string>;
 
   /** Description shown in help. */
   description?: string;
 
-  /** Positional arguments accepted by this command. */
+  /** Positional arguments, in order. Use an object for one or an array for two or more. */
   args?: SingleOrArray<Arg>;
 
   /** Options accepted by this command. */
@@ -123,31 +156,38 @@ export interface Subcommand {
   /** Subcommands of this command. */
   subcommands?: NonEmptyArray<Subcommand>;
 
-  /** Direct parser behavior. */
+  /**
+   * Parsing rules for this command. Each field is inherited independently.
+   * A descendant can override a boolean with `false` or replace the separator list.
+   */
   parserDirectives?: {
     /**
-     * Treat option names literally, disabling POSIX short-option chaining and
-     * unknown option errors for tokens that look option-like.
+     * Read option names literally instead of chaining short names. Unknown
+     * option-like tokens become positional arguments. Default: `false`.
      */
     flagsArePosixNoncompliant?: boolean;
 
     /**
-     * Once an argument has been found, all following tokens are arguments even
-     * if they match options.
+     * Stop option parsing after the first positional argument. Later tokens,
+     * including `--`, are positional values. Default: `false`.
      */
     optionsMustPrecedeArguments?: boolean;
 
-    /** Separators that can attach a option argument to a option token. */
+    /**
+     * Separators for attached option values. Default: `"="`. A child
+     * replaces the inherited list. An empty array disables separators,
+     * but short attached forms such as `-p3000` still work.
+     */
     optionArgSeparators?: SingleOrArrayOrEmpty<string>;
 
     /**
-     * Match subcommands by shortest unique prefix instead of exact name.
-     * Hidden subcommands still only match their exact name.
+     * Accept an unambiguous prefix of a visible local subcommand name.
+     * Hidden and inherited subcommands require exact names. Default: `false`.
      */
     subcommandsMatchUniquePrefix?: boolean;
   };
 
-  /** Hide this command from help. */
+  /** Omit this command from help and completion. Its exact names still work. */
   hidden?: true;
 
   /**
@@ -160,8 +200,8 @@ export interface Subcommand {
   isPersistent?: true;
 
   /**
-   * Require a subcommand, so the command takes no arguments. Without a
-   * subcommand, the command's action runs, or its help prints if it has none.
+   * Disallow positional arguments on this command. Omitting a subcommand
+   * still runs this command's action, or prints help when it has no action.
    */
   requiresSubcommand?: true;
 
@@ -198,7 +238,12 @@ export interface Subcommand {
   [kind]?: "Subcommand";
 }
 
-/** A option that modifies or overrides command execution. */
+/**
+ * A named input. Without `args`, the option is a flag.
+ *
+ * Use `has` to read flags and `get` or `all` to read values. Without
+ * `isRepeatable`, each use replaces the option's previous values.
+ */
 export interface Option {
   /** Name or aliases, including any desired prefix such as `-`, `--`, or `/`. */
   name: SingleOrArray<string>;
@@ -221,10 +266,14 @@ export interface Option {
   /** Allow this option to be used by descendant subcommands. */
   isPersistent?: true;
 
-  /** Hide this option from help. */
+  /** Omit this option from help and completion. Its names still work. */
   hidden?: true;
 
-  /** Only allow arguments to be supplied with a separator. */
+  /**
+   * Require a value attached with an enabled option argument separator.
+   * `true` accepts any enabled separator. A string requires that separator.
+   * The separator must be enabled in `parserDirectives.optionArgSeparators`.
+   */
   requiresSeparator?: true | string;
 
   /**
@@ -235,20 +284,32 @@ export interface Option {
    */
   isRepeatable?: true | number;
 
-  /** Require this option to be supplied before the selected action runs. */
+  /**
+   * Require an explicit use of this option. Defaults do not satisfy it.
+   * A selected option action bypasses this check.
+   */
   isRequired?: true;
 
-  /** Fail parsing if these options are provided. */
+  /**
+   * Names of options that cannot be supplied with this option, in either
+   * order. Names include prefixes and resolve in the scope of this option's
+   * use. Defaults do not count. Option actions bypass this check.
+   */
   exclusiveOn?: NonEmptyArray<string>;
 
-  /** Fail parsing if these options are not provided. */
+  /**
+   * Names of options that must also be supplied. Names include prefixes and
+   * resolve in the scope of this option's use. Defaults do not count.
+   * Option actions bypass this check.
+   */
   dependsOn?: NonEmptyArray<string>;
 
   /**
    * Action performed when this option is provided.
    *
-   * Option actions take precedence over command actions. The final parsed option
-   * action is selected.
+   * The last supplied option with an action replaces the command action.
+   * It bypasses positional counts, required options and option relationships.
+   * Unknown options and malformed option values still fail parsing.
    */
   action?: Action;
 
@@ -291,11 +352,21 @@ export interface Suggestion {
  * affects completion and has no effect on parsing.
  */
 export interface Generator {
-  /** Produce suggestions from the current command-line tokens. */
+  /**
+   * Produce suggestions synchronously or asynchronously. Tokens exclude the
+   * program name and end with the partial value. For an attached value such
+   * as `--target=prod`, the last token is `"prod"`. Completion does not run
+   * the selected command action.
+   */
   custom?(tokens: string[]): (Suggestion | string)[] | Promise<(Suggestion | string)[]>;
 }
 
-/** Positional or option argument metadata. */
+/**
+ * A positional argument or an argument of an option. Values are strings.
+ *
+ * Use an object for one argument and an array for two or more. Required
+ * arguments precede optional arguments. A variadic argument must be last.
+ */
 export interface Arg {
   /** Name shown in generated help. */
   name?: string;
@@ -307,10 +378,13 @@ export interface Arg {
    */
   description?: string;
 
-  /** Allow this argument to take unlimited values. */
+  /**
+   * Accept one or more values, or zero or more with `isOptional`. Only the
+   * final argument can be variadic. Values stay in the containing array.
+   */
   isVariadic?: true;
 
-  /** Allow this argument to be omitted. */
+  /** Allow this argument to be omitted. Arguments are required by default. */
   isOptional?: true;
 
   /**
@@ -323,6 +397,9 @@ export interface Arg {
    * - A required option argument's default is what `get` and `all` return
    *   when the option isn't used. `has` and `count` still say it wasn't.
    *
+   * Defaults fill consecutive omitted arguments, stopping at the first
+   * argument without a default. A variadic default contributes one value.
+   * Defaults do not count as supplied options for requirements or relationships.
    * Help shows an option's defaults after its description.
    */
   default?: string;
@@ -330,9 +407,9 @@ export interface Arg {
   /** Completions: complete file or folder paths for this argument. */
   template?: Template;
 
-  /** Completions: static suggestions offered while typing this argument. */
+  /** Static completion suggestions. These do not restrict accepted input. */
   suggestions?: readonly (string | Suggestion)[];
 
-  /** Completions: dynamically generated suggestions for this argument. */
+  /** Completion generators for this argument. These do not validate input. */
   generators?: SingleOrArray<Generator>;
 }

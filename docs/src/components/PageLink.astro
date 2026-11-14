@@ -1,12 +1,9 @@
 ---
-import { base } from "@/lib/shared";
+import { source } from "@/lib/source";
 
 const { href, ...rest } = Astro.props;
-const [version] = (Astro.params.slug ?? "").split("/");
-const match = typeof href === "string" ? href.match(/^\.\/([\w-]+)\.mdx(#.*)?$/) : null;
-const resolved = match
-  ? `${base}/${version}${match[1] === "index" ? "" : `/${match[1]}`}${match[2] ?? ""}`
-  : href;
+const page = source.getPage((Astro.params.slug ?? "").split("/"));
+const resolved = typeof href === "string" && page ? source.resolveHref(href, page) : href;
 ---
 
 <a href={resolved} {...rest}><slot /></a>

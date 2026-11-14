@@ -1,0 +1,82 @@
+---
+title: Test command invocations
+description: Exercise parsing and action dispatch without starting a child process.
+---
+
+Call `CLI.run` with an explicit `argv` to test the command line a user supplies. Set `setExitCode: false` so a test does not change the test process's exit status.
+
+[Test the spec](./testing.mdx) separately. A valid definition does not prove that a particular invocation selects the expected action or passes the expected values.
+
+## Assert parsed input
+
+This Vitest test exercises a positional argument, an option alias and an inherited flag:
+
+```ts
+import { expect, test, vi } from "vitest";
+import * as CLI from "@clo4/cli";
+
+test("build receives the selected inputs", async () => {
+  const build = vi.fn();
+  const spec = CLI.spec({
+    name: "demo",
+    options: [{ name: "--verbose", isPersistent: true }],
+    subcommands: [
+      {
+        name: "build",
+        args: { name: "source" },
+        options: [{ name: ["-o", "--output"], args: { name: "directory" } }],
+        action({ args: [source], options }) {
+          build({
+            source,
+            output: options.get("--output"),
+            verbose: options.has("--verbose"),
+          });
+        },
+      },
+    ],
+  });
+
+  const code = await CLI.run(spec, {
+    argv: ["--verbose", "build", "src", "-o", "dist"],
+    setExitCode: false,
+  });
+
+  expect(code).toBe(0);
+  expect(build).toHaveBeenCalledExactlyOnceWith({
+    source: "src",
+    output: "dist",
+    verbose: true,
+  });
+});
+```
+
+Use the same approach to test defaults, repeated options and nested dispatch. Assert the values passed to application code, where incorrect parsing affects the command's behavior.
+
+## Assert action exit status
+
+The runner resolves to the action's exit code. This test verifies that an async action finishes before the runner resolves:
+
+```ts
+import { expect, test } from "vitest";
+import * as CLI from "@clo4/cli";
+
+test("an unsuccessful action returns its status", async () => {
+  const spec = CLI.spec({
+    name: "demo",
+    async action() {
+      return 2;
+    },
+  });
+
+  const code = await CLI.run(spec, { argv: [], setExitCode: false });
+  expect(code).toBe(2);
+});
+```
+
+For conversion and validation, test your application functions directly as well. Invocation tests cover the connection between the command definition and those functions.
+
+## Test the installed executable
+
+In-process tests do not exercise the package's executable mapping, module loading or shell environment. Run the built executable in a child process when those are part of the behavior under test.
+
+For that test, assert its exit status and stdout or stderr. Include `--help` and one representative command invocation. Keep shell completion installation checks separate because they also depend on the user's shell configuration.

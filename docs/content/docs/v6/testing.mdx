@@ -1,11 +1,41 @@
 ---
-title: Testing
-description: Check a spec for mistakes that types can't express.
+title: Validate a spec
+description: Validate a spec before shipping your CLI.
 ---
 
-`testSpec` validates the structure of a spec, including names, argument order, defaults and option references. These checks catch mistakes that TypeScript's types cannot express.
+TypeScript catches unknown fields and gives actions their input types. It cannot detect every invalid combination in a command definition.
 
-Export your spec from a module that does not call `CLI.run`, such as `src/spec.ts`, so importing it in a test does not run the CLI. A Vitest test can import the spec and validate it:
+`testSpec` checks the spec's structure against the parser's behavior. It catches problems such as unreachable names, misplaced arguments, unusable defaults and conflicting option references.
+
+## Add a spec test
+
+Keep the spec in a module that does not call `CLI.run`. Tests can then import it without executing the CLI.
+
+```ts
+// src/spec.ts
+import * as CLI from "@clo4/cli";
+
+export const spec = CLI.spec({
+  name: "demo",
+  description: "A small CLI.",
+  options: [CLI.help],
+  action() {
+    console.log("Hello");
+  },
+});
+```
+
+The entry file runs it:
+
+```ts
+// src/main.ts
+import * as CLI from "@clo4/cli";
+import { spec } from "./spec.ts";
+
+CLI.run(spec);
+```
+
+A Vitest test can import and validate the same spec:
 
 ```ts
 import { test } from "vitest";
@@ -15,15 +45,21 @@ import { spec } from "../src/spec.ts";
 test("CLI spec is valid", () => testSpec(spec)());
 ```
 
-`testSpec(spec)` returns an async function that runs the checks and throws on failure. Return its promise from your test callback, as above, or await it inside an async test.
+`testSpec(spec)` returns an async function. Calling that function runs the checks and throws on failure. Return or await its promise when wrapping it in another callback:
 
-The checks read each command the way the parser does. A persistent subcommand is checked under its parent and under each command that inherits it, where different options and parser settings can be in effect. A path that enters two inherited subcommands, one inside the other, isn't checked.
+```ts
+test("CLI spec is valid", async () => {
+  await testSpec(spec)();
+});
+```
 
-The examples in these docs leave out some descriptions to keep them short. By default, validation checks that every command and option has a description and that description lines fit within 68 characters.
+The testing entry point also exports `test` as an alias of `testSpec`.
 
-## Validation options
+## Descriptions
 
-The second argument configures validation. `allowNoDescription: true` disables the check for missing command and option descriptions:
+By default, every command and option needs a description. Description lines must fit within 68 characters. The length limit also applies to positional argument descriptions.
+
+Examples in these docs sometimes omit descriptions to keep attention on the field being explained. Set `allowNoDescription: true` to permit that in a spec test:
 
 ```ts
 await testSpec(spec, {
@@ -31,11 +67,22 @@ await testSpec(spec, {
 })();
 ```
 
-Two other options disable individual checks:
+Set `allowLongDescriptionLines: true` to disable the line-length limit. These options affect validation, not parsing or help rendering.
 
-- `allowLongDescriptionLines`: descriptions can have lines over 68 characters.
-- `allowMatchingSubcommandPrefixAndArgs`: a command can combine positional arguments with subcommands matched by prefix.
+## Abbreviated commands and positional arguments
 
-All three default to `false`. `namingStyle: "function"` uses check names such as `assertNamesReadBack` in step-based test output.
+With prefix matching enabled, a word can be both a positional value and an abbreviation for a subcommand. The checks reject that combination by default.
 
-The testing entry point also exports `test` as an alias of `testSpec`, and the [types of its options](https://github.com/clo4/cli/blob/main/src/testing.ts).
+If the ambiguity is intentional, set `allowMatchingSubcommandPrefixAndArgs: true`. [Parser settings](./parser-settings.mdx#abbreviated-subcommands) explains the matching rules.
+
+## What gets checked
+
+The checks load every command, including commands behind `loadSpec`. They validate the loaded definitions and their loading metadata.
+
+Persistent subcommands are checked both under their defining parent and under descendants that inherit them. This catches conflicts caused by a different scope. The walk does not cover paths that enter multiple inherited subcommands in succession.
+
+These are checks of the spec, not tests of your application. Test action behavior and custom validation separately. [Test command invocations](./testing-commands.mdx) covers parsing and dispatch with explicit `argv`.
+
+The testing API accepts a context with a `step` method for test runners that support named steps. `namingStyle: "function"` uses assertion function names in that output. The default is sentence names.
+
+See the [testing reference](./reference/testing/index.mdx) for signatures and configuration. Validation can become stricter in minor or patch releases when new checks identify incorrect or undefined behavior.

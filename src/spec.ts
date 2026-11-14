@@ -464,11 +464,16 @@ type Tree<X, Inherited, S> = {
 // }}}
 
 /**
- * Define a CLI. Takes the same object as `Spec` and returns it.
+ * Define a CLI from a root {@link Spec} and return the same object unchanged.
  *
  * Each command's `action` receives `args` and `options` typed from that
  * command, at any depth: the positional arguments as a tuple, and the names
  * of the command's own options and of the persistent options above it.
+ *
+ * @typeParam T - Inferred from the definition. Do not supply it explicitly.
+ * @param spec - A root command definition. The internal `Tree` type checks its
+ * fields and infers action inputs. It adds no runtime behavior.
+ * @returns The original definition as a `Spec`.
  */
 export function spec<const T>(spec: Tree<T, never, Spec>): Spec {
   return spec as unknown as Spec;
@@ -480,7 +485,12 @@ export function spec<const T>(spec: Tree<T, never, Spec>): Spec {
  * `Subcommand` and returns it.
  *
  * Its actions are typed like the ones in {@link spec}, except that they can't
- * see the persistent options of the commands it's placed under.
+ * see the persistent options of the commands it is placed under.
+ *
+ * @typeParam T - Inferred from the definition. Do not supply it explicitly.
+ * @param command - A subcommand definition. The internal `Tree` type checks its
+ * fields and infers action inputs. It adds no runtime behavior.
+ * @returns The original definition as a `Subcommand`.
  */
 export function command<const T>(command: Tree<T, never, Subcommand>): Subcommand {
   return command as unknown as Subcommand;

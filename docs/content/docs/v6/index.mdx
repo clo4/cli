@@ -1,23 +1,23 @@
 ---
 title: Introduction
-description: A TypeScript library for building command-line tools from plain objects.
+description: Define a CLI with plain TypeScript objects.
 ---
 
-`@clo4/cli` is a TypeScript library for building command-line tools. Commands are plain objects that describe accepted arguments and options. Each command can have an action: a function that receives the parsed input. TypeScript types that input from the command's own definition.
+`@clo4/cli` builds command-line tools from plain objects. A command definition describes its arguments, options and subcommands. The library uses that definition to parse input, infer TypeScript types, print help and answer shell completion requests.
 
-Parsing, help and completion need to follow the same argument and option rules. The library reads those rules from the command definitions, with application logic in the action functions.
+An action is the function that runs a command. It receives parsed strings. Your code decides what those strings mean and what work to do.
 
-Startup time matters for commands that exit quickly and for shell completion, which starts the CLI on each request.
+## Install
 
-```bash
+```sh
 npm install @clo4/cli
 ```
 
-## Example
+The package uses ECMAScript modules and has no runtime dependencies. Type inference requires TypeScript 6.0 or later.
 
-This example defines `demo build`, with an input directory, an output option and a watch flag. The action prints the selected paths and whether watch mode was requested.
+## A complete CLI
 
-Save this as `demo.ts` in a project with `"type": "module"` in its `package.json`. Run the examples with Node.js 24 or later using its [built-in TypeScript support](https://nodejs.org/api/typescript.html#type-stripping):
+Save this example as `demo.ts` in a project with `"type": "module"` in `package.json`. Node.js 24 or later can [run this TypeScript directly](https://nodejs.org/api/typescript.html#type-stripping).
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -38,18 +38,11 @@ const spec = CLI.spec({
         template: "folders",
       },
       options: [
-        {
-          name: ["-w", "--watch"],
-          description: "Watch for changes.",
-        },
+        { name: ["-w", "--watch"], description: "Watch for changes." },
         {
           name: ["-o", "--output"],
           description: "Output directory.",
-          args: {
-            name: "dir",
-            default: "dist",
-            template: "folders",
-          },
+          args: { name: "dir", default: "dist", template: "folders" },
         },
       ],
       action({ args: [input], options }) {
@@ -67,8 +60,6 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
-`build` defaults to `.` for input and `dist` for output:
-
 ```console
 $ node demo.ts build
 . -> dist
@@ -77,12 +68,16 @@ src -> public
 Watch mode enabled.
 ```
 
-In the remaining command examples, `demo` stands for `node demo.ts`.
+`CLI.spec` gives the action its types and returns the object unchanged. In this action, `input` and `options.get("--output")` are strings because both inputs have defaults. TypeScript rejects an unknown option name such as `options.has("--watc")`.
 
-Adding `CLI.help` to the root command's `options` makes `-h` and `--help` available on all its subcommands. The generated help lists the command's arguments and options:
+`CLI.run` parses the command line and calls the selected action. A command without an action prints help, so `node demo.ts` lists the available commands.
+
+## Help and completion
+
+The example includes three built-in objects. `CLI.help` adds `-h` and `--help` to the root and every descendant command. `CLI.helpCommand` adds `demo help build`. `CLI.completion` prints installation scripts for Bash, Zsh, Fish, PowerShell and Nushell.
 
 ```console
-$ demo build --help
+$ node demo.ts build --help
 Build a project.
 
 Usage:
@@ -99,41 +94,14 @@ Global flags:
   -h, --help          Print a help message
 ```
 
-Running `demo` without a subcommand displays the CLI's help text, including the available commands and global options. This is the default behavior for a command without an `action`.
+The `template: "folders"` fields tell completion to suggest directories. They do not require a path to exist. Your action handles that validation.
 
-`demo help build` displays help for the `build` subcommand. `demo completion <shell>` prints a completion script for the specified shell.
+## Where to go next
 
-### Command-line errors
+[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs. [Commands](./subcommands.mdx) explains command trees and inherited options.
 
-When parsing fails, `CLI.run` writes an error message and usage to stderr and sets the exit code to 1. For misspelled commands or options, the output may suggest a matching name:
+[Actions](./actions.mdx) covers validation, errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
 
-```console
-$ demo bild
-Error: Unknown command 'bild'
+The [API reference](./reference/index.mdx) is generated from the library's doc comments. [Parsing behavior](./parsing-behavior.mdx) collects rules that involve several fields.
 
-    Did you mean 'build'?
-
-Usage:
-  demo [flags]
-
-Commands:
-  build       Build a project.
-  help        Print a help message
-  completion  Print a shell completion script
-
-Global flags:
-  -h, --help  Print a help message
-```
-
-## Specs, commands and actions
-
-A **spec** is a plain object describing your CLI. `CLI.spec` takes the top-level (root) command and returns it unchanged. `CLI.command` does the same for a command written outside the spec. Both give each action the types of its own command's arguments and options.
-
-For a command line like `demo build src --output dist --watch`:
-
-- `build` selects the command to run.
-- `args` describes positional arguments: here, `src` is the input directory.
-- `options` describes named inputs: `--output` takes the value `dist`, and `--watch` is a flag with no value.
-- The `build` command's `action` receives these parsed arguments and options and runs after parsing succeeds.
-
-In the spec, `args` and `options` define what a command accepts. Inside an action, `args` is an array of positional values, and `options` has methods to read the named inputs. TypeScript knows how many values the command takes and which option names it has. `CLI.run` reads the command line, validates argument counts and option rules, and calls the selected action.
+The guides cover [organizing command modules](./organizing-commands.mdx), [loading commands on demand](./loading-commands.mdx), [testing invocations](./testing-commands.mdx) and [installing completion](./install-completion.mdx).
