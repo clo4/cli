@@ -1,0 +1,64 @@
+---
+title: Arguments
+description: Positional and variadic arguments.
+---
+
+These examples replace the `build` command in the [complete flag example](./options.mdx#flags).
+
+## Positional arguments
+
+A command's `args` describes positional arguments: values supplied without an option name. It accepts one argument definition or an array. Arguments are required by default; `isOptional: true` allows an argument to be omitted. The action receives their values in order:
+
+```ts
+const build = CLI.command({
+  name: "build",
+  args: [
+    {
+      name: "source",
+    },
+    {
+      name: "destination",
+      isOptional: true,
+    },
+  ],
+  action({ args: [source, destination] }) {
+    console.log(source, destination);
+  },
+});
+```
+
+```console
+$ demo build src dist
+src dist
+$ demo build src
+src undefined
+```
+
+In the action, `source` is a `string` and `destination` is `string | undefined`. Required arguments must come before optional arguments. Help shows this example as `<source> [destination]`.
+
+The `--` separator makes all remaining words positional arguments, including words that match options or subcommands. For example, `demo build -- --help` passes `"--help"` as the source.
+
+## Variadic arguments
+
+A variadic argument accepts one or more values. Set `isVariadic: true` on the last argument; its values appear in the same array as the other positional arguments.
+
+```ts
+args: {
+  name: "files",
+  isVariadic: true,
+},
+action({ args }) {
+  console.log(args.join(", "));
+},
+```
+
+```console
+$ demo build index.ts utils.ts
+index.ts, utils.ts
+```
+
+An argument can be both optional and variadic to accept zero or more values. Option arguments support the same fields, including `isOptional` and `isVariadic`.
+
+## Defaults
+
+An optional argument can have a default, which the action receives when the argument is omitted. [Defaults](./options.mdx#defaults) covers arguments and options together.

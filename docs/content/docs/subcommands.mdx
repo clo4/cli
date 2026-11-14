@@ -1,0 +1,100 @@
+---
+title: Subcommands
+description: Nested commands and the options they inherit.
+---
+
+These examples show fields of the root spec in the [complete flag example](./options.mdx#flags).
+
+Each subcommand has its own name, arguments, options and action. Its definition goes in the parent command's `subcommands` array. This example adds `clean` to the root spec, with `c` as an alias:
+
+```ts
+subcommands: [
+  {
+    name: ["clean", "c"],
+    description: "Remove build output.",
+    action() {
+      console.log("Cleaning up.");
+    },
+  },
+],
+```
+
+```console
+$ demo clean
+Cleaning up.
+$ demo c
+Cleaning up.
+```
+
+A command without an action prints its help. Set `hidden: true` to leave a command or option out of help and completion; typing its exact name still works.
+
+Setting `requiresSubcommand: true` on a command prevents it from accepting positional arguments. When no subcommand is supplied, the command's action runs if defined; otherwise, it displays help.
+
+A CLI with dozens of commands can [load each command when it's used](./performance.mdx#loading-commands-on-demand).
+
+## Global options
+
+An option normally belongs to the command that defines it. With `isPersistent: true`, descendant commands inherit it. Here, `--verbose` is defined on the root spec and is also available to `build`:
+
+```ts
+options: [
+  {
+    name: "--verbose",
+    isPersistent: true,
+  },
+],
+subcommands: [
+  {
+    name: "build",
+    action({ options }) {
+      console.log(options.has("--verbose"));
+    },
+  },
+],
+```
+
+```console
+$ demo --verbose build
+true
+$ demo build --verbose
+true
+```
+
+Help lists persistent options under “Global flags”. When `CLI.help` is added to the root spec, every descendant command inherits `--help`.
+
+### Options that share a name
+
+A subcommand's option can take a name that an inherited option also has. Here `-v` means `--verbose` on `demo` and `--version` on `build`. Both store their values under `-v`, so each needs a `ref`, a second key that only it uses:
+
+```ts
+options: [
+  {
+    name: ["-v", "--verbose"],
+    isPersistent: true,
+    ref: "verbose",
+  },
+],
+subcommands: [
+  {
+    name: "build",
+    options: [
+      {
+        name: ["-v", "--version"],
+        ref: "version",
+      },
+    ],
+    action({ options }) {
+      console.log(options.has("verbose"), options.has("version"));
+    },
+  },
+],
+```
+
+```console
+$ demo -v build
+true false
+$ demo build -v
+false true
+```
+
+`options.has("-v")` is `true` in both runs, because it reads whichever option used the name last. [Spec validation](./testing.mdx) requires a `ref` on both options, and rejects one on an option that shares no name.

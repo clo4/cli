@@ -1,0 +1,111 @@
+---
+title: Help and completion
+description: The built-in help option, help command and shell completion.
+---
+
+`CLI.help` is a help option; `CLI.helpCommand` and `CLI.completion` are subcommands. Add them to the root spec's `options` and `subcommands` arrays:
+
+```ts
+options: [CLI.help],
+subcommands: [CLI.helpCommand, CLI.completion, /* your commands */],
+```
+
+Running `demo --help` displays help for the top-level command. Both `demo build --help` and `demo help build` display help for the `build` subcommand. For nested subcommands, include the full command path: `demo help remote add`. Shell completion offers subcommand names after `help`, so `demo help remote <Tab>` lists the subcommands of `remote`.
+
+The built-ins are plain objects. To customise one, copy it with object spread: `{ ...CLI.help, description: "Show help" }`. Setting `isPersistent: true` on `CLI.helpCommand` makes it available within descendant commands, so `demo build help` displays help for `build`.
+
+Persistent subcommands match exact names and are omitted from descendant help. If a descendant defines a subcommand with the same name, that local definition takes precedence.
+
+To pass an inherited command's name as the first positional argument, put `--` before it. For example, `demo build -- help` passes `"help"` as the input directory.
+
+## Completion suggestions
+
+An argument's `suggestions` field supplies values offered by shell completion. It works on both positional and option arguments:
+
+```ts
+options: [
+  {
+    name: "--mode",
+    args: {
+      name: "mode",
+      suggestions: ["debug", "release"],
+    },
+  },
+],
+```
+
+Suggestions don't restrict accepted values. Validate allowed values in the action if the option must accept only a fixed set.
+
+On an argument, `template: "filepaths"` completes files and directories; `template: "folders"` completes directories only.
+
+Dynamic suggestions come from `generators.custom`. Here, `listTargets(tokens)` is an application function that returns the currently available targets:
+
+```ts
+options: [
+  {
+    name: "--target",
+    args: {
+      name: "target",
+      generators: {
+        custom: async (tokens) => listTargets(tokens),
+      },
+    },
+  },
+],
+```
+
+Static suggestions and generator results can be strings or `{ name, description }` objects. A generator receives the words after the program name, ending with the partial value being completed. For `--target=prod`, its last token is `"prod"`. An argument can have multiple generators by supplying an array.
+
+Each completion request starts a new CLI process. The completion resolver follows the parser's rules for option scope, conflicts and repeat limits. Put application initialisation inside actions to avoid running it on completion requests.
+
+The completion scripts set `SHELL_COMPLETION_GENERATOR` to the shell's name, such as `bash` or `nushell`, while the CLI answers a completion request. Code that runs before `CLI.run` can check it to skip work that completion doesn't need:
+
+```ts
+if (!process.env.SHELL_COMPLETION_GENERATOR) {
+  await loadPlugins();
+}
+```
+
+## Install shell completion
+
+`demo completion` lists the supported shells. Use `demo completion <shell>` to print a script, replacing `demo` with your installed command's name.
+
+**Bash:** save the script and source it from `~/.bashrc`.
+
+```sh
+demo completion bash > ~/.demo-completion.bash
+# Add to ~/.bashrc: source ~/.demo-completion.bash
+```
+
+**Zsh:** save into a directory on `fpath`, before `compinit` runs.
+
+```zsh
+mkdir -p ~/.zsh/completions
+demo completion zsh > ~/.zsh/completions/_demo
+# Add to ~/.zshrc before compinit: fpath=(~/.zsh/completions $fpath)
+```
+
+If needed, enable [Zsh's completion system](https://zsh.sourceforge.io/Doc/Release/Completion-System.html#Initialization) with `autoload -Uz compinit; compinit` after setting `fpath`.
+
+**Fish:** save into its completion directory.
+
+```fish
+mkdir -p ~/.config/fish/completions
+demo completion fish > ~/.config/fish/completions/demo.fish
+```
+
+**PowerShell:** append to [your profile](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles), creating it if needed.
+
+```powershell
+if (!(Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force }
+demo completion powershell >> $PROFILE
+```
+
+**Nushell:** save into a [user autoload directory](https://www.nushell.sh/book/configuration.html#configuration-overview).
+
+```nu
+mkdir ($nu.user-autoload-dirs | first)
+demo completion nushell | save -f ($nu.user-autoload-dirs | first | path join demo.nu)
+```
+
+Start a new shell after installing.

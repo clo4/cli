@@ -1,0 +1,255 @@
+---
+title: Options
+description: Flags, option names, values, defaults, repeats and relationships.
+---
+
+The flag example below is a complete `demo.ts`. The examples after it replace its `build` definition. As in the [opening example](./index.mdx#example), `demo` stands for `node demo.ts` in command examples.
+
+## Flags
+
+A flag is an option that takes no value. Add it to the command's `options` array, then use `options.has()` in the action to check whether it was given.
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const build = CLI.command({
+  name: "build",
+  options: [
+    {
+      name: "--debug",
+    },
+  ],
+  action({ options }) {
+    console.log(options.has("--debug"));
+  },
+});
+
+const spec = CLI.spec({
+  name: "demo",
+  subcommands: [build],
+});
+
+CLI.run(spec);
+```
+
+```console
+$ demo build --debug
+true
+$ demo build
+false
+```
+
+A name the command doesn't define, such as `options.has("--debgu")`, is a compile error.
+
+## Names
+
+An option's `name` accepts a string or an array of aliases. This replacement for `build` accepts both `-v` and `--verbose`; keep the import, root spec and `CLI.run` call from the preceding example:
+
+```ts
+const build = CLI.command({
+  name: "build",
+  options: [
+    {
+      name: ["-v", "--verbose"],
+    },
+  ],
+  action({ options }) {
+    console.log(options.has("--verbose"));
+  },
+});
+```
+
+```console
+$ demo build -v
+true
+$ demo build --verbose
+true
+```
+
+Include the prefix in each name, such as `-v` or `--verbose`. Names are case-sensitive. Both aliases work when reading an option: `options.has("-v")` and `options.has("--verbose")` return the same result.
+
+Short flags can be grouped: `-abc` is equivalent to `-a -b -c` when all three are flags. An option's `description` appears beside its names in help.
+
+## Option arguments
+
+An option's `args` describes the value it accepts. Here, `file` labels that value in help. The action reads the supplied value with `options.get()`:
+
+```ts
+const build = CLI.command({
+  name: "build",
+  options: [
+    {
+      name: ["-o", "--output"],
+      args: {
+        name: "file",
+      },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--output"));
+  },
+});
+```
+
+```console
+$ demo build -o out.js
+out.js
+$ demo build
+undefined
+```
+
+The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. Supplying `--output` without a value is an error. `options.get("--output")` has the type `string | undefined`, since the option can be omitted. Setting `isRequired: true` on the option makes omitting it an error, and the type becomes `string`.
+
+## Defaults
+
+The remaining examples on this page show fields inside `build`. Replace its existing `args`, `options` and `action` with the fields shown. Examples that change the root spec identify it explicitly.
+
+Defaults are set on argument definitions. The [opening example](./index.mdx#example) gives its optional `input` argument the default `"."`. For an option with a required value, the default applies when the option is omitted:
+
+```ts
+options: [
+  {
+    name: "--port",
+    args: {
+      name: "port",
+      default: "8080",
+    },
+  },
+],
+action({ options }) {
+  console.log(options.get("--port"));
+},
+```
+
+```console
+$ demo build
+8080
+$ demo build --port 3000
+3000
+```
+
+With a default, `options.get("--port")` has the type `string`.
+
+### Defaults for optional option values
+
+When `--port` is omitted, `options.get("--port")` returns `"8080"`. The option still counts as absent: `options.has("--port")` is `false` and `options.count("--port")` is `0`. Supplying `--port` without a value is an error.
+
+With `isOptional: true` on an option argument, the option can be supplied without a value. Its default then supplies the missing value. When the option is omitted entirely, `options.get()` returns `undefined`:
+
+```ts
+options: [
+  {
+    name: "--inspect",
+    args: {
+      name: "port",
+      isOptional: true,
+      default: "9229",
+    },
+  },
+],
+action({ options }) {
+  console.log(options.get("--inspect"));
+},
+```
+
+```console
+$ demo build --inspect
+9229
+$ demo build --inspect=9000
+9000
+$ demo build
+undefined
+```
+
+Defaults are strings and appear in help automatically. A positional argument with a default must be optional. Defaults for an omitted option don't satisfy required options or dependencies. [Spec validation](./testing.mdx) catches defaults the parser cannot use.
+
+## Repeated options
+
+Setting `isRepeatable: true` on an option allows it to be supplied any number of times. `options.all()` returns the collected values in order.
+
+```ts
+options: [
+  {
+    name: "--tag",
+    args: {
+      name: "tag",
+    },
+    isRepeatable: true,
+  },
+],
+action({ options }) {
+  console.log(JSON.stringify(options.all("--tag")));
+},
+```
+
+```console
+$ demo build --tag dev --tag latest
+["dev","latest"]
+$ demo build
+[]
+```
+
+Setting `isRepeatable` to an integer greater than 1 limits how many times the option can be supplied. For example, `isRepeatable: 2` allows at most two `--tag` options:
+
+```ts
+options: [
+  {
+    name: "--tag",
+    description: "Add a tag.",
+    args: {
+      name: "tag",
+    },
+    isRepeatable: 2,
+  },
+],
+action({ options }) {
+  console.log(JSON.stringify(options.all("--tag")));
+},
+```
+
+```console
+$ demo build --tag dev --tag latest
+["dev","latest"]
+$ demo build --tag dev --tag latest --tag extra
+Error: Too many repetitions
+
+Usage:
+  demo build [flags]
+
+Flags:
+  --tag <tag>  Add a tag.
+```
+
+Without `isRepeatable`, repeating an option replaces its previous values.
+
+For options with arguments, `options.count(name)` counts collected values. For repeatable flags without arguments, it counts occurrences of the flag.
+
+> **Tip:** Use a repeatable `-v` flag to let users increase logging detail: `-v` for diagnostics, `-vv` for debug output, and `-vvv` for tracing. Use `options.count("-v")` to select the logging level in your action.
+
+## Option relationships
+
+`dependsOn` lists options that must also be supplied. `exclusiveOn` lists options that cannot be used together.
+
+```ts
+options: [
+  {
+    name: "--json",
+    exclusiveOn: ["--quiet"],
+  },
+  {
+    name: "--quiet",
+  },
+  {
+    name: "--sign",
+    dependsOn: ["--output"],
+  },
+  {
+    name: "--output",
+    args: {
+      name: "file",
+    },
+  },
+],
+```
+
+`--json --quiet` fails in either order. `--sign` fails unless the user also supplies `--output`. Names in these lists include their prefixes, and a name that isn't an option the command can use is a compile error. A parent's option counts only if it's persistent, since a subcommand can't use the others. Defaults don't count as supplied options.

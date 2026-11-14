@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "index",
+    "options",
+    "arguments",
+    "subcommands",
+    "actions",
+    "help-and-completion",
+    "testing",
+    "parser-settings",
+    "performance"
+  ]
+}

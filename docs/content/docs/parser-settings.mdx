@@ -1,0 +1,189 @@
+---
+title: Parser settings
+description: Change how the parser reads a command line.
+---
+
+A command's `parserDirectives` field controls how the parser reads its command line. By default, options can appear before or after positional arguments, subcommands match exact names or aliases, and attached option values use `=`.
+
+A setting applies to the command that defines it and is inherited by its descendants. A subcommand can override a boolean setting with `false`, or provide its own `optionArgSeparators`.
+
+Each example below defines a separate root `spec`. Keep the `import * as CLI from "@clo4/cli"` and `CLI.run(spec)` from the [opening example](./index.mdx#example).
+
+## Options before arguments
+
+Normally, `demo node --verbose` reads `--verbose` as an option and `node` as a positional argument. For a wrapper around another program, you may want every word after `node` passed through instead.
+
+With `optionsMustPrecedeArguments: true`, the first positional argument ends option parsing:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  parserDirectives: {
+    optionsMustPrecedeArguments: true,
+  },
+  args: {
+    name: "command",
+    isVariadic: true,
+  },
+  options: [
+    {
+      name: "--verbose",
+    },
+  ],
+  action({ args, options }) {
+    console.log(`verbose: ${options.has("--verbose")}`);
+    console.log(JSON.stringify(args));
+  },
+});
+```
+
+```console
+$ demo --verbose node --trace-warnings
+verbose: true
+["node","--trace-warnings"]
+$ demo node --verbose
+verbose: false
+["node","--verbose"]
+```
+
+With the directive, `demo node --verbose` treats `--verbose` as a positional value. With default settings, that command would print `verbose: true` and `["node"]`. To end option parsing for a single invocation, use `--`, for example `demo -- node --verbose`.
+
+## Abbreviated subcommands
+
+Subcommands normally require an exact name or alias. `subcommandsMatchUniquePrefix: true` also accepts a prefix when it identifies just one subcommand:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  parserDirectives: {
+    subcommandsMatchUniquePrefix: true,
+  },
+  subcommands: [
+    {
+      name: "install",
+      action: () => console.log("Installing."),
+    },
+    {
+      name: "info",
+      action: () => console.log("Project information."),
+    },
+  ],
+});
+```
+
+```console
+$ demo ins
+Installing.
+$ demo inf
+Project information.
+```
+
+Without the directive, `ins` and `inf` are unknown commands. `demo in` still fails because both names begin with `in`: `Ambiguous command 'in', could be: install, info`.
+
+Hidden and inherited subcommands still require exact names.
+
+When a command accepts both positional arguments and abbreviated subcommands, a word could be interpreted as either. Spec validation rejects this combination by default.
+
+## Option value separators
+
+By default, `--port=3000` attaches a value with `=`, and `--port 3000` supplies it as the next word. `optionArgSeparators` changes which separators are accepted for attached values.
+
+This spec adds `:` while keeping `=`:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  parserDirectives: {
+    optionArgSeparators: [":", "="],
+  },
+  options: [
+    {
+      name: ["-p", "--port"],
+      args: {
+        name: "port",
+      },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--port"));
+  },
+});
+```
+
+```console
+$ demo --port:3000
+3000
+$ demo --port=4000
+4000
+$ demo --port 5000
+5000
+```
+
+Without the directive, `--port:3000` is an unknown option. `optionArgSeparators: ":"` accepts only `:` as a separator. `[]` disables separators; short attached values such as `-p3000` still work.
+
+### Requiring a separator
+
+Setting `requiresSeparator: true` on an option requires its value to be attached using an enabled separator. This spec uses the default separator, `=`. It accepts `--port=3000` and rejects `--port 3000`:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--port",
+      args: {
+        name: "port",
+      },
+      requiresSeparator: true,
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--port"));
+  },
+});
+```
+
+A string requires that particular separator: `requiresSeparator: ":"` accepts `--port:3000` and rejects `--port=3000`. The separator must also be enabled in `parserDirectives.optionArgSeparators`.
+
+## Literal option names
+
+Normally, `-abc` is read as chained short options: `-a -b -c`. With `flagsArePosixNoncompliant: true`, names are read literally, so you can define an option such as `-name`:
+
+```ts
+const spec = CLI.spec({
+  name: "demo",
+  parserDirectives: {
+    flagsArePosixNoncompliant: true,
+  },
+  args: {
+    name: "paths",
+    isOptional: true,
+    isVariadic: true,
+  },
+  options: [
+    {
+      name: "-name",
+      args: {
+        name: "pattern",
+      },
+    },
+  ],
+  action({ args, options }) {
+    console.log(`pattern: ${options.get("-name")}`);
+    console.log(JSON.stringify(args));
+  },
+});
+```
+
+```console
+$ demo src -name '*.ts'
+pattern: *.ts
+["src"]
+$ demo -unknown
+pattern: undefined
+["-unknown"]
+```
+
+This setting also treats unrecognised option-like words as positional arguments. Without it, `-unknown` produces an option error. The command must still declare enough positional arguments to accept these values.
+
+> **Tip:** Quote glob patterns when you want the CLI to receive the pattern itself. In `demo src -name '*.ts'`, the quotes prevent the shell from expanding `*.ts` into matching filenames before the CLI receives it.
