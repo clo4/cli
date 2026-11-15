@@ -62,3 +62,23 @@ The file-per-group comparison includes `@clo4/cli`, citty, Cliffy, Stricli and g
 oclif is absent from the large-CLI comparison because its per-command manifest does not fit the single-bundle setup. Cac, Clipanion, Effect, Optique, clerc, cmd-ts and brocli do not yet have large-CLI fixtures.
 
 Help measurements pipe output to another program. Terminal output adds Node's stdout initialization cost, which this library avoids for its own help output.
+
+## Node's compile cache
+
+Node can keep the code it compiles from one run for the next. A CLI enables this with an entry file that turns the cache on and then imports the rest:
+
+```ts
+import { enableCompileCache } from "node:module";
+
+enableCompileCache();
+import("./cli.js");
+```
+
+Turning the cache on has a fixed cost, so it helps a large bundle and hurts a small one. These are whole-process medians of 600 runs on an Apple M3 Pro with Node 26.3, for a bundled CLI that runs one command:
+
+| Bundle                              | Run directly | With this entry file | With `NODE_COMPILE_CACHE` set |
+| ----------------------------------- | ------------ | -------------------- | ----------------------------- |
+| 38 kB, the library alone            | 28.52 ms     | 28.68 ms             | 28.34 ms                      |
+| 95 kB, the library and a Zod schema | 30.59 ms     | 30.00 ms             | 29.56 ms                      |
+
+For the small bundle, the entry file costs 0.16 ms. For the larger one it saves 0.59 ms. The `NODE_COMPILE_CACHE` environment variable does the same without the entry file, where whoever runs the CLI can set it. Measure your own bundle before adopting either.

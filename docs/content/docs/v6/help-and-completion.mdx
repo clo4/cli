@@ -54,7 +54,7 @@ To allow help after a descendant command, add `{ ...CLI.helpCommand, isPersisten
 
 An argument can offer fixed suggestions, dynamic suggestions or file paths. These fields work on both positional and option arguments.
 
-Completion follows the parser's command scope and option rules. It omits hidden names, conflicting options and options at their repeat limit. Suggestions do not validate input. An action must still enforce any restrictions on accepted values.
+Completion follows the parser's command scope and option rules. It omits hidden names, conflicting options and options at their repeat limit. Suggestions do not validate input. An argument's [`parse`](./arguments.mdx#parsing-values) enforces restrictions on accepted values, and completion offers the values a `parse` lists when the argument has no suggestions of its own.
 
 ### Static suggestions
 
