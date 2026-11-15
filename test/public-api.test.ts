@@ -6,11 +6,13 @@ import * as Testing from "../src/testing.js";
 
 test("public API stays minimal and namespace-friendly", () => {
   expect(Object.keys(CLI).sort()).toEqual([
+    "choice",
     "command",
     "completion",
     "default",
     "help",
     "helpCommand",
+    "number",
     "printError",
     "run",
     "spec",
@@ -62,6 +64,8 @@ test("the entrypoints export these types", async () => {
     "SingleOrArray",
     "SingleOrArrayOrEmpty",
     "Spec",
+    "StandardResult",
+    "StandardSchemaV1",
     "Subcommand",
     "Suggestion",
     "Template",

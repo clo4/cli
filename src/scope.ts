@@ -2,7 +2,7 @@ import type { Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
 import type { DidYouMean } from "./errors.js";
-import { asArray, getMaxArgs, getMinArgs } from "./util.js";
+import { asArray, getMaxArgs, getMinArgs, hasParse } from "./util.js";
 
 /**
  * How the next token can match a subcommand: by any name the command's
@@ -95,6 +95,11 @@ export class CommandScope {
    * that finds nothing missing.
    */
   hasRequiredOption = false;
+  /**
+   * Whether an option of a command on the path has a `parse`. Like
+   * {@link hasRequiredOption}, it stays true once it is.
+   */
+  hasParse = false;
   /** The fewest positional arguments the current command takes. */
   argsMin = 0;
   /** The most positional arguments the current command takes. */
@@ -179,6 +184,9 @@ export class CommandScope {
         (options[i].isPersistent ? this.persistent : this.local).push(options[i]);
         if (options[i].isRequired) {
           this.hasRequiredOption = true;
+        }
+        if (options[i].args !== undefined && hasParse(options[i].args)) {
+          this.hasParse = true;
         }
       }
     }

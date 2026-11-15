@@ -24,24 +24,24 @@ import * as CLI from "@clo4/cli";
 
 const spec = CLI.spec({
   name: "demo",
-  description: "A small build tool.",
+  description: "A small build tool",
   options: [CLI.help],
   subcommands: [
     {
       name: "build",
-      description: "Build a project.",
+      description: "Build a project",
       args: {
         name: "input",
-        description: "Source directory.",
+        description: "Source directory",
         isOptional: true,
         default: ".",
         template: "folders",
       },
       options: [
-        { name: ["-w", "--watch"], description: "Watch for changes." },
+        { name: ["-w", "--watch"], description: "Watch for changes" },
         {
           name: ["-o", "--output"],
-          description: "Output directory.",
+          description: "Output directory",
           args: { name: "dir", default: "dist", template: "folders" },
         },
       ],
@@ -78,17 +78,17 @@ The example includes three built-in objects. `CLI.help` adds `-h` and `--help` t
 
 ```console
 $ node demo.ts build --help
-Build a project.
+Build a project
 
 Usage:
   demo build [flags] [input]
 
 Arguments:
-  input  Source directory. (default: .)
+  input  Source directory (default: .)
 
 Flags:
-  -w, --watch         Watch for changes.
-  -o, --output <dir>  Output directory. (default: dist)
+  -w, --watch         Watch for changes
+  -o, --output <dir>  Output directory (default: dist)
 
 Global flags:
   -h, --help          Print a help message
@@ -98,9 +98,9 @@ The `template: "folders"` fields tell completion to suggest directories. They do
 
 ## Where to go next
 
-[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs. [Commands](./subcommands.mdx) explains command trees and inherited options.
+[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs, and how a `parse` turns a typed value into a number or one of a few choices. [Commands](./subcommands.mdx) explains command trees and inherited options.
 
-[Actions](./actions.mdx) covers validation, errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
+[Actions](./actions.mdx) covers errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
 
 The [API reference](./reference/index.mdx) is generated from the library's doc comments. [Parsing behavior](./parsing-behavior.mdx) collects rules that involve several fields.
 

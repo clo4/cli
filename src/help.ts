@@ -5,6 +5,7 @@ import type { LiveSubcommand, OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { readHelpNamesOrWait } from "./parse.js";
 import type { HelpNames } from "./parse.js";
+import { constraintOf } from "./schemas.js";
 import { addDefaults, asArray, print, printError } from "./util.js";
 
 // Help uses plain loops instead of array callbacks. V8 compiles each function
@@ -285,19 +286,28 @@ function optionNames(scope: CommandScope, options: readonly VisibleOption[]): st
   return names;
 }
 
-/** Each option's description, ending with the defaults the parser uses. */
+/**
+ * Each option's description, ending with what its value can be and the
+ * defaults the parser uses. What the value can be is only shown for an
+ * option with one argument, where it's clear which value is meant.
+ */
 function optionDescriptions(options: readonly VisibleOption[]): string[] {
   const descriptions: string[] = [];
   for (let i = 0; i < options.length; i++) {
     const option = options[i].option;
     const defaults: string[] = [];
+    let constraint: string | undefined;
     if (option.args !== undefined) {
       addDefaults(defaults, option.args);
+      const args = asArray(option.args);
+      if (args.length === 1 && args[0].parse !== undefined) {
+        constraint = constraintOf(args[0]);
+      }
     }
     descriptions.push(
-      defaults.length === 0
+      defaults.length === 0 && constraint === undefined
         ? (option.description ?? defaultDesc)
-        : withDefaults(option.description, defaults, defaultDesc),
+        : withDetails(option.description, constraint, defaults, defaultDesc),
     );
   }
   return descriptions;
@@ -317,17 +327,17 @@ function requiredOptions(options: readonly VisibleOption[], names: readonly stri
 /**
  * Whether help lists the arguments in a section of their own. An argument's
  * name is often description enough, so they're only listed when one of them
- * has a description or a default. Otherwise the section would only repeat the
+ * has a description, a default or a `parse`. Otherwise the section would only repeat the
  * usage line. It's checked before {@link argumentRows} is called, so that help
  * for a command without one doesn't compile that.
  */
 function hasArgumentDetails(args: Arg | readonly Arg[]): boolean {
   if (!Array.isArray(args)) {
     const arg = args as Arg;
-    return arg.description !== undefined || arg.default !== undefined;
+    return arg.description !== undefined || arg.default !== undefined || arg.parse !== undefined;
   }
   for (let i = 0; i < args.length; i++) {
-    if (args[i].description !== undefined || args[i].default !== undefined) {
+    if (args[i].description !== undefined || args[i].default !== undefined || args[i].parse !== undefined) {
       return true;
     }
   }
@@ -347,8 +357,11 @@ function argumentRows(args: readonly Arg[]): string {
     const name = (arg.name || "argument") + (arg.isVariadic ? "..." : "");
     names.push(name);
     width = Math.max(width, name.length);
+    const constraint = arg.parse === undefined ? undefined : constraintOf(arg);
     descriptions.push(
-      arg.default === undefined ? (arg.description ?? "") : withDefaults(arg.description, [arg.default], ""),
+      arg.default === undefined && constraint === undefined
+        ? (arg.description ?? "")
+        : withDetails(arg.description, constraint, arg.default === undefined ? [] : [arg.default], ""),
     );
   }
   return rows("Arguments:", names, descriptions, false, width);
@@ -391,19 +404,22 @@ function rows(
 }
 
 /**
- * A description ending with the defaults the parser uses. They go on a line of
- * their own when the last line would be too long for the 68 characters the
- * spec checks allow.
+ * A description ending with what the value can be and the defaults the
+ * parser uses, like `(integer from 1 to 65535, default: 8080)`. They go on a
+ * line of their own when the last line would be too long for the 68
+ * characters the spec checks allow.
  */
-function withDefaults(
+function withDetails(
   description: string | undefined,
+  constraint: string | undefined,
   defaults: readonly string[],
   defaultDesc: string,
 ): string {
-  if (defaults.length === 0) {
+  if (defaults.length === 0 && constraint === undefined) {
     return description ?? defaultDesc;
   }
-  const shown = `(default: ${defaults.join(" ")})`;
+  const byDefault = defaults.length === 0 ? "" : `default: ${defaults.join(" ")}`;
+  const shown = `(${constraint === undefined ? byDefault : byDefault === "" ? constraint : `${constraint}, ${byDefault}`})`;
   if (description === undefined) {
     return shown;
   }

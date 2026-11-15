@@ -2,7 +2,8 @@
  * Declarative CLI spec types.
  *
  * The schema is intentionally small: define commands, positional args, options,
- * and actions. Runtime values from argv are always strings.
+ * and actions. A value from argv is a string, unless its argument has a
+ * `parse` that turns it into something else.
  *
  * @module
  */
@@ -38,10 +39,17 @@ export interface Action {
 /** A command path, starting with the root spec. */
 export type CommandPath = readonly [Spec, ...Subcommand[]];
 
-/** Access parsed options. */
-export interface OptionArgs {
+/**
+ * Access parsed options.
+ *
+ * `Value` is what an option's value can be. `spec` and `command` give an
+ * action the type of each value. Anywhere else a value is a string, since a
+ * `parse` there can only give one. A function that takes `OptionArgs<unknown>`
+ * accepts the options of any action.
+ */
+export interface OptionArgs<Value = string> {
   /** Escape hatch: the underlying map of option names to values. */
-  readonly options: Map<string, string[]>;
+  readonly options: Map<string, Value[]>;
 
   /**
    * Read all values collected for an option, in order.
@@ -50,7 +58,7 @@ export interface OptionArgs {
    * first argument. Return an empty array if the first argument is optional
    * or has no default. A repeatable option collects values from every use.
    */
-  all(name: string): string[];
+  all(name: string): Value[];
 
   /**
    * Read the first value of an option.
@@ -58,7 +66,7 @@ export interface OptionArgs {
    * For an omitted option, return its first argument's default only when
    * that argument is required. Otherwise return `undefined`.
    */
-  get(name: string): string | undefined;
+  get(name: string): Value | undefined;
 
   /** Return whether the option was supplied. Defaults do not count. */
   has(name: string): boolean;
@@ -78,13 +86,17 @@ export interface OptionArgs {
  * `spec` and `command` infer more specific argument and option types for
  * command actions. Option actions use broader types because they can run
  * without satisfying required inputs.
+ *
+ * `Value` is what an argument's value can be. A value is a string, unless the
+ * action is in a `spec` or `command` whose `parse` gives something else.
+ * An action written as `(init: ActionInit<unknown>) => ...` fits any command.
  */
-export interface ActionInit {
+export interface ActionInit<Value = string> {
   /** Options found for this invocation. */
-  options: OptionArgs;
+  options: OptionArgs<Value>;
 
   /** Positional arguments found for the selected command. */
-  args: string[];
+  args: Value[];
 
   /**
    * Commands from the root to the selected command. A loaded command can be
@@ -243,8 +255,10 @@ export interface Subcommand {
  *
  * Use `has` to read flags and `get` or `all` to read values. Without
  * `isRepeatable`, each use replaces the option's previous values.
+ *
+ * `Output` is what the option's values can be. See {@link Arg}.
  */
-export interface Option {
+export interface Option<Output = string> {
   /** Name or aliases, including any desired prefix such as `-`, `--`, or `/`. */
   name: SingleOrArray<string>;
 
@@ -261,7 +275,7 @@ export interface Option {
   ref?: string;
 
   /** Arguments this option accepts. */
-  args?: SingleOrArray<Arg>;
+  args?: SingleOrArray<Arg<Output>>;
 
   /** Allow this option to be used by descendant subcommands. */
   isPersistent?: true;
@@ -308,7 +322,8 @@ export interface Option {
    * Action performed when this option is provided.
    *
    * The last supplied option with an action replaces the command action.
-   * It bypasses positional counts, required options and option relationships.
+   * It bypasses positional counts, required options and option relationships,
+   * and no `parse` runs, so it reads every value as the string that was typed.
    * Unknown options and malformed option values still fail parsing.
    */
   action?: Action;
@@ -362,12 +377,19 @@ export interface Generator {
 }
 
 /**
- * A positional argument or an argument of an option. Values are strings.
+ * A positional argument or an argument of an option. A value is a string,
+ * unless `parse` turns it into something else.
  *
  * Use an object for one argument and an array for two or more. Required
  * arguments precede optional arguments. A variadic argument must be last.
+ *
+ * `Output` is what the argument's value can be. An argument typed `Arg` gives
+ * a string, so its `parse` can check or tidy the value but has to give a
+ * string. `spec` and `command` read the type a `parse` written in them
+ * gives. For an argument made outside them, `Arg<number>` is one whose
+ * `parse` gives a number.
  */
-export interface Arg {
+export interface Arg<Output = string> {
   /** Name shown in generated help. */
   name?: string;
 
@@ -400,9 +422,26 @@ export interface Arg {
    * Defaults fill consecutive omitted arguments, stopping at the first
    * argument without a default. A variadic default contributes one value.
    * Defaults do not count as supplied options for requirements or relationships.
-   * Help shows an option's defaults after its description.
+   * Help shows an option's defaults after its description. A default goes
+   * through `parse` like a value the user typed.
    */
   default?: string;
+
+  /**
+   * Turn the value into what the action receives, or reject it, with a
+   * [Standard Schema](https://standardschema.dev): {@link number},
+   * {@link choice}, or a schema from Zod, Valibot, ArkType or another
+   * library that follows the specification. The schema can be async.
+   *
+   * Every `parse` on the command line runs before the action, and every
+   * rejected value is reported together, so the user can fix them in one go.
+   * The schema's issues say what's wrong with a value.
+   *
+   * Each value of a variadic argument or a repeatable option is parsed on
+   * its own. A schema that can describe itself as JSON Schema also gives
+   * help the type and range to show, and completion the values to offer.
+   */
+  parse?: StandardSchemaV1<unknown, Output>;
 
   /** Completions: complete file or folder paths for this argument. */
   template?: Template;
@@ -413,3 +452,30 @@ export interface Arg {
   /** Completion generators for this argument. These do not validate input. */
   generators?: SingleOrArray<Generator>;
 }
+
+/**
+ * A [Standard Schema](https://standardschema.dev), as far as this library
+ * reads one. Schemas from Zod, Valibot, ArkType and others fit it.
+ */
+export interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    /** Gives the value, or what's wrong with the input as `issues`. */
+    readonly validate: (value: unknown) => StandardResult<Output> | Promise<StandardResult<Output>>;
+    readonly types?: { readonly input: Input; readonly output: Output } | undefined;
+    /**
+     * Describes the schema as JSON Schema, for a schema that follows the
+     * Standard JSON Schema specification too. Help reads the type, range
+     * and `enum` of what the schema takes, and completion offers the `enum`.
+     */
+    readonly jsonSchema?:
+      | { input(options: { target: "draft-2020-12" }): Record<string, unknown> }
+      | undefined;
+  };
+}
+
+/** What a Standard Schema's `validate` gives: the value, or what's wrong with the input. */
+export type StandardResult<Output> =
+  | { readonly value: Output; readonly issues?: undefined }
+  | { readonly issues: readonly { readonly message: string }[] };

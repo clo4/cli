@@ -15,7 +15,7 @@ import * as CLI from "@clo4/cli";
 
 export const build = CLI.command({
   name: "build",
-  description: "Build a project.",
+  description: "Build a project",
   args: { name: "directory", isOptional: true, default: "." },
   action({ args: [directory] }) {
     console.log(`Building ${directory}`);
@@ -32,7 +32,7 @@ import { build } from "./build.ts";
 
 export const spec = CLI.spec({
   name: "demo",
-  description: "Project tools.",
+  description: "Project tools",
   options: [CLI.help],
   subcommands: [build, CLI.helpCommand, CLI.completion],
 });
@@ -58,7 +58,7 @@ Use `as const` to preserve literal names and fields when exporting an option or 
 // src/inputs.ts
 export const output = {
   name: ["-o", "--output"],
-  description: "Output directory.",
+  description: "Output directory",
   args: { name: "directory", default: "dist" },
 } as const;
 ```

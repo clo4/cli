@@ -88,3 +88,49 @@ export class MissingRequiredOption extends ParseError {
     super(context, msg);
   }
 }
+
+/** A value that its argument's `parse` rejected. `reason` is what the `parse` said about it. */
+export class InvalidValue extends ParseError {
+  readonly value: string;
+  readonly reason: string;
+  /**
+   * `target` is what the value is for, as the user would write it: an option
+   * name like `--port`, or `<port>` for a positional argument. `isDefault` is
+   * for a default from the spec, which the user didn't type.
+   */
+  constructor(value: string, target: string, reason: string, isDefault: boolean, context: ErrorContext) {
+    const what = isDefault
+      ? `The default ${repr(value)} for ${target} is invalid`
+      : `Invalid value ${repr(value)} for ${target}`;
+    super(context, reason === "" ? what : `${what}: ${reason}`);
+    this.value = value;
+    this.reason = reason;
+  }
+}
+
+/**
+ * Every problem with a command line that has more than one. The parser stops
+ * at a token it can't read, and reports that alone. Once it has read the
+ * whole line, what's missing and what a `parse` rejected don't depend on each
+ * other, so it reports all of it for the user to fix in one go.
+ *
+ * `run` prints each message on a line of its own, then the help once.
+ */
+export class SeveralProblems extends ParseError {
+  readonly problems: readonly ParseError[];
+  constructor(problems: readonly ParseError[]) {
+    let didYouMean: DidYouMean | undefined;
+    const messages: string[] = [];
+    for (const problem of problems) {
+      messages.push(problem.message);
+      didYouMean ??= problem.didYouMean;
+    }
+    super(problems[0].context, messages.join("\nError: "), didYouMean);
+    this.problems = problems;
+  }
+}
+
+/** The error for `problems`: the problem itself if there's one, or all of them together. */
+export function problemsError(problems: readonly ParseError[]): ParseError {
+  return problems.length === 1 ? problems[0] : new SeveralProblems(problems);
+}

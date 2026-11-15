@@ -170,8 +170,8 @@ test("loadSpec: a command returned directly keeps parse synchronous", () => {
 
 test("loadSpec: parse and readNext throw instead of waiting for a promise", () => {
   const { spec } = lazyCli((command) => Promise.resolve(command));
-  expect(() => parse(["remote", "list"], spec)).toThrow(/loadSpec returned a promise/);
-  expect(() => readNext(spec, ["config"], "")).toThrow(/loadSpec returned a promise/);
+  expect(() => parse(["remote", "list"], spec)).toThrow(/loadSpec or a parse returned a promise/);
+  expect(() => readNext(spec, ["config"], "")).toThrow(/loadSpec or a parse returned a promise/);
 });
 
 test("loadSpec: a problem before the command means it's never loaded", async () => {

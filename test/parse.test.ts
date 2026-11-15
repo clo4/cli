@@ -186,7 +186,7 @@ test("parse: a command without an action still checks its arguments and options"
     args: {},
     options: [{ name: "--token", isRequired: true }],
   };
-  expect(() => parse([], spec)).toThrow(TooFewArguments);
+  expect(() => parse(["--token"], spec)).toThrow(TooFewArguments);
   expect(() => parse(["a"], spec)).toThrow(MissingRequiredOption);
   expect(parse(["a", "--token"], spec).action).toBe(usage);
   // Only a command that requires a subcommand skips them, when none is named.
@@ -1718,7 +1718,7 @@ test("parse: an attached value is the option's only value", () => {
 });
 
 /** What `has`, `get`, `all` and `count` say about `name`, in that order. */
-function answers(options: OptionArgs, name: string): [boolean, string | undefined, string[], number] {
+function answers(options: OptionArgs<unknown>, name: string): [boolean, unknown, unknown[], number] {
   return [options.has(name), options.get(name), options.all(name), options.count(name)];
 }
 

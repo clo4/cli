@@ -1,9 +1,10 @@
 import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
-import { addDefaults, asArray, getMaxArgs, getMinArgs, print } from "./util.js";
+import { addDefaults, argAt, asArray, getMaxArgs, getMinArgs, hasParse, print } from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
   ParseError,
+  problemsError,
   TooFewArguments,
   TooFewOptionArguments,
   TooManyArguments,
@@ -13,12 +14,15 @@ import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
 import type { LiveSubcommand, OptionForm, SubcommandMatching } from "./scope.js";
+import { parseValues } from "./values.js";
+import type { ParsedUse, ParsedValues } from "./values.js";
 
 export interface ParseResult {
-  args: string[];
+  /** The positional arguments: each one a string, or what its `parse` gave. */
+  args: unknown[];
   argSeparatorIndex: number;
   /** The options used, as the action receives them. */
-  options: OptionArgs;
+  options: OptionArgs<unknown>;
   path: CommandPath;
   /**
    * The action to run: the last option action used, or else the selected
@@ -164,50 +168,65 @@ function usedKeys(seenOptions: readonly Option[]): Set<string> {
 }
 
 /**
- * Throw if the options used break a `dependsOn` or `exclusiveOn` rule. `path`
- * ends at the current command.
+ * Add each `dependsOn` or `exclusiveOn` rule the options used break to
+ * `problems`, and return it. `path` ends at the current command.
  */
 function checkOptionRules(
   rules: readonly UsedRules[],
   seenOptions: readonly Option[],
   path: CommandPath,
-): void {
+  problems: ParseError[] | null,
+): ParseError[] | null {
   const used = usedKeys(seenOptions);
   for (let i = 0; i < rules.length; i++) {
     const { option, needs } = rules[i];
     for (let j = 0; j < needs.length; j++) {
       const need = needs[j];
       if (!need || !used.has(optionKey(need))) {
-        throw new ParseError(
-          contextAt(path),
-          `${asArray(option.name).join("/")} requires ${option.dependsOn![j]}, add it to fix this error`,
+        (problems ??= []).push(
+          new ParseError(
+            contextAt(path),
+            `${asArray(option.name).join("/")} requires ${option.dependsOn![j]}, add it to fix this error`,
+          ),
         );
       }
     }
   }
+  // Two options that exclude each other are one problem.
+  let reported: Set<string> | null = null;
   for (let i = 0; i < rules.length; i++) {
     const { option, excludes } = rules[i];
     for (let j = 0; j < excludes.length; j++) {
       const excluded = excludes[j];
-      if (excluded && used.has(optionKey(excluded))) {
-        throw new ParseError(
+      if (!excluded || !used.has(optionKey(excluded))) {
+        continue;
+      }
+      const pair = [optionKey(option), optionKey(excluded)].sort().join("\n");
+      if (reported?.has(pair)) {
+        continue;
+      }
+      (reported ??= new Set()).add(pair);
+      (problems ??= []).push(
+        new ParseError(
           contextAt(path),
           `${asArray(option.name).join("/")} can't be used together with ${option.exclusiveOn![j]}`,
-        );
-      }
+        ),
+      );
     }
   }
+  return problems;
 }
 
 /**
- * Throw if an option that `scope` requires is missing. `path` ends at the
- * command `scope` is for.
+ * Add each option that `scope` requires and that's missing to `problems`,
+ * and return it. `path` ends at the command `scope` is for.
  */
 function checkRequiredOptions(
-  options: ReadonlyMap<string, string[]>,
+  options: ReadonlyMap<string, unknown[]>,
   scope: CommandScope,
   path: CommandPath,
-): void {
+  problems: ParseError[] | null,
+): ParseError[] | null {
   // Checking local options first reports a missing local option before a
   // missing persistent one.
   const { local, persistent } = scope;
@@ -219,32 +238,39 @@ function checkRequiredOptions(
     const names = option.name;
     if (typeof names === "string") {
       if (!options.has(names)) {
-        throw new MissingRequiredOption(names, contextAt(path));
+        (problems ??= []).push(new MissingRequiredOption(names, contextAt(path)));
       }
       continue;
     }
     for (let j = 0; j < names.length; j++) {
       if (!options.has(names[j])) {
-        throw new MissingRequiredOption(names[j], contextAt(path));
+        (problems ??= []).push(new MissingRequiredOption(names[j], contextAt(path)));
+        break;
       }
     }
   }
+  return problems;
 }
 
 /**
  * The options used, as an action asks about them. `options` has every name of
  * each option used, and `scope` is for the selected command, which decides
- * the option each unused name refers to. Each function is a property of the
- * object, so an action can take one off it and call it alone. A cold parse
- * only makes the object, and each function compiles the first time it's
+ * the option each unused name refers to. `defaults` is what the defaults of
+ * the unused options parsed to, if a `parse` ran. Each function is a property
+ * of the object, so an action can take one off it and call it alone. A cold
+ * parse only makes the object, and each function compiles the first time it's
  * called.
  */
-function optionArgs(options: Map<string, string[]>, scope: CommandScope): OptionArgs {
+function optionArgs(
+  options: Map<string, unknown[]>,
+  scope: CommandScope,
+  defaults: Map<Option, unknown[]> | null,
+): OptionArgs<unknown> {
   return {
     options,
     has: (name) => options.has(name),
-    get: (name) => (options.get(name) ?? unusedDefaults(scope, name))?.[0],
-    all: (name) => options.get(name) ?? unusedDefaults(scope, name) ?? [],
+    get: (name) => (options.get(name) ?? unusedDefaults(scope, name, defaults))?.[0],
+    all: (name) => options.get(name) ?? unusedDefaults(scope, name, defaults) ?? [],
     // A repeatable option without arguments stores an empty string for each
     // use, so its values count the uses.
     count: (name) => options.get(name)?.length ?? 0,
@@ -253,16 +279,26 @@ function optionArgs(options: Map<string, string[]>, scope: CommandScope): Option
 
 /**
  * The defaults of the arguments of the option `name` refers to at the command
- * `scope` is for, by name or by ref, when no option of that name was used. Undefined if its
- * first argument is optional or has no default.
+ * `scope` is for, by name or by ref, when no option of that name was used.
+ * They're what `parsed` has for the option, or else the strings from the
+ * spec. Undefined if its first argument is optional or has no default.
  */
-function unusedDefaults(scope: CommandScope, name: string): string[] | undefined {
-  const args = asArray((scope.resolve(name) ?? scope.withRef(name))?.args);
+function unusedDefaults(
+  scope: CommandScope,
+  name: string,
+  parsed: Map<Option, unknown[]> | null,
+): unknown[] | undefined {
+  const option = scope.resolve(name) ?? scope.withRef(name);
+  const args = asArray(option?.args);
   // An option whose first argument is optional, like `--inspect[=port]`,
   // means something different when it's left out than when it's bare, so
   // its defaults are only for the bare option.
   if (args.length === 0 || args[0].isOptional) {
     return undefined;
+  }
+  const known = parsed?.get(option!);
+  if (known) {
+    return known;
   }
   const values: string[] = [];
   addDefaults(values, args);
@@ -310,7 +346,8 @@ class Scanner {
   // The last option action used.
   private optionAction: Action | undefined = undefined;
   private readonly args: string[] = [];
-  private readonly options: Map<string, string[]> = new Map();
+  // The values of each name used. They're strings until `finish` runs each `parse`.
+  private readonly options: Map<string, unknown[]> = new Map();
   private readonly seenOptions: Option[] = [];
   private argSeparatorIndex = -1;
 
@@ -365,6 +402,9 @@ class Scanner {
   // match. It's only an error once the whole line is read, because an option
   // action like --help allows it.
   private tooManyArgs: (() => ParseError) | null = null;
+
+  // Each use of an option with a `parse`, or null until one is used.
+  private uses: ParsedUse[] | null = null;
 
   // The uses of each repeatable option, keyed by `optionKey`, or null until
   // one is used. A subcommand's copy of a parent's option has the same names,
@@ -441,15 +481,36 @@ class Scanner {
   private endOption(): void {
     const values = this.values;
     if (values) {
-      const given = values.length - this.valuesStart;
+      const typedEnd = values.length;
+      const given = typedEnd - this.valuesStart;
       if (given < this.valuesMin) {
         this.failTooFewValues();
       } else if (given < this.valuesMax) {
         // Only an argument that wasn't given can have a default to add.
         addDefaults(values, this.valueArgs, given);
       }
+      if (hasParse(this.valueArgs)) {
+        this.noteUse(values, typedEnd);
+      }
     }
     this.values = null;
+  }
+
+  /**
+   * Keep the values the open option just finished taking, for its `parse`.
+   * It's a method of its own so that a cold parse of a line without such an
+   * option doesn't compile it.
+   */
+  private noteUse(values: string[], typedEnd: number): void {
+    const { option, name } = this.open;
+    (this.uses ??= []).push({
+      option: option!,
+      name,
+      values,
+      start: this.valuesStart,
+      typedEnd,
+      end: values.length,
+    });
   }
 
   /**
@@ -624,32 +685,37 @@ class Scanner {
   }
 
   /**
-   * Throw if the finished command line is missing anything. Returns what it
-   * was parsed as. Only call this when there's no {@link problem}.
+   * Throw everything that's wrong with the finished command line, then run
+   * each `parse`. Returns what the line was parsed as, or a promise of it if
+   * a `parse` gave one. Only call this when there's no {@link problem}.
+   *
+   * The checks here don't depend on each other, so every one that fails is
+   * reported, with each value a `parse` rejected.
    */
-  finish(): ParseResult {
+  finish(): ParseResult | Promise<ParseResult> {
     // An option with an action, like --help, works however the rest of the
     // command line is wrong, as long as every token could be read. So does the
     // usage a command shows when no subcommand is named.
     const command = this.scope.command;
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionAction !== undefined || showsUsage;
+    let problems: ParseError[] | null = null;
     if (!skipsChecks && this.tooManyArgs) {
-      throw this.tooManyArgs();
+      problems = [this.tooManyArgs()];
     }
     if (!skipsChecks && this.args.length < this.scope.argsMin) {
-      throw new TooFewArguments(this.scope.argsMin, this.scope.argsMax, this.ctx());
+      (problems ??= []).push(new TooFewArguments(this.scope.argsMin, this.scope.argsMax, this.ctx()));
     }
     this.endOption();
     if (this.problem) {
-      throw this.problem();
+      (problems ??= []).push(this.problem());
     }
     if (!skipsChecks) {
       if (this.rules) {
-        checkOptionRules(this.rules, this.seenOptions, this.path);
+        problems = checkOptionRules(this.rules, this.seenOptions, this.path, problems);
       }
       if (this.scope.hasRequiredOption) {
-        checkRequiredOptions(this.options, this.scope, this.path);
+        problems = checkRequiredOptions(this.options, this.scope, this.path, problems);
       }
     }
     // Defaults are added after the checks, so they never count as typed. An
@@ -660,12 +726,56 @@ class Scanner {
     if (!command.requiresSubcommand && given >= this.scope.argsMin && given < this.scope.argsMax) {
       addDefaults(this.args, command.args, given);
     }
+    // No `parse` runs for an option action, which reads what was typed.
+    if (!skipsChecks && (this.uses || this.scope.hasParse || hasParse(command.args))) {
+      return this.parsed(problems, given);
+    }
+    if (problems) {
+      throw problemsError(problems);
+    }
+    return this.result(this.args, null);
+  }
+
+  /**
+   * {@link finish}, for a command line with a `parse` to run. It's a method
+   * of its own so that a cold parse without one doesn't compile it.
+   */
+  private parsed(problems: ParseError[] | null, typedArgs: number): ParseResult | Promise<ParseResult> {
+    // The defaults of an option that wasn't used go through its `parse` too,
+    // since an action can read them.
+    const unused: Option[] = [];
+    if (this.scope.hasParse) {
+      const used = usedKeys(this.seenOptions);
+      const { local, persistent } = this.scope;
+      for (let i = 0; i < local.length + persistent.length; i++) {
+        const option = i < local.length ? local[i] : persistent[i - local.length];
+        if (hasParse(option.args) && !used.has(optionKey(option))) {
+          unused.push(option);
+        }
+      }
+    }
+    const values = parseValues({
+      context: this.ctx(),
+      problems,
+      args: this.args,
+      typedArgs,
+      argSpecs: asArray(this.scope.command.args),
+      options: this.options,
+      uses: this.uses,
+      unused,
+    });
+    return values instanceof Promise
+      ? values.then((settled) => this.result(settled.args, settled.defaults))
+      : this.result(values.args, values.defaults);
+  }
+
+  private result(args: unknown[], defaults: ParsedValues["defaults"]): ParseResult {
     return {
       path: this.path,
-      action: this.optionAction ?? command.action ?? usage,
-      args: this.args,
+      action: this.optionAction ?? this.scope.command.action ?? usage,
+      args,
       argSeparatorIndex: this.argSeparatorIndex,
-      options: optionArgs(this.options, this.scope),
+      options: optionArgs(this.options, this.scope, defaults),
     };
   }
 
@@ -872,15 +982,6 @@ class Scanner {
   }
 }
 
-/** The argument at `index`, reusing a final variadic argument. */
-function argAt(args: readonly Arg[], index: number): Arg | undefined {
-  if (index < args.length) {
-    return args[index];
-  }
-  const last = args[args.length - 1];
-  return last?.isVariadic ? last : undefined;
-}
-
 /**
  * Start reading a command line for `spec`, to say what each token is read as
  * in turn. Reads leniently, like {@link readNext}. It can't wait for a
@@ -902,14 +1003,17 @@ export function tokenReader(spec: Spec): TokenReader {
 }
 
 /**
- * Throw if `value` had to wait for a `loadSpec` that returned a promise.
+ * Throw if `value` had to wait for a `loadSpec` or a `parse` that returned a
+ * promise.
  * {@link parse} and {@link readNext} use this to stay synchronous.
  */
 function unlessWaiting<T>(value: T | Promise<T>): T {
   if (value instanceof Promise) {
     // The caller can't wait for it, so it mustn't become an unhandled rejection.
     value.catch(() => {});
-    throw new Error("A loadSpec returned a promise, so this command line can't be read synchronously");
+    throw new Error(
+      "A loadSpec or a parse returned a promise, so this command line can't be read synchronously",
+    );
   }
   return value;
 }
@@ -1010,7 +1114,7 @@ export function readHelpNames(path: CommandPath, names: readonly string[]): Help
  * This returns a `ParseResult`, which contains the array of
  * subcommands used, the provided options, the arguments, and the action to
  * run. It returns a promise of one only if a command on the line had a
- * `loadSpec` that returned a promise.
+ * `loadSpec` that returned a promise, or a `parse` returned one.
  *
  * If parsing fails, this function throws, or the promise rejects. `s` and
  * `from` are for carrying on after a wait, with the scanner that read the

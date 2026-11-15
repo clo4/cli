@@ -66,7 +66,7 @@ test("run: the action gets the options parse returns", async () => {
   expect(Object.keys(received!)).toEqual(["options", "has", "get", "all", "count"]);
   expect(received!.options).toEqual(parsed.options);
   for (const name of ["--port", "-v"]) {
-    const ask = (o: ActionInit["options"]) => [o.has(name), o.get(name), o.all(name), o.count(name)];
+    const ask = (o: ActionInit<unknown>["options"]) => [o.has(name), o.get(name), o.all(name), o.count(name)];
     expect(ask(received!)).toEqual(ask(parsed));
   }
 });

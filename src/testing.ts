@@ -13,6 +13,7 @@ import { CommandScope, loadAll, optionKey, writeForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
+import { apply, Rejected } from "./values.js";
 
 const repr = JSON.stringify;
 
@@ -476,8 +477,11 @@ interface SpecCheck {
   name: string;
   /** The option that turns the check off when it's true. */
   skippedBy?: Exclude<keyof TestOptions, "namingStyle">;
-  /** Throws an error that says what's wrong when the spec fails the check. */
-  check(walk: SpecWalk): void;
+  /**
+   * Throws an error that says what's wrong when the spec fails the check, or
+   * gives a promise that rejects with it.
+   */
+  check(walk: SpecWalk): void | Promise<void>;
 }
 
 const specChecks: readonly SpecCheck[] = [
@@ -554,6 +558,43 @@ const specChecks: readonly SpecCheck[] = [
           );
         }
       });
+    },
+  },
+  {
+    /*
+     * A default goes through its argument's `parse` when the parser uses it,
+     * so one that the `parse` rejects would fail every command line that
+     * leaves the argument out.
+     */
+    sentence: "Every default passes its argument's parse",
+    name: "assertDefaultsPassTheirParse",
+    async check(walk) {
+      const defaults: { arg: Arg; where: string }[] = [];
+      walk.forEachCommand(({ command, path }) => {
+        for (const [index, arg] of makeArray(command.args).entries()) {
+          defaults.push({ arg, where: `In ${namedArrayToString(...path)}, argument ${arg.name || index}` });
+        }
+      });
+      walk.forEachOption(({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere) {
+          return;
+        }
+        for (const [index, arg] of makeArray(option.args).entries()) {
+          defaults.push({ arg, where: `${where}, argument ${arg.name || index}` });
+        }
+      });
+      for (const { arg, where } of defaults) {
+        if (arg.default === undefined || arg.parse === undefined) {
+          continue;
+        }
+        const result = await apply(arg.parse, arg.default);
+        assert(
+          !(result instanceof Rejected),
+          `${where} has the default ${JSON.stringify(arg.default)}, which its \`parse\` rejects${
+            result instanceof Rejected && result.reason !== "" ? `: ${result.reason}` : ""
+          }`,
+        );
+      }
     },
   },
   {

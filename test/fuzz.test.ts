@@ -130,7 +130,7 @@ function violation(spec: Spec, input: string[]): string | null {
     // Every argument is a whole input token, in order.
     let from = 0;
     for (const arg of result.args) {
-      const at = input.indexOf(arg, from);
+      const at = input.indexOf(arg as string, from);
       if (at === -1) {
         return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
       }
@@ -249,7 +249,7 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
     return "defaults change argSeparatorIndex";
   }
   const values = result.options.options;
-  const keys = (map: Map<string, string[]>) => JSON.stringify([...map.keys()]);
+  const keys = (map: Map<string, unknown[]>) => JSON.stringify([...map.keys()]);
   if (keys(typed.options.options) !== keys(values)) {
     return "defaults change which options were used";
   }
@@ -259,7 +259,9 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
       return `the values of ${name} don't keep the typed ones in order`;
     }
     const owners = optionsNamed(spec, name);
-    const allowed = new Set(owners.flatMap((option) => asArray(option.args).map((arg) => arg.default)));
+    const allowed = new Set<unknown>(
+      owners.flatMap((option) => asArray(option.args).map((arg) => arg.default)),
+    );
     const wrong = extra.find((value) => !allowed.has(value));
     if (wrong !== undefined) {
       return `${name} has the value ${JSON.stringify(wrong)}, which isn't typed or a default`;
@@ -311,8 +313,8 @@ function defaultsViolation(spec: Spec, input: string[]): string | null {
  * The values in `values` that aren't the typed ones, if `typed` is a
  * subsequence of it. Otherwise null.
  */
-function addedValues(typed: readonly string[], values: readonly string[]): string[] | null {
-  const extra: string[] = [];
+function addedValues(typed: readonly unknown[], values: readonly unknown[]): unknown[] | null {
+  const extra: unknown[] = [];
   let next = 0;
   for (const value of values) {
     if (next < typed.length && value === typed[next]) {

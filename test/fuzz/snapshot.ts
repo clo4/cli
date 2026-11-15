@@ -152,8 +152,8 @@ function sameItems<T>(a: readonly T[], b: readonly T[], same: (x: T, y: T) => bo
  * The options map as `[name, group, values]`, where names that share one
  * values array get the same group number.
  */
-export function optionEntries(options: Map<string, string[]>): [string, number, string[]][] {
-  const groups: string[][] = [];
+export function optionEntries(options: Map<string, unknown[]>): [string, number, unknown[]][] {
+  const groups: unknown[][] = [];
   return [...options].map(([name, values]) => {
     let group = groups.indexOf(values);
     if (group === -1) {

@@ -131,6 +131,50 @@ export function addDefaults(values: string[], args: Arg | readonly Arg[] | undef
   }
 }
 
+/** Whether one of the arguments has a `parse`. */
+export function hasParse(args: Arg | readonly Arg[] | undefined): boolean {
+  if (args === undefined) {
+    return false;
+  }
+  if (!Array.isArray(args)) {
+    return (args as Arg).parse !== undefined;
+  }
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].parse !== undefined) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The argument at `index`, reusing a final variadic argument. */
+export function argAt(args: readonly Arg[], index: number): Arg | undefined {
+  if (index < args.length) {
+    return args[index];
+  }
+  const last = args[args.length - 1];
+  return last?.isVariadic ? last : undefined;
+}
+
+/**
+ * The message for a value that an action, a `loadSpec` or a `parse` threw. A
+ * value that isn't an Error is shown as JSON where it can be, since `String`
+ * turns an object into "[object Object]".
+ */
+export function describeThrown(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      // A cycle or a BigInt, which JSON can't show.
+    }
+  }
+  return String(value);
+}
+
 /**
  * Returns the minimum number of arguments that satisfies the args.
  *

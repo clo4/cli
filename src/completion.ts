@@ -13,6 +13,7 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
+import { choicesOf } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
 import { nextHelpNames, printUsageError } from "./help.js";
 import { readNextOrWait } from "./parse.js";
@@ -135,6 +136,19 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
 
   if (arg.template) {
     candidates.push(...(await enumeratePaths(partial, arg.template)));
+  }
+
+  // An argument that says nothing about completion offers the values its
+  // `parse` accepts, if the schema lists them.
+  if (
+    arg.parse !== undefined &&
+    arg.suggestions === undefined &&
+    arg.generators === undefined &&
+    arg.template === undefined
+  ) {
+    for (const value of choicesOf(arg) ?? []) {
+      candidates.push({ value });
+    }
   }
 
   return candidates;

@@ -17,18 +17,18 @@ const spec = CLI.spec({
   subcommands: [
     {
       name: ["clean", "c"],
-      description: "Remove build output.",
+      description: "Remove build output",
       action() {
         console.log("Cleaning up.");
       },
     },
     {
       name: "remote",
-      description: "Manage remotes.",
+      description: "Manage remotes",
       subcommands: [
         {
           name: "list",
-          description: "List remotes.",
+          description: "List remotes",
           action() {
             console.log("No remotes configured.");
           },
@@ -56,7 +56,7 @@ import * as CLI from "@clo4/cli";
 
 const spec = CLI.spec({
   name: "demo",
-  options: [{ name: "--verbose", description: "Print diagnostics.", isPersistent: true }],
+  options: [{ name: "--verbose", description: "Print diagnostics", isPersistent: true }],
   subcommands: [
     {
       name: "build",
@@ -88,7 +88,7 @@ const spec = CLI.spec({
   options: [
     {
       name: ["-v", "--verbose"],
-      description: "Print diagnostics.",
+      description: "Print diagnostics",
       isPersistent: true,
       ref: "verbose",
     },
@@ -96,7 +96,7 @@ const spec = CLI.spec({
   subcommands: [
     {
       name: "build",
-      options: [{ name: ["-v", "--version"], description: "Select version mode.", ref: "version" }],
+      options: [{ name: ["-v", "--version"], description: "Select version mode", ref: "version" }],
       action({ options }) {
         console.log(options.has("verbose"), options.has("version"));
       },

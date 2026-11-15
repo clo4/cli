@@ -2,7 +2,7 @@ import type { ActionInit, Spec } from "./types.js";
 import { getHelp, printUsageError } from "./help.js";
 import { ParseError } from "./errors.js";
 import { parseOrWait } from "./parse.js";
-import { printError } from "./util.js";
+import { describeThrown, printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
 
 export { printError };
@@ -29,8 +29,11 @@ export interface RunOptions {
  * Sync and async actions are supported. Returning nothing means code 0.
  * Numeric return values are limited to 0–255.
  *
- * Parse errors print a message and usage to stderr, with code 1. Errors thrown
- * by actions or loaders print their message without a stack trace, with code 1.
+ * Every `parse` on the command line runs before the action. Parse errors print
+ * a message and usage to stderr, with code 1. A command line with several
+ * problems, like a missing option and a value its `parse` rejected, prints a
+ * message for each. Errors thrown by actions or loaders print their message
+ * without a stack trace, with code 1.
  *
  * In a CLI entry file, call without top-level `await`. This lets a bundler keep
  * the library in the entry chunk when loaded commands also import it.
@@ -59,7 +62,7 @@ function exitCodeOf(spec: Spec, input: readonly string[]): Promise<number> {
   } catch (error: unknown) {
     return Promise.resolve(reportParseError(error));
   }
-  // Only a `loadSpec` that returned a promise makes the parse wait.
+  // Only a `loadSpec` or a `parse` that returned a promise makes the parse wait.
   return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
 }
 
@@ -77,7 +80,7 @@ function setExitCode(code: number): number {
  */
 function runAction(result: ParseResult): Promise<number> {
   const action = result.action;
-  const actionInit: ActionInit = {
+  const actionInit: ActionInit<unknown> = {
     help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
     args: result.args,
     path: result.path,
@@ -87,7 +90,8 @@ function runAction(result: ParseResult): Promise<number> {
 
   let actionResult: ReturnType<typeof action>;
   try {
-    actionResult = action(actionInit);
+    // The spec's own types say what each value is. See `ActionInit`.
+    actionResult = action(actionInit as ActionInit);
   } catch (error) {
     return Promise.resolve(reportThrown(error));
   }
@@ -121,25 +125,6 @@ function reportParseError(error: unknown): number {
 function reportThrown(error: unknown): number {
   printError(describeThrown(error));
   return 1;
-}
-
-/**
- * The message for a value an action threw. A value that isn't an Error is shown
- * as JSON where it can be, since `String` turns an object into
- * "[object Object]".
- */
-function describeThrown(value: unknown): string {
-  if (value instanceof Error) {
-    return value.message;
-  }
-  if (typeof value === "object" && value !== null) {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      // A cycle or a BigInt, which JSON can't show.
-    }
-  }
-  return String(value);
 }
 
 function defaultArgs(): readonly string[] {

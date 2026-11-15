@@ -21,24 +21,24 @@ import * as CLI from "@clo4/cli";
 
 const spec = CLI.spec({
   name: "demo",
-  description: "A small build tool.",
+  description: "A small build tool",
   options: [CLI.help],
   subcommands: [
     {
       name: "build",
-      description: "Build a project.",
+      description: "Build a project",
       args: {
         name: "input",
-        description: "Source directory.",
+        description: "Source directory",
         isOptional: true,
         default: ".",
         template: "folders",
       },
       options: [
-        { name: ["-w", "--watch"], description: "Watch for changes." },
+        { name: ["-w", "--watch"], description: "Watch for changes" },
         {
           name: ["-o", "--output"],
-          description: "Output directory.",
+          description: "Output directory",
           args: { name: "dir", default: "dist", template: "folders" },
         },
       ],
@@ -94,9 +94,9 @@ Add `CLI.completion` to the root's subcommands. Generate and load its script at 
 Read the [introduction](https://clo4.net/cli/v6) or go directly to a topic:
 
 - [Options](https://clo4.net/cli/v6/options): names, values, defaults, repetition and relationships.
-- [Arguments](https://clo4.net/cli/v6/arguments): positional and variadic inputs.
+- [Arguments](https://clo4.net/cli/v6/arguments): positional and variadic inputs, and parsing values into numbers and choices.
 - [Subcommands](https://clo4.net/cli/v6/subcommands): command trees and persistent options.
-- [Actions](https://clo4.net/cli/v6/actions): input types, validation, errors and exit codes.
+- [Actions](https://clo4.net/cli/v6/actions): input types, errors and exit codes.
 - [Help and completion](https://clo4.net/cli/v6/help-and-completion): built-ins, suggestions and shell setup.
 - [Testing](https://clo4.net/cli/v6/testing): validate a spec against the parser's rules.
 - [Parser settings](https://clo4.net/cli/v6/parser-settings): token parsing, abbreviations and separators.

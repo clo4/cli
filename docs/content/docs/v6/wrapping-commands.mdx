@@ -16,7 +16,7 @@ import * as CLI from "@clo4/cli";
 const spec = CLI.spec({
   name: "with-log",
   parserDirectives: { optionsMustPrecedeArguments: true },
-  options: [CLI.help, { name: "--verbose", description: "Print the command before running it." }],
+  options: [CLI.help, { name: "--verbose", description: "Print the command before running it" }],
   args: [{ name: "program" }, { name: "argument", isOptional: true, isVariadic: true }],
   action({ args: [program, ...args], options }) {
     if (options.has("--verbose")) {

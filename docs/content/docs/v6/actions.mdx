@@ -1,32 +1,40 @@
 ---
 title: Actions
-description: Read parsed input, validate values and control exit status.
+description: Read parsed input, check values together and control exit status.
 ---
 
 An action is the function attached to a command or option. The parser selects it after reading the command line.
 
-A command action receives input that satisfies the command's argument counts and option rules. Values are strings. Convert and validate them in the action, with ordinary TypeScript or your preferred validation library.
+A command action receives input that satisfies the command's argument counts and option rules. A value is a string, unless its argument has a [`parse`](./arguments.mdx#parsing-values), which converts and checks that value before the action runs.
 
-## Validating values
+## Checking values together
+
+An argument's `parse` sees one value. A rule about several values, or one that needs the application's state, belongs in the action:
 
 ```ts
 import * as CLI from "@clo4/cli";
+
+const port = CLI.number({ min: 1, max: 65535, int: true });
 
 const spec = CLI.spec({
   name: "serve",
   options: [
     {
       name: "--port",
-      description: "Listen on this port.",
-      args: { name: "port", default: "8080" },
+      description: "Listen on this port",
+      args: { name: "port", default: "8080", parse: port },
+    },
+    {
+      name: "--admin-port",
+      description: "Serve the admin pages on this port",
+      args: { name: "port", parse: port },
     },
   ],
   action({ options }) {
-    const port = Number(options.get("--port"));
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("Port must be an integer between 1 and 65535");
+    if (options.get("--port") === options.get("--admin-port")) {
+      throw new Error("--admin-port must differ from --port");
     }
-    console.log(`Port: ${port}`);
+    console.log(`Port: ${options.get("--port")}`);
   },
 });
 
@@ -36,13 +44,13 @@ CLI.run(spec);
 ```console
 $ node serve.ts --port 3000
 Port: 3000
-$ node serve.ts --port nope
-Error: Port must be an integer between 1 and 65535
+$ node serve.ts --port 3000 --admin-port 3000
+Error: --admin-port must differ from --port
 ```
 
-The parser requires a value after `--port`. The action decides whether that value is a valid port.
+The schema makes each option's value a number from 1 to 65535, and the action compares the two.
 
-Completion suggestions do not restrict accepted values. If a value must belong to a fixed set, enforce that set in the action.
+Completion suggestions do not restrict accepted values. If a value must belong to a fixed set, enforce that set with [`CLI.choice`](./arguments.mdx#parsing-values).
 
 ## Errors and exit codes
 
@@ -50,7 +58,7 @@ If an action throws an `Error`, `CLI.run` prints its message to stderr and retur
 
 Return a number to set the exit code. Returning nothing means success, code `0`. Async actions are awaited. Exit codes are limited to `0`–`255`.
 
-Parsing errors also return `1`. They include usage information and, when a close match exists, a spelling suggestion. Errors thrown by an action do not include usage automatically.
+Parsing errors also return `1`. They include usage information and, when a close match exists, a spelling suggestion. A command line with several problems, such as a missing option and a value its `parse` rejects, prints one error line for each. Errors thrown by an action do not include usage automatically.
 
 `CLI.run` resolves to the exit code and sets `process.exitCode`. It never calls `process.exit`, so the process can finish pending work.
 
@@ -75,9 +83,9 @@ CLI.run(spec);
 
 `demo --version` prints the version without requiring `input`. If several supplied options have actions, the last one wins.
 
-Option actions bypass positional argument counts, required options and option relationships. They still reject unknown options and malformed option values. This is how `--help` works without requiring the rest of the command's inputs.
+Option actions bypass positional argument counts, required options and option relationships, and no `parse` runs. They still reject unknown options and malformed option values. This is how `--help` works without requiring the rest of the command's inputs.
 
-Because those checks are skipped, option actions receive `args` as `string[]`, and `options.get` can return `undefined`. TypeScript still checks option names.
+Because those checks are skipped, option actions receive `args` as `string[]`, and `options.get` can return `undefined`. Every value is the string the user typed. TypeScript still checks option names.
 
 ## Execution context
 
@@ -115,6 +123,8 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
+An argument with a [`parse`](./arguments.mdx#parsing-values) has the type its schema gives.
+
 `CLI.command` provides the same inference for a separately defined command. Its types only include options visible in that definition. Placing it under a parent does not add inherited option names to its action's types.
 
 When sharing an option or argument between commands, preserve its literal types with `as const`:
@@ -122,7 +132,7 @@ When sharing an option or argument between commands, preserve its literal types 
 ```ts
 const reason = {
   name: "--reason",
-  description: "Reason for the change.",
+  description: "Reason for the change",
   args: { name: "text" },
 } as const;
 ```

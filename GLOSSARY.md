@@ -30,4 +30,6 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Form**: How one name of an option is written with its value at one command: as a separate token, after a separator, or glued on.
 
+**Parse**: An argument's `parse`: a Standard Schema that turns the string the user typed into the value the action receives, or rejects it. Written as "a `parse`" or "the argument's `parse`". "The parser" always means the command-line parser. _Avoid_: value parser, validator, coercion
+
 **Spec check**: An assertion from `./testing` that a spec is one the parser reads the way help and completion present it.

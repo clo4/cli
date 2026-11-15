@@ -15,7 +15,7 @@ const spec = CLI.spec({
   subcommands: [
     {
       name: "remote",
-      description: "Manage remotes.",
+      description: "Manage remotes",
       loadSpec: () => import("./remote.ts").then((module) => module.default),
     },
     CLI.helpCommand,
@@ -36,7 +36,7 @@ export default CLI.command({
   subcommands: [
     {
       name: "add",
-      description: "Add a remote.",
+      description: "Add a remote",
       args: { name: "url" },
       action({ args: [url] }) {
         console.log(`Adding ${url}`);
@@ -44,7 +44,7 @@ export default CLI.command({
     },
     {
       name: "list",
-      description: "List remotes.",
+      description: "List remotes",
       action() {
         console.log("No remotes configured.");
       },
@@ -72,7 +72,7 @@ A loader can return a command directly. This defers construction without adding 
 ```ts
 {
   name: "remote",
-  description: "Manage remotes.",
+  description: "Manage remotes",
   loadSpec: () => CLI.command({
     name: "remote",
     subcommands: [

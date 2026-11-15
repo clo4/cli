@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { ActionInit, Spec, Subcommand } from "./types.js";
+import type { ActionInit, Spec, StandardSchemaV1, Subcommand } from "./types.js";
 
 type Result = Promise<number | void> | number | void;
 
@@ -32,6 +32,29 @@ type Unsure<A> = A extends unknown
     : never
   : never;
 
+/** What the schema `P` gives. */
+type Parsed<P> = P extends { readonly "~standard": { readonly types?: infer T } }
+  ? NonNullable<T> extends { readonly output: infer O }
+    ? O
+    : unknown
+  : unknown;
+
+/**
+ * What argument `H` gives an action: a string, or what its `parse` gives. An
+ * argument typed `Arg` might have a `parse` without its type saying so, and
+ * gives what `Arg` says its `parse` gives.
+ */
+type Out<H> = "parse" extends keyof H
+  ? H extends { parse?: infer P }
+    ? [NonNullable<P>] extends [never]
+      ? string
+      : Parsed<NonNullable<P>>
+    : string
+  : string;
+
+/** The arguments of the options in `O`, as a union. */
+type OptionArgsOf<O> = O extends { args?: infer A } ? Element<NonNullable<A>> : never;
+
 /**
  * The positional arguments a command's action receives. `Defaults` is whether
  * every optional argument so far has a default. The parser adds defaults up to
@@ -46,18 +69,18 @@ type Unsure<A> = A extends unknown
 type Positionals<A, Defaults extends boolean = true> = A extends readonly [infer H, ...infer R]
   ? H extends { isVariadic: true }
     ? H extends { isOptional: true }
-      ? string[]
-      : [string, ...string[]]
+      ? Out<H>[]
+      : [Out<H>, ...Out<H>[]]
     : H extends { isOptional: true }
       ? H extends { default: string }
         ? Defaults extends true
-          ? [string, ...Positionals<R, true>]
-          : [] | [string, ...Positionals<R, false>]
-        : [] | [string, ...Positionals<R, false>]
-      : [string, ...Positionals<R, Defaults>]
+          ? [Out<H>, ...Positionals<R, true>]
+          : [] | [Out<H>, ...Positionals<R, false>]
+        : [] | [Out<H>, ...Positionals<R, false>]
+      : [Out<H>, ...Positionals<R, Defaults>]
   : A extends readonly []
     ? []
-    : string[];
+    : Out<Element<A>>[];
 
 /** The `args` of the action of command `Y`. A command that requires a subcommand takes none. */
 type ArgsOf<Y> = Y extends { requiresSubcommand: true }
@@ -65,7 +88,7 @@ type ArgsOf<Y> = Y extends { requiresSubcommand: true }
   : Y extends { args: infer A }
     ? [Unsure<Element<A>>] extends [never]
       ? Positionals<AsArray<A>>
-      : string[]
+      : Out<Element<A>>[]
     : [];
 
 /** The options command `Y` defines, as a union. */
@@ -130,19 +153,19 @@ type Named<O, K> = O extends unknown ? (K extends Written<KeysOf<O>> ? O : never
 type Get<O> = O extends { args: infer A }
   ? AsArray<A> extends readonly [infer H, ...unknown[]]
     ? H extends { isOptional: true }
-      ? string | undefined
+      ? Out<H> | undefined
       : H extends { default: string }
-        ? string
+        ? Out<H>
         : O extends { isRequired: true }
-          ? string
-          : string | undefined
-    : string | undefined
+          ? Out<H>
+          : Out<H> | undefined
+    : Out<Element<A>> | undefined
   : undefined;
 
 type Required<A> = A extends readonly [infer H, ...infer R]
   ? H extends { isOptional: true } | { isVariadic: true }
     ? never
-    : [string, ...Required<R>]
+    : [Out<H>, ...Required<R>]
   : A extends readonly []
     ? []
     : never;
@@ -159,17 +182,17 @@ type EveryDefault<A> = A extends readonly [infer H, ...infer R]
  * a default, and a list otherwise.
  */
 type All<O> = O extends { isRepeatable: true | number }
-  ? string[]
+  ? Out<OptionArgsOf<O>>[]
   : O extends { args: infer A }
     ? [Unsure<Element<A>>] extends [never]
       ? [Required<AsArray<A>>] extends [never]
-        ? string[]
+        ? Out<Element<A>>[]
         : O extends { isRequired: true }
           ? Required<AsArray<A>>
           : EveryDefault<AsArray<A>> extends true
             ? Required<AsArray<A>>
-            : string[]
-      : string[]
+            : Out<Element<A>>[]
+      : Out<Element<A>>[]
     : string[];
 
 /**
@@ -181,16 +204,18 @@ type All<O> = O extends { isRepeatable: true | number }
  * - `ValueName`: what an option with a value can be read by.
  * - `Value`: what `get` returns, for each of those.
  * - `Values`: what `all` returns, for each of those.
+ * - `Other`: what a value is, for an option whose names aren't written out in
+ *   the spec.
  */
-interface OptionReader<Name, ValueName, Value, Values> {
+interface OptionReader<Name, ValueName, Value, Values, Other = string> {
   /** Escape hatch: the underlying map of option names to values. */
-  readonly options: Map<string, string[]>;
+  readonly options: Map<string, Other[]>;
 
   /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
-  all<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Values ? Values[K] : string[];
+  all<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Values ? Values[K] : Other[];
 
   /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
-  get<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Value ? Value[K] : string | undefined;
+  get<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Value ? Value[K] : Other | undefined;
 
   /** Whether an option was supplied. Defaults don't count. */
   has(name: Name): boolean;
@@ -225,8 +250,15 @@ type OptionsFor<O> = [O] extends [never]
       Name<O>,
       ValueName<O>,
       { [K in Extract<Written<KeysOf<Valued<O>>>, string>]: Get<Named<O, K>> },
-      { [K in Extract<Written<KeysOf<Valued<O>>>, string>]: All<Named<O, K>> }
+      { [K in Extract<Written<KeysOf<Valued<O>>>, string>]: All<Named<O, K>> },
+      Other<Out<OptionArgsOf<Unwritten<O>>>>
     >;
+
+/** The options in `O` whose names aren't written out in the spec, like one typed `Option`. */
+type Unwritten<O> = O extends unknown ? (string extends NamesOf<O> ? O : never) : never;
+
+/** `V`, or a string where there's no option for `V` to be the value of. */
+type Other<V> = [V] extends [never] ? string : V;
 
 /**
  * What an action receives: `ActionInit`, with the positional arguments as
@@ -287,13 +319,18 @@ type Child<S, K> = K extends keyof S
 /** The typed action of command `Y`. */
 type Typed<Y, Inherited> = { action?: (init: InitFor<Y, Inherited>) => Result };
 
-/** The action of a command whose action was written against `ActionInit`. */
-type Loose = { action?: (init: ActionInit) => Result };
+/**
+ * The action of a command whose action was written for any command, against
+ * `ActionInit<unknown>`. One written against `ActionInit` reads strings, and
+ * has to fit the typed action, which it doesn't where a `parse` gives
+ * something else.
+ */
+type Loose = { action?: (init: ActionInit<unknown>) => Result };
 
 /**
  * The options an option's action can read: the ones in `O`, by name. Each
  * value is as loose as `OptionArgs` gives it, because an option's action
- * runs without the checks for required options.
+ * runs without the checks for required options and without any `parse`.
  */
 type OptionsIn<O> = [O] extends [never]
   ? OptionReader<never, never, unknown, unknown>
@@ -326,7 +363,7 @@ type Action<Y, Inherited, S> =
     ? Y extends { action?: infer F }
       ? unknown extends F
         ? Typed<Y, Inherited>
-        : NonNullable<F> extends (init: ActionInit) => Result
+        : NonNullable<F> extends (init: ActionInit<unknown>) => Result
           ? Loose
           : Typed<Y, Inherited>
       : Typed<Y, Inherited>
@@ -345,7 +382,7 @@ type Action<Y, Inherited, S> =
  * like `suggestions: [...names, "all"]`, as the tuple it inferred for it.
  */
 type Fields<Y, S> = {
-  [K in keyof S]: K extends "action"
+  [K in keyof S]: K extends "action" | "parse"
     ? unknown
     : K extends keyof Y
       ? [Child<S, K>] extends [never]
@@ -455,10 +492,30 @@ type Passed<X, I, Inherited> = I extends "options"
   ? Inherited | OptionsOf<X>
   : Inherited | Persistent<OptionsOf<X>>;
 
-/** `S` is the schema of `X`, or of the elements of `X` where it's a list. */
+/**
+ * What a `parse` with the type `V` has to be: a Standard Schema that takes a
+ * string, or some strings, like a schema for one of a few words.
+ */
+type ParseAt<V> = V extends { readonly "~standard": { readonly types?: infer T } }
+  ? NonNullable<T> extends { readonly input: infer In }
+    ? string extends In
+      ? unknown
+      : [Extract<In, string>] extends [never]
+        ? Invalid<"This schema doesn't take a string, and every value on a command line is one.">
+        : unknown
+    : unknown
+  : StandardSchemaV1;
+
+/**
+ * `S` is the schema of `X`, or of the elements of `X` where it's a list.
+ *
+ * A `parse` is read in one piece and no further. It can be a schema from
+ * another library, which is a large object that has nothing to check.
+ */
 type Tree<X, Inherited, S> = {
-  [I in keyof X]: Whole<X, X[I], S> &
-    Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
+  [I in keyof X]: I extends "parse"
+    ? X[I] & ParseAt<X[I]>
+    : Whole<X, X[I], S> & Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
 } & (X extends readonly unknown[] | Primitive ? unknown : Checked<X, Inherited, S>);
 
 // }}}

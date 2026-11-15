@@ -15,10 +15,10 @@ import * as CLI from "@clo4/cli";
 const spec = CLI.spec({
   name: "demo",
   options: [
-    { name: ["-w", "--watch"], description: "Watch for changes." },
+    { name: ["-w", "--watch"], description: "Watch for changes" },
     {
       name: ["-o", "--output"],
-      description: "Output file.",
+      description: "Output file",
       args: { name: "file" },
     },
   ],
@@ -73,7 +73,7 @@ const spec = CLI.spec({
   options: [
     {
       name: "--port",
-      description: "Listen on this port.",
+      description: "Listen on this port",
       args: { name: "port", default: "8080" },
     },
   ],
@@ -111,7 +111,7 @@ const spec = CLI.spec({
   options: [
     {
       name: "--inspect",
-      description: "Enable the inspector.",
+      description: "Enable the inspector",
       args: { name: "port", isOptional: true, default: "9229" },
     },
   ],
@@ -132,7 +132,7 @@ $ node demo.ts
 undefined
 ```
 
-Defaults are strings. Help displays them automatically. [Spec checks](./testing.mdx) reject defaults that the parser cannot use.
+Defaults are strings. Help displays them automatically. A default goes through the argument's [`parse`](./arguments.mdx#parsing-values), if it has one. [Spec checks](./testing.mdx) reject defaults that the parser cannot use or that their `parse` rejects.
 
 ## Repeated options
 
@@ -146,7 +146,7 @@ const spec = CLI.spec({
   options: [
     {
       name: "--tag",
-      description: "Add a tag.",
+      description: "Add a tag",
       args: { name: "tag" },
       isRepeatable: true,
     },
@@ -182,12 +182,12 @@ import * as CLI from "@clo4/cli";
 const spec = CLI.spec({
   name: "demo",
   options: [
-    { name: "--json", description: "Print JSON.", exclusiveOn: ["--quiet"] },
-    { name: "--quiet", description: "Suppress output." },
-    { name: "--sign", description: "Sign the output.", dependsOn: ["--output"] },
+    { name: "--json", description: "Print JSON", exclusiveOn: ["--quiet"] },
+    { name: "--quiet", description: "Suppress output" },
+    { name: "--sign", description: "Sign the output", dependsOn: ["--output"] },
     {
       name: "--output",
-      description: "Output file.",
+      description: "Output file",
       args: { name: "file" },
     },
   ],
