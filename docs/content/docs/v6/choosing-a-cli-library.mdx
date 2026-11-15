@@ -3,13 +3,13 @@ title: Choosing a CLI library
 description: Compare the responsibilities of the library and your application.
 ---
 
-`@clo4/cli` handles command-line syntax, value parsing, inferred action types, help and shell completion. Actions handle application setup and the work of each command.
+`@clo4/cli` handles command-line syntax, inferred action types, help and shell completion. Actions handle value conversion, application setup and the work of each command.
 
-This division keeps application code in ordinary functions. It also means that features such as lifecycle hooks are responsibilities you keep in your code.
+This division keeps application code in ordinary functions. It also means that features such as validation and lifecycle hooks are responsibilities you keep in your code.
 
 ## Value conversion and validation
 
-An argument's `parse` converts a value and rejects bad input before the action runs. It takes a built-in schema, or any [Standard Schema](https://standardschema.dev), so a Zod, Valibot or ArkType schema works as written:
+An action receives strings. To accept a number, parse it. To restrict a value to a set, test it:
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -19,17 +19,20 @@ const spec = CLI.spec({
   options: [
     {
       name: "--mode",
-      description: "Build mode",
+      description: "Build mode: debug or release",
       args: {
         name: "mode",
         default: "debug",
-        parse: CLI.choice(["debug", "release"]),
+        suggestions: ["debug", "release"],
       },
     },
   ],
   action({ options }) {
-    // mode is "debug" | "release".
     const mode = options.get("--mode");
+    if (mode !== "debug" && mode !== "release") {
+      throw new Error("--mode must be debug or release");
+    }
+    // mode is now "debug" | "release".
     console.log(mode);
   },
 });
@@ -37,11 +40,9 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
-The schema enforces the restriction and gives the action its type. Help shows the two values after the description, and completion offers them.
+The description tells users which values are valid. Suggestions offer those values during completion. The action enforces the restriction. Neither help nor completion inspects the action's code.
 
-Every `parse` runs before the action, and `@clo4/cli` reports each rejected value together with any missing argument or option. [Parsing values](./arguments.mdx#parsing-values) covers the built-in schemas and schemas from other libraries.
-
-Yargs provides `coerce` and `choices`. citty provides enum arguments. Commander supports custom option processing.
+Yargs provides `coerce` and `choices`. citty provides enum arguments. Commander supports custom option processing. If you want conversion and validation in the command definition, those APIs offer a different approach.
 
 ## Setup and cleanup
 

@@ -9,6 +9,7 @@
     "check": "pnpm reference && astro sync && tsc --noEmit",
     "reference": "node scripts/generate-reference.mjs",
     "reference:freeze": "node scripts/generate-reference.mjs --freeze",
+    "release": "node scripts/release-docs.mjs",
     "reference:check": "node scripts/check-reference.mjs"
   },
   "dependencies": {

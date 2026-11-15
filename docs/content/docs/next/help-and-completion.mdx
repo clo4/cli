@@ -1,0 +1,142 @@
+---
+title: Help and completion
+description: How help and completion use command definitions and argument metadata.
+---
+
+Help and completion use the arguments, options and subcommands in your spec. Add all three built-ins to every CLI, unless you have a reason to leave one out. Users expect `--help` on every command, and completion is how most of them find a command's subcommands and options.
+
+Put `CLI.help` in the root's options, and `CLI.helpCommand` and `CLI.completion` in its subcommands:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [CLI.help],
+  subcommands: [
+    {
+      name: "build",
+      description: "Build a project",
+      args: {
+        name: "directory",
+        isOptional: true,
+        template: "folders",
+      },
+      action({ args }) {
+        console.log(args);
+      },
+    },
+    CLI.helpCommand,
+    CLI.completion,
+  ],
+});
+
+CLI.run(spec);
+```
+
+The commands below use `demo` for your installed executable. For this example, substitute `node demo.ts` when requesting help. Completion scripts need the installed command name.
+
+## Help
+
+`CLI.help` is a persistent option named `-h` and `--help`. It prints help for the selected command, so `demo build --help` describes `build`.
+
+`CLI.helpCommand` is a subcommand. `demo help build` prints the same help. For nested commands, use the whole path, as in `demo help remote add`. Completion also suggests command names along that path.
+
+The built-ins are plain objects. Copy one with object spread to change its fields:
+
+```ts
+{ ...CLI.help, description: "Show help" }
+```
+
+To allow help after a descendant command, add `{ ...CLI.helpCommand, isPersistent: true }`. Then `demo build help` prints help for `build`. [Persistent subcommands](./subcommands.mdx#persistent-subcommands) explains name matching and positional arguments in that configuration.
+
+## Completion suggestions
+
+An argument can offer fixed suggestions, dynamic suggestions or file paths. These fields work on both positional and option arguments.
+
+Completion follows the parser's command scope and option rules. It omits hidden names, conflicting options and options at their repeat limit. Suggestions do not validate input. An argument's [`parse`](./arguments.mdx#parsing-values) enforces restrictions on accepted values, and completion offers the values a `parse` lists when the argument has no suggestions of its own.
+
+### Static suggestions
+
+Set `suggestions` to a list of strings or objects with `name` and `description`:
+
+```ts
+args: {
+  name: "environment",
+  suggestions: [
+    { name: "staging", description: "Test environment" },
+    { name: "production", description: "Live environment" },
+  ],
+},
+```
+
+For short lists without descriptions, use `suggestions: ["staging", "production"]`.
+
+### Dynamic suggestions
+
+A generator is a function that returns suggestions. Set `generators.custom` on the argument it completes:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--target",
+      description: "Deployment target",
+      args: {
+        name: "target",
+        generators: {
+          custom: async (tokens) => {
+            const partial = tokens.at(-1) ?? "";
+            return ["staging", "production"].filter((name) => name.startsWith(partial));
+          },
+        },
+      },
+    },
+  ],
+  subcommands: [CLI.completion],
+  action({ options }) {
+    console.log(options.get("--target"));
+  },
+});
+
+CLI.run(spec);
+```
+
+A generator returns the same suggestion shapes as `suggestions`. It receives tokens without the program name, with the partial value last. The library selects the argument and formats results for the shell.
+
+[Generate completion suggestions](./completion-generators.mdx) shows a generator that reads application data and explains how to test it.
+
+### Files and directories
+
+Set `template: "filepaths"` to suggest files and directories. Use `template: "folders"` for directories only:
+
+```ts
+args: { name: "config", template: "filepaths" },
+```
+
+Templates affect completion only. They do not check whether a supplied path exists or has the expected type.
+
+## Completion startup
+
+Each completion request starts a CLI process. It runs the relevant generators without running the selected command's action.
+
+Put application initialization inside actions when only command execution needs it. Work at module scope runs during completion too, including imported modules' initialization.
+
+The scripts set `SHELL_COMPLETION_GENERATOR` to the shell name while requesting suggestions. If initialization must happen before `CLI.run`, use that variable to skip it during completion:
+
+```ts
+if (!process.env.SHELL_COMPLETION_GENERATOR) {
+  await loadPlugins();
+}
+```
+
+Here, `loadPlugins` is application code. Keep any initialization that your generators need available during completion.
+
+## Installing the scripts
+
+[Install shell completion](./install-completion.mdx) shows startup configuration for Bash, Zsh, Fish, PowerShell and Nushell. Generate the script at shell startup so it matches the installed CLI. The command must be available by its installed executable name.
+
+See [Arg](./reference/cli/interfaces/Arg.mdx), [Generator](./reference/cli/interfaces/Generator.mdx) and [Suggestion](./reference/cli/interfaces/Suggestion.mdx) for the field reference.

@@ -1,0 +1,88 @@
+---
+title: Install shell completion
+description: Load completion from the installed CLI whenever your shell starts.
+---
+
+Generate completion during shell startup. The shell script and its internal protocol can change between CLI releases. Loading fresh output keeps the shell integration matched to the installed executable.
+
+Add `CLI.completion` to your root command's `subcommands`:
+
+```ts
+subcommands: [CLI.completion],
+```
+
+`demo completion` lists supported shells. `demo completion <shell>` prints the corresponding script. Replace `demo` with your installed executable's name in the configuration below.
+
+## Bash
+
+Add this line to `~/.bashrc`:
+
+```bash
+source <(demo completion bash)
+```
+
+The shell loads the generated script directly. There is no completion file to update when the CLI changes.
+
+## Zsh
+
+Add these lines to `~/.zshrc`, after your existing `compinit` call:
+
+```zsh
+functions[_demo]="$(demo completion zsh)"
+compdef _demo demo
+```
+
+The generated script is a completion function body. Zsh's `functions` parameter defines it in memory, and `compdef` registers it for `demo`.
+
+If your configuration does not already initialize [Zsh completion](https://zsh.sourceforge.io/Doc/Release/Completion-System.html#Initialization), add this before those lines:
+
+```zsh
+autoload -Uz compinit
+compinit
+```
+
+## Fish
+
+Add this line to `~/.config/fish/config.fish`:
+
+```fish
+demo completion fish | source
+```
+
+Fish's [`source`](https://fishshell.com/docs/current/cmds/source.html) command reads the script from the pipeline and loads it into the current shell.
+
+## PowerShell
+
+Add this line to [your profile](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_profiles):
+
+```powershell
+demo completion powershell | Out-String | Invoke-Expression
+```
+
+The pipeline combines the generated lines into a script and evaluates it in the current shell. Keep this command in the profile rather than appending its output to the profile.
+
+## Nushell
+
+Nushell [parses sourced files before evaluating commands](https://www.nushell.sh/book/how_nushell_code_gets_run.html). It cannot source generated text directly from a pipeline.
+
+Regenerate an autoload file on every startup instead. Add these lines to `config.nu`:
+
+```nu
+let completion_dir = ($nu.user-autoload-dirs | first)
+mkdir $completion_dir
+demo completion nushell | save --force ($completion_dir | path join demo.nu)
+```
+
+Nushell loads user autoload files after `config.nu`, so it loads the newly generated file during the same startup. The file is a regenerated cache, not a completion script to retain across CLI updates. See [Nushell startup configuration](https://www.nushell.sh/book/configuration.html#configuration-overview) for the file order.
+
+## Troubleshooting
+
+Start a new shell after editing its configuration. After updating the CLI, restart existing shell sessions to load its current completion script.
+
+If the shell cannot find your executable, install it or add its directory to `PATH` before the completion command runs. The script invokes the command by the name in the root spec.
+
+If you previously saved a generated script, remove the old startup entry or completion file when switching to these instructions. In Zsh, register the function after `compinit` runs.
+
+If suggestions are slow, inspect imports and initialization at module scope. A completion request starts a new process. Put work that only execution needs inside actions, or [load commands on demand](./loading-commands.mdx).
+
+For custom argument values, see [Generate completion suggestions](./completion-generators.mdx).

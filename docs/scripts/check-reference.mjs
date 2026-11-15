@@ -36,7 +36,8 @@ try {
       version: "7.0.0",
     }),
   );
-  for (const version of ["v6", "v7"]) {
+  // A released version, and the working docs of a package that has moved on to 7.
+  for (const version of ["v6", "next"]) {
     const directory = path.join(fixtureDocs, "content/docs", version);
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "meta.json"), "{}");
@@ -52,7 +53,7 @@ try {
   );
 
   await generate();
-  for (const version of ["v6", "v7"]) {
+  for (const version of ["v6", "next"]) {
     for (const name of ["NonEmptyArray", "SingleOrArray", "SingleOrArrayOrEmpty"]) {
       const page = await readFile(output(version, `cli/type-aliases/${name}.mdx`), "utf8");
       assert.ok(page.includes(`title: "${name}<T>"`), `${version}: unescaped title for ${name}`);
@@ -60,8 +61,8 @@ try {
   }
   const oldIndex = await readFile(output("v6", "cli/index.mdx"), "utf8");
   assert.doesNotMatch(oldIndex, /futureOnly/);
-  assert.match(await readFile(output("v7", "cli/functions/futureOnly.mdx"), "utf8"), /value: string/);
-  console.log("PASS: archived v6 uses its model; active v7 uses source");
+  assert.match(await readFile(output("next", "cli/functions/futureOnly.mdx"), "utf8"), /value: string/);
+  console.log("PASS: released v6 uses its model; the working docs use source");
 
   const savedArchive = await readFile(archive);
   await rm(archive);
@@ -73,8 +74,8 @@ try {
   await generate("--freeze");
   await writeFile(index, (await readFile(index, "utf8")).replaceAll("futureOnly", "changedAfterFreeze"));
   await generate("--frozen");
-  assert.match(await readFile(output("v7", "cli/functions/futureOnly.mdx"), "utf8"), /futureOnly/);
-  assert.doesNotMatch(await readFile(output("v7", "cli/index.mdx"), "utf8"), /changedAfterFreeze/);
+  assert.match(await readFile(output("next", "cli/functions/futureOnly.mdx"), "utf8"), /futureOnly/);
+  assert.doesNotMatch(await readFile(output("next", "cli/index.mdx"), "utf8"), /changedAfterFreeze/);
   console.log("PASS: frozen rendering ignores later source changes");
 } finally {
   await rm(fixture, { recursive: true, force: true });

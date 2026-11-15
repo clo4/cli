@@ -1,6 +1,6 @@
 {
   "name": "@clo4/cli",
-  "version": "6.1.0",
+  "version": "6.0.0",
   "description": "clo4's CLI framework: fully declarative, typed from your spec, fast",
   "keywords": [
     "arg-parser",
@@ -49,7 +49,12 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "verify": "pnpm fmt:check && pnpm lint && pnpm check && pnpm build && pnpm test"
+    "verify": "pnpm fmt:check && pnpm lint && pnpm check && pnpm build && pnpm test",
+    "preversion": "pnpm verify",
+    "version": "pnpm --filter docs release && pnpm fmt && pnpm --filter docs check && git add --all docs",
+    "postversion": "node scripts/after-version.mjs",
+    "prepack": "node scripts/readme-links.mjs released",
+    "postpack": "node scripts/readme-links.mjs next"
   },
   "devDependencies": {
     "@cliffy/command": "jsr:^1.3.1",

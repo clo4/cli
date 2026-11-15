@@ -1,0 +1,139 @@
+---
+title: Commands
+description: Organize commands and share options with their descendants.
+---
+
+A spec is a command tree. Its root names the CLI. Each entry in `subcommands` adds another command below its parent.
+
+Every command can define arguments, options, an action and further subcommands. Only the selected action runs. Selecting a child does not run its parent's action.
+
+## Defining commands
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  subcommands: [
+    {
+      name: ["clean", "c"],
+      description: "Remove build output",
+      action() {
+        console.log("Cleaning up.");
+      },
+    },
+    {
+      name: "remote",
+      description: "Manage remotes",
+      subcommands: [
+        {
+          name: "list",
+          description: "List remotes",
+          action() {
+            console.log("No remotes configured.");
+          },
+        },
+      ],
+    },
+  ],
+});
+
+CLI.run(spec);
+```
+
+`demo clean` and `demo c` select the same command. `demo remote list` selects the nested `list` command.
+
+A command without an action prints its help. In this example, `demo` lists `clean` and `remote`, and `demo remote` lists `list`.
+
+Set `requiresSubcommand: true` to prevent a command from accepting positional arguments. The name does not mean that omitting a subcommand is an error. Without a subcommand, the command still runs its action or prints help.
+
+## Persistent options
+
+An option normally belongs to the command that defines it. Set `isPersistent: true` to let descendants use it too:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [{ name: "--verbose", description: "Print diagnostics", isPersistent: true }],
+  subcommands: [
+    {
+      name: "build",
+      action({ options }) {
+        console.log(options.has("--verbose"));
+      },
+    },
+  ],
+});
+
+CLI.run(spec);
+```
+
+Both `demo --verbose build` and `demo build --verbose` print `true`. Help lists persistent options under “Global flags”. The built-in `CLI.help` option is persistent.
+
+Commands written inside `CLI.spec` receive types for inherited options. A separately defined `CLI.command` only knows the options in its own definition. [Actions](./actions.mdx#types-in-actions) covers that boundary.
+
+### Options that share a name
+
+A child's option can take a name from an inherited option. That name then selects the child's option after entering the child.
+
+Use a `ref` to give each option a separate lookup key. Both options need a ref because either can appear on the same command line:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: ["-v", "--verbose"],
+      description: "Print diagnostics",
+      isPersistent: true,
+      ref: "verbose",
+    },
+  ],
+  subcommands: [
+    {
+      name: "build",
+      options: [{ name: ["-v", "--version"], description: "Select version mode", ref: "version" }],
+      action({ options }) {
+        console.log(options.has("verbose"), options.has("version"));
+      },
+    },
+  ],
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts -v build
+true false
+$ node demo.ts build -v
+false true
+```
+
+The shared key `-v` reads the option used last. The refs always read their own options. An alias that the child does not take, such as `--verbose`, still selects the inherited option.
+
+[Spec checks](./testing.mdx) require refs for these collisions. They also reject a ref that collides with another key or belongs to an option without a name collision.
+
+## Persistent subcommands
+
+A subcommand can also set `isPersistent: true`. Descendants of its parent can then select it by an exact name or alias. For example, a persistent `CLI.helpCommand` allows `demo remote help`.
+
+A nearer command takes precedence when names overlap. Inherited subcommands do not appear in descendant help, and prefix matching does not apply to them.
+
+If an inherited subcommand's name is intended as the first positional argument, put `--` before it. `demo build -- help` passes `"help"` as an argument.
+
+## Hiding commands and options
+
+Set `hidden: true` to omit a command or option from help and completion. Its exact name still works.
+
+A hidden command never matches an abbreviation. [Parser settings](./parser-settings.mdx#abbreviated-subcommands) explains prefix matching for visible commands.
+
+## Splitting a CLI into files
+
+[Organize commands into modules](./organizing-commands.mdx) shows how to share definitions and separate the executable from the spec. Use `loadSpec` to defer constructing or importing a command until it is selected.
+
+[Loading commands on demand](./loading-commands.mdx) explains the loader's rules and startup costs. See [Subcommand](./reference/cli/interfaces/Subcommand.mdx) for the complete definition.

@@ -6,15 +6,18 @@ import path from "node:path";
 process.chdir(fileURLToPath(new URL("..", import.meta.url)));
 const args = new Set(process.argv.slice(2));
 if ([...args].some((arg) => arg !== "--freeze" && arg !== "--frozen") || args.size > 1) {
-  throw new Error("Use --freeze to save the current model, or --frozen to render saved models");
+  throw new Error("Use --freeze to save the model of the source, or --frozen to render only saved models");
 }
 const { version } = JSON.parse(await readFile("../package.json", "utf8"));
 const major = version.split(".")[0];
 if (!/^\d+$/.test(major)) {
   throw new Error(`Cannot determine the documentation version from ${version}`);
 }
+// The released docs of this major. Its reference renders from a saved model.
 const current = `v${major}`;
-await readFile(`content/docs/${current}/meta.json`, "utf8");
+// The working docs for the main branch. Its reference renders from source.
+const next = "next";
+await readFile(`content/docs/${next}/meta.json`, "utf8");
 
 const groups = [
   ["", "API reference", ["index", "definitions", "execution", "completion", "testing", "utilities"]],
@@ -105,7 +108,7 @@ async function sourceProject(app) {
 }
 
 if (args.has("--freeze")) {
-  const app = await application(`content/docs/${current}/reference`);
+  const app = await application(`content/docs/${next}/reference`);
   const project = await sourceProject(app);
   const snapshot = {
     format: 1,
@@ -123,20 +126,20 @@ if (args.has("--freeze")) {
     .filter((entry) => entry.isDirectory() && /^v\d+$/.test(entry.name))
     .map((entry) => entry.name)
     .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
-  // Check archives before replacing any generated output.
+  // Check the saved models before replacing any generated output.
   const snapshots = new Map();
   for (const docsVersion of versions) {
-    if (docsVersion === current && !args.has("--frozen")) {
-      continue;
-    }
     const file = `api-models/${docsVersion}.json`;
     let snapshot;
     try {
       snapshot = JSON.parse(await readFile(file, "utf8"));
     } catch (error) {
-      throw new Error(`Cannot load ${file}. Freeze each version before changing the package major.`, {
-        cause: error,
-      });
+      throw new Error(
+        `Cannot load ${file}. Each released version needs the model saved when it was released.`,
+        {
+          cause: error,
+        },
+      );
     }
     if (
       snapshot.format !== 1 ||
@@ -149,7 +152,16 @@ if (args.has("--freeze")) {
     }
     snapshots.set(docsVersion, snapshot);
   }
-  for (const docsVersion of versions) {
+  // With --frozen, the working docs render from the model of this major too.
+  if (args.has("--frozen")) {
+    const file = `api-models/${current}.json`;
+    try {
+      snapshots.set(next, snapshots.get(current) ?? JSON.parse(await readFile(file, "utf8")));
+    } catch (error) {
+      throw new Error(`Cannot load ${file}. Save it with --freeze first.`, { cause: error });
+    }
+  }
+  for (const docsVersion of [...versions, next]) {
     const output = `content/docs/${docsVersion}/reference`;
     const app = await application(output);
     const snapshot = snapshots.get(docsVersion);

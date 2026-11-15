@@ -7,3 +7,4 @@ temp
 
 # Generated from public API doc comments by pnpm --filter docs reference.
 docs/content/docs/v*/reference/
+docs/content/docs/next/reference/

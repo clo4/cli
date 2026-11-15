@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - docs/**
+      # The working docs' API reference is generated from the source.
+      - src/**
+      - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
       - .github/workflows/docs.yml

@@ -4,47 +4,54 @@ Run `pnpm --filter docs dev` from the repository root to start the site. Run `pn
 
 The sidebar separates Concepts, Guides, Reference and Background. Introduction stands outside those groups. Concepts explain the library through examples. Guides address concrete tasks. Reference describes fields and behavior. Background covers comparisons, measurements and compatibility. There is no separate tutorial section.
 
+## Versions
+
+The site has the working docs and one set of released docs for each major version:
+
+- `content/docs/next` describes the `main` branch. It's served at `/cli/next`, and each page has a banner that links to the released page.
+- `content/docs/v6` describes the latest 6.x release. `/cli` redirects to the newest released version.
+
+Every push to `main` deploys both, so the site isn't tied to the release schedule. Write docs for unreleased work in `next`. Fix a mistake in released docs in the version's directory, and in `next` too if it's still there.
+
+`pnpm version` releases the docs with the package. Run it from the repository root:
+
+```sh
+pnpm version minor
+```
+
+Before it changes the version, it runs `pnpm verify`. After, it runs `pnpm --filter docs release`, which replaces the pages of the current major with the pages in `next`, saves the API model for that release, and points `/cli` at the version. The major comes from the root `package.json`, so the first release of a new major creates its directory. The result goes into the release commit, which is named `Release 6.1.0` and tagged `v6.1.0`.
+
+Pushing the branch deploys the docs, and pushing the tag publishes to npm.
+
+The README in the repository links to the working docs. When the package is packed for npm, `scripts/readme-links.mjs` points those links at the released version, and puts them back afterwards.
+
 ## Generated API reference
 
-Doc comments own the API reference. Edit comments beside public declarations, not files under a version's `reference` directory.
+Doc comments own the API reference. Edit comments beside public declarations, not files under a `reference` directory.
 
-`pnpm --filter docs reference` extracts the active API from `src/index.ts` and `src/testing.ts`. The active documentation version comes from the major version in the root `package.json`. Its documentation directory must already exist.
+`pnpm --filter docs reference` renders the reference for every version. The working docs render from `src/index.ts` and `src/testing.ts`. A released version renders from its API model in `api-models`, which holds the signatures, comments, symbol links and reference navigation it was released with.
 
-TypeDoc extracts signatures and comments. Its Markdown plugin renders MDX. `scripts/generate-reference.mjs` adds frontmatter and groups symbols by their role: definitions, execution, help and completion, testing, and utilities. The generated content uses the same search, Markdown endpoints and `llms-full.txt` pipeline as written pages.
+TypeDoc extracts signatures and comments. Its Markdown plugin renders MDX. `scripts/generate-reference.mjs` adds frontmatter and groups symbols by their role: definitions, execution, help and completion, testing, and utilities. The generated content uses the same search, Markdown endpoints and `llms-full.txt` pipeline as written pages. A new export has to be added to a group in that script to appear in the sidebar.
 
 The generated directories are ignored by Git. The development, build and check commands generate them first. After changing comments during development, rerun the reference command to update the pages. Warnings and conversion errors fail generation.
 
 TypeDoc currently requires TypeScript 6, so the docs workspace uses that version. The library retains its TypeScript 7 compiler. This dependency adds nothing to the published package.
 
-## Versioned reference
+To correct the reference of a released version, check out its tag, fix the comments, and save the model again with `pnpm --filter docs reference:freeze`. Do not replace a version's model with a later version's API. A missing or mismatched model fails the build before it replaces generated output.
 
-The active major version uses working source. Older documentation versions use checked-in API models under `api-models`. A model contains signatures, comments, symbol links and the reference navigation for that version. Builds render the model without extracting the older API from current source.
-
-Before switching the package to a new major version, refresh the current model:
-
-```sh
-pnpm --filter docs reference:freeze
-```
-
-Commit the model with the source and comment changes it describes. The command replaces the model for the current major version. Refresh it when changing that version's API or reference comments, and freeze once more before starting the next major version.
-
-When the root package becomes version 7, create the v7 documentation directory. Generation then renders v7 from source and v6 from `api-models/v6.json`. A missing or mismatched archived model fails the build before replacing generated output.
-
-To render saved models for every documentation version, including the active version:
+To render every version from saved models, the working docs included:
 
 ```sh
 pnpm --filter docs reference --frozen
 ```
 
-To correct an archived API reference, update the matching version's source comments and regenerate its model. Do not replace an old model with a newer major version's API.
-
-Models record the TypeDoc version that created them. When upgrading the generation tools, run the archive-isolation checks and inspect the resulting pages:
+Models record the TypeDoc version that created them. When upgrading the generation tools, run the isolation checks and inspect the resulting pages:
 
 ```sh
 pnpm --filter docs reference:check
 ```
 
-The checks use a temporary v7 project beside the frozen v6 model. They verify source and archive separation, missing-model errors, and rendering after source changes. They do not alter this repository's source or API models.
+The checks use a temporary project with a released v6 and working docs for a later source. They verify that the two stay separate, that a missing model is an error, and that frozen rendering ignores later source changes. They do not alter this repository's source or API models.
 
 ## Writing
 
