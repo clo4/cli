@@ -2,7 +2,7 @@
 
 _A magical CLI framework, with no magic._
 
-Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings and run your application code.
+Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings, or the numbers and choices a `parse` turns them into, and run your application code.
 
 The package has no runtime dependencies. It supports completion for Bash, Zsh, Fish, PowerShell and Nushell, with static suggestions, file paths and sync or async generators on individual arguments. Large CLIs can load command definitions on demand.
 
@@ -39,11 +39,24 @@ const spec = CLI.spec({
         {
           name: ["-o", "--output"],
           description: "Output directory",
-          args: { name: "dir", default: "dist", template: "folders" },
+          args: {
+            name: "dir",
+            default: "dist",
+            template: "folders",
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          description: "Tasks to run at once",
+          args: {
+            name: "count",
+            default: "4",
+            parse: CLI.number({ min: 1, max: 64, int: true }),
+          },
         },
       ],
       action({ args: [input], options }) {
-        console.log(`${input} -> ${options.get("--output")}`);
+        console.log(`${input} -> ${options.get("--output")}, ${options.get("--jobs")} at once`);
         if (options.has("--watch")) {
           console.log("Watch mode enabled.");
         }
@@ -59,13 +72,17 @@ CLI.run(spec);
 
 ```console
 $ node demo.ts build
-. -> dist
-$ node demo.ts build src -o public --watch
-src -> public
+. -> dist, 4 at once
+$ node demo.ts build src -o public --jobs 8 --watch
+src -> public, 8 at once
 Watch mode enabled.
+$ node demo.ts build --jobs many
+Error: Invalid value "many" for --jobs: expected an integer from 1 to 64
 ```
 
-`CLI.spec` returns the definition unchanged and infers the action's inputs. Here, `input` and the output value are strings because they have defaults. TypeScript rejects unknown option names.
+`CLI.spec` returns the definition unchanged and infers the action's inputs. Here, `input` and the output value are strings because they have defaults, and `--jobs` is a number because its `parse` is `CLI.number`. TypeScript rejects unknown option names.
+
+A `parse` runs before the action. Help shows `--jobs` as `(integer from 1 to 64, default: 4)`, and every rejected value is reported together with anything else that's wrong with the command line.
 
 `CLI.run` parses the command line and runs the selected action. `demo build --help` and `demo help build` print help for `build`. Running `demo` without a subcommand prints root help.
 

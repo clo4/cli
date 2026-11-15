@@ -1,7 +1,7 @@
 {
   "format": 1,
   "docsVersion": "v6",
-  "packageVersion": "6.0.0",
+  "packageVersion": "6.1.0",
   "typedocVersion": "0.28.20",
   "navigation": [
     ["", "API reference", ["index", "definitions", "execution", "completion", "testing", "utilities"]],
@@ -207,7 +207,7 @@
                 },
                 {
                   "kind": "text",
-                  "text": " is what an argument's value can be. A value is a string, unless the\naction is in a "
+                  "text": " is what a value is. It's a string, unless the action is in a "
                 },
                 {
                   "kind": "code",
@@ -215,7 +215,7 @@
                 },
                 {
                   "kind": "text",
-                  "text": " or "
+                  "text": "\nor "
                 },
                 {
                   "kind": "code",
@@ -231,7 +231,7 @@
                 },
                 {
                   "kind": "text",
-                  "text": " gives something else.\nAn action written as "
+                  "text": " gives something else. An action written as\n"
                 },
                 {
                   "kind": "code",
@@ -313,7 +313,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 125,
+                  "target": 123,
                   "typeArguments": [
                     {
                       "type": "reference",
@@ -344,7 +344,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 103,
+                  "target": 102,
                   "name": "CommandPath",
                   "package": "@clo4/cli"
                 }
@@ -531,7 +531,7 @@
                                 },
                                 "type": {
                                   "type": "reference",
-                                  "target": 108,
+                                  "target": 107,
                                   "typeArguments": [
                                     {
                                       "type": "reference",
@@ -626,77 +626,13 @@
                 },
                 {
                   "kind": "text",
-                  "text": " turns it into something else.\n\nUse an object for one argument and an array for two or more. Required\narguments precede optional arguments. A variadic argument must be last.\n\n"
-                },
-                {
-                  "kind": "code",
-                  "text": "`Output`"
-                },
-                {
-                  "kind": "text",
-                  "text": " is what the argument's value can be. An argument typed "
-                },
-                {
-                  "kind": "code",
-                  "text": "`Arg`"
-                },
-                {
-                  "kind": "text",
-                  "text": " gives\na string, so its "
-                },
-                {
-                  "kind": "code",
-                  "text": "`parse`"
-                },
-                {
-                  "kind": "text",
-                  "text": " can check or tidy the value but has to give a\nstring. "
-                },
-                {
-                  "kind": "code",
-                  "text": "`spec`"
-                },
-                {
-                  "kind": "text",
-                  "text": " and "
-                },
-                {
-                  "kind": "code",
-                  "text": "`command`"
-                },
-                {
-                  "kind": "text",
-                  "text": " read the type a "
-                },
-                {
-                  "kind": "code",
-                  "text": "`parse`"
-                },
-                {
-                  "kind": "text",
-                  "text": " written in them\ngives. For an argument made outside them, "
-                },
-                {
-                  "kind": "code",
-                  "text": "`Arg<number>`"
-                },
-                {
-                  "kind": "text",
-                  "text": " is one whose\n"
-                },
-                {
-                  "kind": "code",
-                  "text": "`parse`"
-                },
-                {
-                  "kind": "text",
-                  "text": " gives a number."
+                  "text": " turns it into something else.\n\nUse an object for one argument and an array for two or more. Required\narguments precede optional arguments. A variadic argument must be last."
                 }
               ]
             },
             "children": [
               {
-                "id": 98,
+                "id": 97,
                 "name": "default",
                 "variant": "declaration",
                 "kind": 1024,
@@ -781,7 +717,7 @@
                 }
               },
               {
-                "id": 95,
+                "id": 94,
                 "name": "description",
                 "variant": "declaration",
                 "kind": 1024,
@@ -802,7 +738,7 @@
                 }
               },
               {
-                "id": 102,
+                "id": 101,
                 "name": "generators",
                 "variant": "declaration",
                 "kind": 1024,
@@ -823,7 +759,7 @@
                   "typeArguments": [
                     {
                       "type": "reference",
-                      "target": 104,
+                      "target": 103,
                       "name": "Generator",
                       "package": "@clo4/cli"
                     }
@@ -833,7 +769,7 @@
                 }
               },
               {
-                "id": 97,
+                "id": 96,
                 "name": "isOptional",
                 "variant": "declaration",
                 "kind": 1024,
@@ -854,7 +790,7 @@
                 }
               },
               {
-                "id": 96,
+                "id": 95,
                 "name": "isVariadic",
                 "variant": "declaration",
                 "kind": 1024,
@@ -883,7 +819,7 @@
                 }
               },
               {
-                "id": 94,
+                "id": 93,
                 "name": "name",
                 "variant": "declaration",
                 "kind": 1024,
@@ -904,7 +840,7 @@
                 }
               },
               {
-                "id": 99,
+                "id": 98,
                 "name": "parse",
                 "variant": "declaration",
                 "kind": 1024,
@@ -956,12 +892,8 @@
                       "name": "unknown"
                     },
                     {
-                      "type": "reference",
-                      "target": 93,
-                      "name": "Output",
-                      "package": "@clo4/cli",
-                      "qualifiedName": "Arg.Output",
-                      "refersToTypeParameter": true
+                      "type": "intrinsic",
+                      "name": "unknown"
                     }
                   ],
                   "name": "StandardSchemaV1",
@@ -969,7 +901,7 @@
                 }
               },
               {
-                "id": 101,
+                "id": 100,
                 "name": "suggestions",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1008,7 +940,7 @@
                 }
               },
               {
-                "id": 100,
+                "id": 99,
                 "name": "template",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1034,25 +966,12 @@
             "groups": [
               {
                 "title": "Properties",
-                "children": [98, 95, 102, 97, 96, 94, 99, 101, 100]
-              }
-            ],
-            "typeParameters": [
-              {
-                "id": 93,
-                "name": "Output",
-                "variant": "typeParam",
-                "kind": 131072,
-                "flags": {},
-                "default": {
-                  "type": "intrinsic",
-                  "name": "string"
-                }
+                "children": [97, 94, 101, 96, 95, 93, 98, 100, 99]
               }
             ]
           },
           {
-            "id": 104,
+            "id": 103,
             "name": "Generator",
             "variant": "declaration",
             "kind": 256,
@@ -1075,7 +994,7 @@
             },
             "children": [
               {
-                "id": 105,
+                "id": 104,
                 "name": "custom",
                 "variant": "declaration",
                 "kind": 2048,
@@ -1084,7 +1003,7 @@
                 },
                 "signatures": [
                   {
-                    "id": 106,
+                    "id": 105,
                     "name": "custom",
                     "variant": "signature",
                     "kind": 4096,
@@ -1115,7 +1034,7 @@
                     },
                     "parameters": [
                       {
-                        "id": 107,
+                        "id": 106,
                         "name": "tokens",
                         "variant": "param",
                         "kind": 32768,
@@ -1189,12 +1108,12 @@
             "groups": [
               {
                 "title": "Methods",
-                "children": [105]
+                "children": [104]
               }
             ]
           },
           {
-            "id": 110,
+            "id": 109,
             "name": "Option",
             "variant": "declaration",
             "kind": 256,
@@ -1243,31 +1162,13 @@
                 },
                 {
                   "kind": "text",
-                  "text": ", each use replaces the option's previous values.\n\n"
-                },
-                {
-                  "kind": "code",
-                  "text": "`Output`"
-                },
-                {
-                  "kind": "text",
-                  "text": " is what the option's values can be. See "
-                },
-                {
-                  "kind": "inline-tag",
-                  "tag": "@link",
-                  "text": "Arg",
-                  "target": 92
-                },
-                {
-                  "kind": "text",
-                  "text": "."
+                  "text": ", each use replaces the option's previous values."
                 }
               ]
             },
             "children": [
               {
-                "id": 123,
+                "id": 121,
                 "name": "action",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1298,7 +1199,7 @@
                 }
               },
               {
-                "id": 115,
+                "id": 113,
                 "name": "args",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1320,16 +1221,6 @@
                     {
                       "type": "reference",
                       "target": 92,
-                      "typeArguments": [
-                        {
-                          "type": "reference",
-                          "target": 111,
-                          "name": "Output",
-                          "package": "@clo4/cli",
-                          "qualifiedName": "Option.Output",
-                          "refersToTypeParameter": true
-                        }
-                      ],
                       "name": "Arg",
                       "package": "@clo4/cli"
                     }
@@ -1339,7 +1230,7 @@
                 }
               },
               {
-                "id": 122,
+                "id": 120,
                 "name": "dependsOn",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1356,7 +1247,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "intrinsic",
@@ -1368,7 +1259,7 @@
                 }
               },
               {
-                "id": 113,
+                "id": 111,
                 "name": "description",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1389,7 +1280,7 @@
                 }
               },
               {
-                "id": 121,
+                "id": 119,
                 "name": "exclusiveOn",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1406,7 +1297,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "intrinsic",
@@ -1418,7 +1309,7 @@
                 }
               },
               {
-                "id": 117,
+                "id": 115,
                 "name": "hidden",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1439,7 +1330,7 @@
                 }
               },
               {
-                "id": 116,
+                "id": 114,
                 "name": "isPersistent",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1460,7 +1351,7 @@
                 }
               },
               {
-                "id": 119,
+                "id": 117,
                 "name": "isRepeatable",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1506,7 +1397,7 @@
                 }
               },
               {
-                "id": 120,
+                "id": 118,
                 "name": "isRequired",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1527,7 +1418,7 @@
                 }
               },
               {
-                "id": 112,
+                "id": 110,
                 "name": "name",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1578,7 +1469,7 @@
                 }
               },
               {
-                "id": 114,
+                "id": 112,
                 "name": "ref",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1599,7 +1490,7 @@
                 }
               },
               {
-                "id": 118,
+                "id": 116,
                 "name": "requiresSeparator",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1648,25 +1539,12 @@
             "groups": [
               {
                 "title": "Properties",
-                "children": [123, 115, 122, 113, 121, 117, 116, 119, 120, 112, 114, 118]
-              }
-            ],
-            "typeParameters": [
-              {
-                "id": 111,
-                "name": "Output",
-                "variant": "typeParam",
-                "kind": 131072,
-                "flags": {},
-                "default": {
-                  "type": "intrinsic",
-                  "name": "string"
-                }
+                "children": [121, 113, 120, 111, 119, 115, 114, 117, 118, 110, 112, 116]
               }
             ]
           },
           {
-            "id": 125,
+            "id": 123,
             "name": "OptionArgs",
             "variant": "declaration",
             "kind": 256,
@@ -1676,14 +1554,6 @@
                 {
                   "kind": "text",
                   "text": "Access parsed options.\n\n"
-                },
-                {
-                  "kind": "code",
-                  "text": "`Value`"
-                },
-                {
-                  "kind": "text",
-                  "text": " is what an option's value can be. "
                 },
                 {
                   "kind": "code",
@@ -1699,7 +1569,7 @@
                 },
                 {
                   "kind": "text",
-                  "text": " give an\naction the type of each value. Anywhere else a value is a string, since a\n"
+                  "text": " give an action the type of each value. Anywhere else\na value is read as a string. For an option whose "
                 },
                 {
                   "kind": "code",
@@ -1707,7 +1577,23 @@
                 },
                 {
                   "kind": "text",
-                  "text": " there can only give one. A function that takes "
+                  "text": " gives something\nelse, say what when reading it: "
+                },
+                {
+                  "kind": "code",
+                  "text": "`options.get<number>(\"--port\")`"
+                },
+                {
+                  "kind": "text",
+                  "text": ".\n\n"
+                },
+                {
+                  "kind": "code",
+                  "text": "`Value`"
+                },
+                {
+                  "kind": "text",
+                  "text": " is what a value is when the reader doesn't say. A function that\ntakes "
                 },
                 {
                   "kind": "code",
@@ -1715,13 +1601,53 @@
                 },
                 {
                   "kind": "text",
-                  "text": "\naccepts the options of any action."
+                  "text": " accepts the options of any action.\n\n"
+                },
+                {
+                  "kind": "code",
+                  "text": "`get`"
+                },
+                {
+                  "kind": "text",
+                  "text": " and "
+                },
+                {
+                  "kind": "code",
+                  "text": "`all`"
+                },
+                {
+                  "kind": "text",
+                  "text": " return "
+                },
+                {
+                  "kind": "code",
+                  "text": "`NoInfer<Read>`"
+                },
+                {
+                  "kind": "text",
+                  "text": ", so that only a type written at the\ncall sets "
+                },
+                {
+                  "kind": "code",
+                  "text": "`Read`"
+                },
+                {
+                  "kind": "text",
+                  "text": ". Without it, "
+                },
+                {
+                  "kind": "code",
+                  "text": "`const port: number = options.get(\"--port\")`"
+                },
+                {
+                  "kind": "text",
+                  "text": "\nwould set it from the variable's type, and compile for any option."
                 }
               ]
             },
             "children": [
               {
-                "id": 127,
+                "id": 125,
                 "name": "options",
                 "variant": "declaration",
                 "kind": 1024,
@@ -1752,7 +1678,7 @@
                       "type": "array",
                       "elementType": {
                         "type": "reference",
-                        "target": 126,
+                        "target": 124,
                         "name": "Value",
                         "package": "@clo4/cli",
                         "qualifiedName": "OptionArgs.Value",
@@ -1765,14 +1691,14 @@
                 }
               },
               {
-                "id": 128,
+                "id": 126,
                 "name": "all",
                 "variant": "declaration",
                 "kind": 2048,
                 "flags": {},
                 "signatures": [
                   {
-                    "id": 129,
+                    "id": 127,
                     "name": "all",
                     "variant": "signature",
                     "kind": 4096,
@@ -1785,9 +1711,26 @@
                         }
                       ]
                     },
+                    "typeParameters": [
+                      {
+                        "id": 128,
+                        "name": "Read",
+                        "variant": "typeParam",
+                        "kind": 131072,
+                        "flags": {},
+                        "default": {
+                          "type": "reference",
+                          "target": 124,
+                          "name": "Value",
+                          "package": "@clo4/cli",
+                          "qualifiedName": "OptionArgs.Value",
+                          "refersToTypeParameter": true
+                        }
+                      }
+                    ],
                     "parameters": [
                       {
-                        "id": 130,
+                        "id": 129,
                         "name": "name",
                         "variant": "param",
                         "kind": 32768,
@@ -1802,11 +1745,22 @@
                       "type": "array",
                       "elementType": {
                         "type": "reference",
-                        "target": 126,
-                        "name": "Value",
-                        "package": "@clo4/cli",
-                        "qualifiedName": "OptionArgs.Value",
-                        "refersToTypeParameter": true
+                        "target": {
+                          "packageName": "typescript",
+                          "packagePath": "lib/lib.es5.d.ts",
+                          "qualifiedName": "NoInfer"
+                        },
+                        "typeArguments": [
+                          {
+                            "type": "reference",
+                            "target": 128,
+                            "name": "Read",
+                            "package": "@clo4/cli",
+                            "refersToTypeParameter": true
+                          }
+                        ],
+                        "name": "NoInfer",
+                        "package": "typescript"
                       }
                     }
                   }
@@ -1854,14 +1808,14 @@
                 ]
               },
               {
-                "id": 131,
+                "id": 130,
                 "name": "get",
                 "variant": "declaration",
                 "kind": 2048,
                 "flags": {},
                 "signatures": [
                   {
-                    "id": 132,
+                    "id": 131,
                     "name": "get",
                     "variant": "signature",
                     "kind": 4096,
@@ -1882,6 +1836,23 @@
                         }
                       ]
                     },
+                    "typeParameters": [
+                      {
+                        "id": 132,
+                        "name": "Read",
+                        "variant": "typeParam",
+                        "kind": 131072,
+                        "flags": {},
+                        "default": {
+                          "type": "reference",
+                          "target": 124,
+                          "name": "Value",
+                          "package": "@clo4/cli",
+                          "qualifiedName": "OptionArgs.Value",
+                          "refersToTypeParameter": true
+                        }
+                      }
+                    ],
                     "parameters": [
                       {
                         "id": 133,
@@ -1900,11 +1871,22 @@
                       "types": [
                         {
                           "type": "reference",
-                          "target": 126,
-                          "name": "Value",
-                          "package": "@clo4/cli",
-                          "qualifiedName": "OptionArgs.Value",
-                          "refersToTypeParameter": true
+                          "target": {
+                            "packageName": "typescript",
+                            "packagePath": "lib/lib.es5.d.ts",
+                            "qualifiedName": "NoInfer"
+                          },
+                          "typeArguments": [
+                            {
+                              "type": "reference",
+                              "target": 132,
+                              "name": "Read",
+                              "package": "@clo4/cli",
+                              "refersToTypeParameter": true
+                            }
+                          ],
+                          "name": "NoInfer",
+                          "package": "typescript"
                         },
                         {
                           "type": "intrinsic",
@@ -1960,16 +1942,16 @@
             "groups": [
               {
                 "title": "Properties",
-                "children": [127]
+                "children": [125]
               },
               {
                 "title": "Methods",
-                "children": [128, 137, 131, 134]
+                "children": [126, 137, 130, 134]
               }
             ],
             "typeParameters": [
               {
-                "id": 126,
+                "id": 124,
                 "name": "Value",
                 "variant": "typeParam",
                 "kind": 131072,
@@ -2173,12 +2155,6 @@
                     {
                       "type": "reference",
                       "target": 92,
-                      "typeArguments": [
-                        {
-                          "type": "intrinsic",
-                          "name": "string"
-                        }
-                      ],
                       "name": "Arg",
                       "package": "@clo4/cli"
                     }
@@ -2335,17 +2311,11 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "reference",
-                      "target": 110,
-                      "typeArguments": [
-                        {
-                          "type": "intrinsic",
-                          "name": "string"
-                        }
-                      ],
+                      "target": 109,
                       "name": "Option",
                       "package": "@clo4/cli"
                     }
@@ -2600,7 +2570,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "reference",
@@ -3136,12 +3106,6 @@
                     {
                       "type": "reference",
                       "target": 92,
-                      "typeArguments": [
-                        {
-                          "type": "intrinsic",
-                          "name": "string"
-                        }
-                      ],
                       "name": "Arg",
                       "package": "@clo4/cli"
                     }
@@ -3395,17 +3359,11 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "reference",
-                      "target": 110,
-                      "typeArguments": [
-                        {
-                          "type": "intrinsic",
-                          "name": "string"
-                        }
-                      ],
+                      "target": 109,
                       "name": "Option",
                       "package": "@clo4/cli"
                     }
@@ -3636,7 +3594,7 @@
                 },
                 "type": {
                   "type": "reference",
-                  "target": 108,
+                  "target": 107,
                   "typeArguments": [
                     {
                       "type": "reference",
@@ -3737,7 +3695,7 @@
             ]
           },
           {
-            "id": 103,
+            "id": 102,
             "name": "CommandPath",
             "variant": "declaration",
             "kind": 2097152,
@@ -3779,7 +3737,7 @@
             }
           },
           {
-            "id": 108,
+            "id": 107,
             "name": "NonEmptyArray",
             "variant": "declaration",
             "kind": 2097152,
@@ -3794,7 +3752,7 @@
             },
             "typeParameters": [
               {
-                "id": 109,
+                "id": 108,
                 "name": "T",
                 "variant": "typeParam",
                 "kind": 131072,
@@ -3809,7 +3767,7 @@
                 "elements": [
                   {
                     "type": "reference",
-                    "target": 109,
+                    "target": 108,
                     "name": "T",
                     "package": "@clo4/cli",
                     "refersToTypeParameter": true
@@ -3820,7 +3778,7 @@
                       "type": "array",
                       "elementType": {
                         "type": "reference",
-                        "target": 109,
+                        "target": 108,
                         "name": "T",
                         "package": "@clo4/cli",
                         "refersToTypeParameter": true
@@ -4376,7 +4334,7 @@
                                 },
                                 "type": {
                                   "type": "reference",
-                                  "target": 108,
+                                  "target": 107,
                                   "typeArguments": [
                                     {
                                       "type": "intrinsic",
@@ -4673,13 +4631,7 @@
                       "types": [
                         {
                           "type": "reference",
-                          "target": 110,
-                          "typeArguments": [
-                            {
-                              "type": "intrinsic",
-                              "name": "string"
-                            }
-                          ],
+                          "target": 109,
                           "name": "Option",
                           "package": "@clo4/cli"
                         },
@@ -5448,7 +5400,7 @@
               "types": [
                 {
                   "type": "reference",
-                  "target": 110,
+                  "target": 109,
                   "name": "Option",
                   "package": "@clo4/cli"
                 },
@@ -5676,7 +5628,7 @@
                     },
                     "type": {
                       "type": "reference",
-                      "target": 108,
+                      "target": 107,
                       "typeArguments": [
                         {
                           "type": "intrinsic",
@@ -6450,11 +6402,11 @@
         "groups": [
           {
             "title": "Interfaces",
-            "children": [71, 75, 92, 104, 110, 125, 241, 144, 170, 192, 212]
+            "children": [71, 75, 92, 103, 109, 123, 241, 144, 170, 192, 212]
           },
           {
             "title": "Type Aliases",
-            "children": [103, 108, 217, 140, 142, 161, 215]
+            "children": [102, 107, 217, 140, 142, 161, 215]
           },
           {
             "title": "Variables",
@@ -7550,62 +7502,62 @@
       "93": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.Output"
+        "qualifiedName": "Arg.name"
       },
       "94": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.name"
+        "qualifiedName": "Arg.description"
       },
       "95": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.description"
+        "qualifiedName": "Arg.isVariadic"
       },
       "96": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.isVariadic"
+        "qualifiedName": "Arg.isOptional"
       },
       "97": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.isOptional"
+        "qualifiedName": "Arg.default"
       },
       "98": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.default"
+        "qualifiedName": "Arg.parse"
       },
       "99": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.parse"
+        "qualifiedName": "Arg.template"
       },
       "100": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.template"
+        "qualifiedName": "Arg.suggestions"
       },
       "101": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.suggestions"
+        "qualifiedName": "Arg.generators"
       },
       "102": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Arg.generators"
+        "qualifiedName": "CommandPath"
       },
       "103": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "CommandPath"
+        "qualifiedName": "Generator"
       },
       "104": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Generator"
+        "qualifiedName": "Generator.custom"
       },
       "105": {
         "packageName": "@clo4/cli",
@@ -7615,122 +7567,122 @@
       "106": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Generator.custom"
+        "qualifiedName": "tokens"
       },
       "107": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "tokens"
+        "qualifiedName": "NonEmptyArray"
       },
       "108": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "NonEmptyArray"
+        "qualifiedName": "T"
       },
       "109": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "T"
+        "qualifiedName": "Option"
       },
       "110": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option"
+        "qualifiedName": "Option.name"
       },
       "111": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.Output"
+        "qualifiedName": "Option.description"
       },
       "112": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.name"
+        "qualifiedName": "Option.ref"
       },
       "113": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.description"
+        "qualifiedName": "Option.args"
       },
       "114": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.ref"
+        "qualifiedName": "Option.isPersistent"
       },
       "115": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.args"
+        "qualifiedName": "Option.hidden"
       },
       "116": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.isPersistent"
+        "qualifiedName": "Option.requiresSeparator"
       },
       "117": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.hidden"
+        "qualifiedName": "Option.isRepeatable"
       },
       "118": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.requiresSeparator"
+        "qualifiedName": "Option.isRequired"
       },
       "119": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.isRepeatable"
+        "qualifiedName": "Option.exclusiveOn"
       },
       "120": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.isRequired"
+        "qualifiedName": "Option.dependsOn"
       },
       "121": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.exclusiveOn"
-      },
-      "122": {
-        "packageName": "@clo4/cli",
-        "packagePath": "src/types.ts",
-        "qualifiedName": "Option.dependsOn"
+        "qualifiedName": "Option.action"
       },
       "123": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "Option.action"
-      },
-      "125": {
-        "packageName": "@clo4/cli",
-        "packagePath": "src/types.ts",
         "qualifiedName": "OptionArgs"
       },
-      "126": {
+      "124": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
         "qualifiedName": "OptionArgs.Value"
       },
-      "127": {
+      "125": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
         "qualifiedName": "OptionArgs.options"
       },
-      "128": {
+      "126": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
         "qualifiedName": "OptionArgs.all"
+      },
+      "127": {
+        "packageName": "@clo4/cli",
+        "packagePath": "src/types.ts",
+        "qualifiedName": "OptionArgs.all"
+      },
+      "128": {
+        "packageName": "@clo4/cli",
+        "packagePath": "src/types.ts",
+        "qualifiedName": "Read"
       },
       "129": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "OptionArgs.all"
+        "qualifiedName": "name"
       },
       "130": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "name"
+        "qualifiedName": "OptionArgs.get"
       },
       "131": {
         "packageName": "@clo4/cli",
@@ -7740,7 +7692,7 @@
       "132": {
         "packageName": "@clo4/cli",
         "packagePath": "src/types.ts",
-        "qualifiedName": "OptionArgs.get"
+        "qualifiedName": "Read"
       },
       "133": {
         "packageName": "@clo4/cli",

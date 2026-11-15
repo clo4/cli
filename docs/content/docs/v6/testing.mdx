@@ -59,6 +59,8 @@ The testing entry point also exports `test` as an alias of `testSpec`.
 
 By default, every command and option needs a description. Description lines must fit within 68 characters. The length limit also applies to positional argument descriptions.
 
+Write a description as a phrase without a closing period, like the built-in `Print a help message`. Help puts details such as `(default: dist)` after it. The checks don't enforce this.
+
 Examples in these docs sometimes omit descriptions to keep attention on the field being explained. Set `allowNoDescription: true` to permit that in a spec test:
 
 ```ts

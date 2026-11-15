@@ -269,8 +269,9 @@ function optionArgs(
   return {
     options,
     has: (name) => options.has(name),
-    get: (name) => (options.get(name) ?? unusedDefaults(scope, name, defaults))?.[0],
-    all: (name) => options.get(name) ?? unusedDefaults(scope, name, defaults) ?? [],
+    // The spec's types, or the caller, say what each value is. See `OptionArgs`.
+    get: <Read>(name: string) => (options.get(name) ?? unusedDefaults(scope, name, defaults))?.[0] as Read,
+    all: <Read>(name: string) => (options.get(name) ?? unusedDefaults(scope, name, defaults) ?? []) as Read[],
     // A repeatable option without arguments stores an empty string for each
     // use, so its values count the uses.
     count: (name) => options.get(name)?.length ?? 0,

@@ -41,16 +41,11 @@ type Parsed<P> = P extends { readonly "~standard": { readonly types?: infer T } 
 
 /**
  * What argument `H` gives an action: a string, or what its `parse` gives. An
- * argument typed `Arg` might have a `parse` without its type saying so, and
- * gives what `Arg` says its `parse` gives.
+ * argument typed `Arg` might have a `parse` without its type saying what it
+ * gives. Its value is read as a string, like any value outside a spec, and
+ * the action says otherwise when it reads it: `options.get<number>(name)`.
  */
-type Out<H> = "parse" extends keyof H
-  ? H extends { parse?: infer P }
-    ? [NonNullable<P>] extends [never]
-      ? string
-      : Parsed<NonNullable<P>>
-    : string
-  : string;
+type Out<H> = H extends { parse: infer P } ? ([P] extends [undefined] ? string : Parsed<P>) : string;
 
 /** The arguments of the options in `O`, as a union. */
 type OptionArgsOf<O> = O extends { args?: infer A } ? Element<NonNullable<A>> : never;
@@ -214,8 +209,18 @@ interface OptionReader<Name, ValueName, Value, Values, Other = string> {
   /** Every argument supplied to an option, or the defaults of its arguments if it wasn't supplied. */
   all<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Values ? Values[K] : Other[];
 
+  /**
+   * `all`, with the type of the result written at the call. An action has
+   * no use for this one. It's here so that these options fit `OptionArgs`,
+   * whose reader says what a value is.
+   */
+  all<K extends Name, Read>(name: WithValue<K, ValueName>): Read;
+
   /** The first argument supplied to an option, or the default of its first argument if it wasn't supplied. */
   get<K extends Name>(name: WithValue<K, ValueName>): K extends keyof Value ? Value[K] : Other | undefined;
+
+  /** `get`, with the type of the result written at the call. See the second `all`. */
+  get<K extends Name, Read>(name: WithValue<K, ValueName>): Read;
 
   /** Whether an option was supplied. Defaults don't count. */
   has(name: Name): boolean;

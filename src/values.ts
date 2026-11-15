@@ -114,7 +114,13 @@ function addJobs(
       jobs.push({
         schema: arg.parse,
         raw: raw[i],
-        target: target ?? `<${arg.name ?? "argument"}>`,
+        // An option with several arguments says which one the value is for.
+        target:
+          target === null
+            ? `<${arg.name ?? "argument"}>`
+            : args.length > 1
+              ? `${target} <${arg.name ?? `argument ${i - start + 1}`}>`
+              : target,
         isDefault: i >= typedEnd,
         into,
         index: i,

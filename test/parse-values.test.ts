@@ -166,22 +166,52 @@ CLI.spec({
   ],
 });
 
-// An option made outside the spec says what its parse gives.
-function retries(): CLI.Option<number> {
+// An option made by a function typed `Option` doesn't say what its parse
+// gives, so its value is read as a string unless the action says otherwise.
+function retries(): CLI.Option {
   return { name: "--retries", description: "x", args: { name: "n", parse: port } };
 }
+// One written `as const` keeps the type of its parse.
+const level = { name: "--level", description: "x", args: { name: "n", parse: port } } as const;
 CLI.command({
   name: "made",
   options: [retries(), { name: "--other", description: "x" }],
   action({ options }) {
-    is<number | undefined>()(options.get("--retries"));
+    is<string | undefined>()(options.get("--retries"));
+  },
+});
+CLI.command({
+  name: "shared",
+  options: [level, { name: "--other", description: "x" }],
+  action({ options }) {
+    is<number | undefined>()(options.get("--level"));
   },
 });
 
-// Outside `spec` and `command`, a parse gives a string.
-({ name: "mode", parse: CLI.choice(["a", "b"]) }) satisfies CLI.Arg;
-// @ts-expect-error
-({ name: "number", parse: port }) satisfies CLI.Arg;
+// A spec typed `Spec` takes any parse. Its actions read strings, and say so
+// where a parse gives something else.
+({
+  name: "untyped",
+  args: { name: "count", parse: port },
+  options: [{ name: "--port", args: { name: "port", parse: port } }],
+  action({ options, args }) {
+    is<string[]>()(args);
+    is<string | undefined>()(options.get("--name"));
+    is<number | undefined>()(options.get<number>("--port"));
+    is<string[]>()(options.all("--name"));
+    is<number[]>()(options.all<number>("--port"));
+  },
+}) satisfies CLI.Spec;
+
+// A helper written for any options takes the typed ones.
+function anyOptions(options: CLI.OptionArgs<unknown>): boolean {
+  return options.has("--verbose");
+}
+CLI.spec({
+  name: "helper",
+  options: [{ name: "--port", description: "x", args: { name: "port", parse: port } }],
+  action: ({ options }) => (anyOptions(options) ? 0 : 1),
+});
 
 // }}}
 
@@ -487,6 +517,23 @@ test("an option read by its ref has its parsed value", async () => {
   expect(init!.options.get("--level")).toBe("sub 2");
 });
 
+test("spec check: every number range has a number in it", async () => {
+  const withRange = (parse: CLI.StandardSchemaV1<string, number>) =>
+    CLI.spec({ name: "demo", options: [{ name: "--n", description: "x", args: { name: "n", parse } }] });
+  await runSpecCheck("assertRangesAreNotEmpty", serve);
+  await runSpecCheck("assertRangesAreNotEmpty", withRange(CLI.number({ min: 1, max: 1 })));
+  await runSpecCheck("assertRangesAreNotEmpty", withRange(CLI.number({ min: 0.2, max: 0.8 })));
+  await expect(
+    runSpecCheck("assertRangesAreNotEmpty", withRange(CLI.number({ min: 10, max: 1 }))),
+  ).rejects.toThrow(
+    "Option `demo --n` (index 0), argument n has a `parse` that rejects every value, since it asks for a number from 10 to 1",
+  );
+  // A range of integers with no whole number in it.
+  await expect(
+    runSpecCheck("assertRangesAreNotEmpty", withRange(CLI.number({ min: 0.2, max: 0.8, int: true }))),
+  ).rejects.toThrow("since it asks for an integer from 0.2 to 0.8");
+});
+
 /** What `schema` gives for `value`, or the message it rejects it with. */
 function read(schema: CLI.StandardSchemaV1<string, unknown>, value: string): unknown {
   const result = schema["~standard"].validate(value) as CLI.StandardResult<unknown>;
@@ -571,6 +618,110 @@ const described = CLI.spec({
       ],
     },
   ],
+});
+
+/** A schema that describes itself as `described`, and accepts anything. */
+function describedAs(described: Record<string, unknown>): CLI.StandardSchemaV1<string, string> {
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: (value) => ({ value: String(value) }),
+      jsonSchema: { input: () => described },
+    },
+  };
+}
+
+test("help carries a long list of values on to the next line", async () => {
+  const regions = [
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-central-1",
+    "ap-south-1",
+    "ap-southeast-1",
+  ] as const;
+  const spec = CLI.spec({
+    name: "deploy",
+    options: [
+      CLI.help,
+      {
+        name: "--region",
+        description: "Where to deploy",
+        args: { name: "region", default: "us-east-1", parse: CLI.choice(regions) },
+      },
+    ],
+  });
+  const { stdout } = await captureConsole(() => run(spec, ["-h"]));
+  expect(stdout).toContain(
+    [
+      "  --region <region>  Where to deploy",
+      "                     (us-east-1 | us-east-2 | us-west-1 | us-west-2 | eu-west-1 |",
+      "                     eu-west-2 | eu-central-1 | ap-south-1 | ap-southeast-1,",
+      "                     default: us-east-1)",
+      "",
+    ].join("\n"),
+  );
+  // No line of it is wider than the descriptions the spec checks allow.
+  for (const line of stdout.split("\n").filter((line) => line.startsWith("                     "))) {
+    expect(line.trimStart().length).toBeLessThanOrEqual(68);
+  }
+});
+
+test("help says which bounds a range leaves out", async () => {
+  const spec = CLI.spec({
+    name: "demo",
+    options: [
+      CLI.help,
+      {
+        name: "--a",
+        description: "A",
+        args: { name: "n", parse: describedAs({ type: "number", exclusiveMinimum: 0 }) },
+      },
+      {
+        name: "--b",
+        description: "B",
+        args: { name: "n", parse: describedAs({ type: "number", exclusiveMinimum: 0, exclusiveMaximum: 1 }) },
+      },
+      {
+        name: "--c",
+        description: "C",
+        args: { name: "n", parse: describedAs({ type: "integer", minimum: 0, exclusiveMaximum: 10 }) },
+      },
+      {
+        name: "--d",
+        description: "D",
+        args: { name: "n", parse: describedAs({ type: "integer", maximum: 5 }) },
+      },
+    ],
+  });
+  const { stdout } = await captureConsole(() => run(spec, ["-h"]));
+  expect(stdout).toContain("--a <n>     A (number, more than 0)\n");
+  expect(stdout).toContain("--b <n>     B (number, more than 0 and less than 1)\n");
+  expect(stdout).toContain("--c <n>     C (integer, at least 0 and less than 10)\n");
+  expect(stdout).toContain("--d <n>     D (integer, at most 5)\n");
+});
+
+test("a rejected value of an option with several arguments says which argument", () => {
+  const spec = CLI.spec({
+    name: "demo",
+    options: [
+      {
+        name: "--size",
+        description: "x",
+        args: [{ name: "w", parse: port }, { parse: port }],
+      },
+    ],
+  });
+  expect(() => parse(["--size", "3", "x"], spec)).toThrow(
+    'Invalid value "x" for --size <argument 2>: expected an integer from 1 to 65535',
+  );
+  expect(() => parse(["--size", "x", "3"], spec)).toThrow(
+    'Invalid value "x" for --size <w>: expected an integer from 1 to 65535',
+  );
 });
 
 test("help shows what a value can be, before its default", async () => {

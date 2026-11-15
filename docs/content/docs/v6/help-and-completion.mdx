@@ -15,7 +15,11 @@ const spec = CLI.spec({
     {
       name: "build",
       description: "Build a project",
-      args: { name: "directory", isOptional: true, template: "folders" },
+      args: {
+        name: "directory",
+        isOptional: true,
+        template: "folders",
+      },
       action({ args }) {
         console.log(args);
       },

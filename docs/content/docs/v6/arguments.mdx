@@ -71,7 +71,11 @@ The values remain in the same `args` array. For a fixed argument followed by a v
 An optional positional argument can define a string default:
 
 ```ts
-args: { name: "directory", isOptional: true, default: "." },
+args: {
+  name: "directory",
+  isOptional: true,
+  default: ".",
+},
 ```
 
 When the user omits this argument, the action receives `"."`. For multiple omitted arguments, the parser fills defaults in order. It stops at the first argument without a default.
@@ -113,13 +117,20 @@ const spec = CLI.spec({
     {
       name: "--port",
       description: "Listen on this port",
-      args: { name: "port", default: "8080", parse: CLI.number({ min: 1, max: 65535, int: true }) },
+      args: {
+        name: "port",
+        default: "8080",
+        parse: CLI.number({ min: 1, max: 65535, int: true }),
+      },
     },
     {
       name: "--mode",
       description: "Build mode",
       isRequired: true,
-      args: { name: "mode", parse: CLI.choice(["debug", "release"]) },
+      args: {
+        name: "mode",
+        parse: CLI.choice(["debug", "release"]),
+      },
     },
   ],
   action({ args: [root], options }) {
@@ -181,12 +192,15 @@ Help shows what each value can be after its description, before the default. Com
 ```ts
 import * as z from "zod";
 
-args: { name: "email", parse: z.email() },
+args: {
+  name: "email",
+  parse: z.email(),
+},
 ```
 
 The schema has to accept a string. `z.number()` only accepts a number, so TypeScript rejects it as a `parse`.
 
-A rejected value shows the schema's issue messages. Help and completion read a schema's type, range and values through its JSON Schema, which Zod and ArkType schemas provide. For a schema that doesn't, such as Valibot's, describe the values in the description and add `suggestions`.
+A rejected value shows the schema's issue messages. Help and completion read what a schema takes through its JSON Schema, which Zod and ArkType schemas provide. They show a list of values from either library, and a number's range where the schema describes its input as a number, as `z.coerce.number().min(1)` does. For a schema that says nothing, such as Valibot's, describe the values in the description and add `suggestions`.
 
 ### What a schema is given
 
@@ -203,19 +217,33 @@ An [option action](./actions.mdx#option-actions) such as `--help` runs without a
 
 ### Outside `CLI.spec`
 
-A definition typed as `Spec`, `Subcommand`, `Option` or `Arg` has no inferred types, so its actions read strings, and a `parse` there has to give a string. To make an option outside the spec whose `parse` gives another type, say so in the option's type:
+A definition typed as `Spec`, `Subcommand`, `Option` or `Arg` takes any `parse`, but has no inferred types, so its actions read every value as a string. Say what a value is where you read it:
 
 ```ts
-function retries(): CLI.Option<number> {
-  return {
-    name: "--retries",
-    description: "Attempts before giving up",
-    args: { name: "count", parse: CLI.number({ min: 0, int: true }) },
-  };
-}
+const spec: CLI.Spec = {
+  name: "serve",
+  options: [
+    {
+      name: "--port",
+      args: {
+        name: "port",
+        parse: CLI.number({ int: true }),
+      },
+    },
+  ],
+  action({ options }) {
+    options.get("--port"); // string | undefined, which is wrong for this option
+    options.get<number>("--port"); // number | undefined
+    options.all<number>("--port"); // number[]
+  },
+};
 ```
 
-An action written outside the spec takes `CLI.ActionInit`, whose values are strings. `CLI.spec` rejects that action on a command whose `parse` gives another type. Write `CLI.ActionInit<unknown>` for an action that fits any command.
+TypeScript can't check the type you write there, as it can't check an option's name in an untyped spec. `CLI.spec` needs neither.
+
+Positional arguments have no reader, so `args` is `string[]` in an untyped action. Write the action as `(init: CLI.ActionInit<unknown>) => ...` to read parsed positional arguments, and narrow each one.
+
+Inside `CLI.spec`, an option made by a function typed `CLI.Option` is read as a string for the same reason. Define a shared option with `as const` to keep the type of its `parse`.
 
 ## Values that look like options
 

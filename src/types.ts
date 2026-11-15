@@ -42,10 +42,16 @@ export type CommandPath = readonly [Spec, ...Subcommand[]];
 /**
  * Access parsed options.
  *
- * `Value` is what an option's value can be. `spec` and `command` give an
- * action the type of each value. Anywhere else a value is a string, since a
- * `parse` there can only give one. A function that takes `OptionArgs<unknown>`
- * accepts the options of any action.
+ * `spec` and `command` give an action the type of each value. Anywhere else
+ * a value is read as a string. For an option whose `parse` gives something
+ * else, say what when reading it: `options.get<number>("--port")`.
+ *
+ * `Value` is what a value is when the reader doesn't say. A function that
+ * takes `OptionArgs<unknown>` accepts the options of any action.
+ *
+ * `get` and `all` return `NoInfer<Read>`, so that only a type written at the
+ * call sets `Read`. Without it, `const port: number = options.get("--port")`
+ * would set it from the variable's type, and compile for any option.
  */
 export interface OptionArgs<Value = string> {
   /** Escape hatch: the underlying map of option names to values. */
@@ -58,7 +64,7 @@ export interface OptionArgs<Value = string> {
    * first argument. Return an empty array if the first argument is optional
    * or has no default. A repeatable option collects values from every use.
    */
-  all(name: string): Value[];
+  all<Read = Value>(name: string): NoInfer<Read>[];
 
   /**
    * Read the first value of an option.
@@ -66,7 +72,7 @@ export interface OptionArgs<Value = string> {
    * For an omitted option, return its first argument's default only when
    * that argument is required. Otherwise return `undefined`.
    */
-  get(name: string): Value | undefined;
+  get<Read = Value>(name: string): NoInfer<Read> | undefined;
 
   /** Return whether the option was supplied. Defaults do not count. */
   has(name: string): boolean;
@@ -87,9 +93,9 @@ export interface OptionArgs<Value = string> {
  * command actions. Option actions use broader types because they can run
  * without satisfying required inputs.
  *
- * `Value` is what an argument's value can be. A value is a string, unless the
- * action is in a `spec` or `command` whose `parse` gives something else.
- * An action written as `(init: ActionInit<unknown>) => ...` fits any command.
+ * `Value` is what a value is. It's a string, unless the action is in a `spec`
+ * or `command` whose `parse` gives something else. An action written as
+ * `(init: ActionInit<unknown>) => ...` fits any command.
  */
 export interface ActionInit<Value = string> {
   /** Options found for this invocation. */
@@ -255,10 +261,8 @@ export interface Subcommand {
  *
  * Use `has` to read flags and `get` or `all` to read values. Without
  * `isRepeatable`, each use replaces the option's previous values.
- *
- * `Output` is what the option's values can be. See {@link Arg}.
  */
-export interface Option<Output = string> {
+export interface Option {
   /** Name or aliases, including any desired prefix such as `-`, `--`, or `/`. */
   name: SingleOrArray<string>;
 
@@ -275,7 +279,7 @@ export interface Option<Output = string> {
   ref?: string;
 
   /** Arguments this option accepts. */
-  args?: SingleOrArray<Arg<Output>>;
+  args?: SingleOrArray<Arg>;
 
   /** Allow this option to be used by descendant subcommands. */
   isPersistent?: true;
@@ -382,14 +386,8 @@ export interface Generator {
  *
  * Use an object for one argument and an array for two or more. Required
  * arguments precede optional arguments. A variadic argument must be last.
- *
- * `Output` is what the argument's value can be. An argument typed `Arg` gives
- * a string, so its `parse` can check or tidy the value but has to give a
- * string. `spec` and `command` read the type a `parse` written in them
- * gives. For an argument made outside them, `Arg<number>` is one whose
- * `parse` gives a number.
  */
-export interface Arg<Output = string> {
+export interface Arg {
   /** Name shown in generated help. */
   name?: string;
 
@@ -441,7 +439,7 @@ export interface Arg<Output = string> {
    * its own. A schema that can describe itself as JSON Schema also gives
    * help the type and range to show, and completion the values to offer.
    */
-  parse?: StandardSchemaV1<unknown, Output>;
+  parse?: StandardSchemaV1;
 
   /** Completions: complete file or folder paths for this argument. */
   template?: Template;

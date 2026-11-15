@@ -20,7 +20,11 @@ const spec = CLI.spec({
     {
       name: "--mode",
       description: "Build mode",
-      args: { name: "mode", default: "debug", parse: CLI.choice(["debug", "release"]) },
+      args: {
+        name: "mode",
+        default: "debug",
+        parse: CLI.choice(["debug", "release"]),
+      },
     },
   ],
   action({ options }) {

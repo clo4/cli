@@ -42,7 +42,11 @@ const spec = CLI.spec({
         {
           name: ["-o", "--output"],
           description: "Output directory",
-          args: { name: "dir", default: "dist", template: "folders" },
+          args: {
+            name: "dir",
+            default: "dist",
+            template: "folders",
+          },
         },
       ],
       action({ args: [input], options }) {

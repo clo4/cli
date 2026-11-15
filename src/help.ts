@@ -296,7 +296,7 @@ function optionDescriptions(options: readonly VisibleOption[]): string[] {
   for (let i = 0; i < options.length; i++) {
     const option = options[i].option;
     const defaults: string[] = [];
-    let constraint: string | undefined;
+    let constraint: string[] | undefined;
     if (option.args !== undefined) {
       addDefaults(defaults, option.args);
       const args = asArray(option.args);
@@ -407,11 +407,12 @@ function rows(
  * A description ending with what the value can be and the defaults the
  * parser uses, like `(integer from 1 to 65535, default: 8080)`. They go on a
  * line of their own when the last line would be too long for the 68
- * characters the spec checks allow.
+ * characters the spec checks allow. A list of values too long for one line
+ * carries on to the next after a `|`.
  */
 function withDetails(
   description: string | undefined,
-  constraint: string | undefined,
+  constraint: readonly string[] | undefined,
   defaults: readonly string[],
   defaultDesc: string,
 ): string {
@@ -419,7 +420,27 @@ function withDetails(
     return description ?? defaultDesc;
   }
   const byDefault = defaults.length === 0 ? "" : `default: ${defaults.join(" ")}`;
-  const shown = `(${constraint === undefined ? byDefault : byDefault === "" ? constraint : `${constraint}, ${byDefault}`})`;
+  // Each value with what follows it, so a line only ends between two values.
+  const pieces: string[] = [];
+  const values = constraint ?? [];
+  for (let i = 0; i < values.length; i++) {
+    pieces.push(values[i] + (i < values.length - 1 ? " |" : byDefault === "" ? "" : ","));
+  }
+  if (byDefault !== "") {
+    pieces.push(byDefault);
+  }
+  let shown = "(";
+  let line = 1;
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i] + (i === pieces.length - 1 ? ")" : "");
+    if (i > 0 && line + 1 + piece.length > 68) {
+      shown += `\n${piece}`;
+      line = piece.length;
+    } else {
+      shown += (i > 0 ? " " : "") + piece;
+      line += (i > 0 ? 1 : 0) + piece.length;
+    }
+  }
   if (description === undefined) {
     return shown;
   }

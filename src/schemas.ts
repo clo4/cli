@@ -13,32 +13,40 @@ const integer = /^-?\d+$/;
 /** Digits with a decimal point anywhere among them, like `12`, `1.5`, `.5` and `-3.`. */
 const decimal = /^-?(?:\d+\.?\d*|\.\d+)$/;
 
-/**
- * A number's type and range in words, like `integer from 1 to 65535`. Help
- * shows it, and {@link number} says it in its message.
- */
-function describeRange(type: string, min: number | undefined, max: number | undefined): string {
-  if (min !== undefined && max !== undefined) {
-    return `${type} from ${min} to ${max}`;
-  }
-  if (min !== undefined) {
-    return `${type}, at least ${min}`;
-  }
-  return max === undefined ? type : `${type}, at most ${max}`;
+/** The least and greatest numbers a schema accepts, and whether each is itself left out. */
+export interface Bounds {
+  min?: number | undefined;
+  max?: number | undefined;
+  minExclusive?: boolean;
+  maxExclusive?: boolean;
 }
 
 /**
- * The values an argument can be, separated by ` | `. A value can have any
- * characters in it, so one that's empty or has a space, a quote, a comma, a
- * bracket or a `|` is in quotes, and the list can only be read one way.
+ * A number's type and range in words, like `integer from 1 to 65535`. Help
+ * shows it, and {@link number} says it in its message. A range with a bound
+ * that's left out names each bound, like `number, more than 0 and less than 1`.
  */
-function describeChoices(values: readonly unknown[]): string {
-  const shown: string[] = [];
-  for (const value of values) {
-    const text = String(value);
-    shown.push(text === "" || /[\s|,()"']/.test(text) ? JSON.stringify(text) : text);
+export function describeRange(type: string, { min, max, minExclusive, maxExclusive }: Bounds): string {
+  if (min !== undefined && max !== undefined && !minExclusive && !maxExclusive) {
+    return `${type} from ${min} to ${max}`;
   }
-  return shown.join(" | ");
+  const least = min === undefined ? "" : `${minExclusive ? "more than" : "at least"} ${min}`;
+  const greatest = max === undefined ? "" : `${maxExclusive ? "less than" : "at most"} ${max}`;
+  if (least === "" && greatest === "") {
+    return type;
+  }
+  return `${type}, ${least}${least !== "" && greatest !== "" ? " and " : ""}${greatest}`;
+}
+
+/**
+ * A value an argument can be, as help and messages show it. A value can have
+ * any characters in it, so one that's empty or has a space, a quote, a
+ * comma, a bracket or a `|` is in quotes, and a list of them separated by
+ * ` | ` can only be read one way.
+ */
+function describeChoice(value: unknown): string {
+  const text = String(value);
+  return text === "" || /[\s|,()"']/.test(text) ? JSON.stringify(text) : text;
 }
 
 /**
@@ -73,7 +81,9 @@ export function number(
           (min !== undefined && parsed < min) ||
           (max !== undefined && parsed > max)
         ) {
-          return { issues: [{ message: `expected ${int ? "an" : "a"} ${describeRange(type, min, max)}` }] };
+          return {
+            issues: [{ message: `expected ${int ? "an" : "a"} ${describeRange(type, { min, max })}` }],
+          };
         }
         return { value: parsed };
       },
@@ -115,7 +125,7 @@ export function choice<const T extends NonEmptyArray<string>>(
       validate(value) {
         return values.includes(value as string)
           ? { value: value as T[number] }
-          : { issues: [{ message: `expected ${describeChoices(values)}` }] };
+          : { issues: [{ message: `expected ${values.map(describeChoice).join(" | ")}` }] };
       },
       jsonSchema: {
         input: () => ({ type: "string", enum: [...values] }),
@@ -128,7 +138,7 @@ export function choice<const T extends NonEmptyArray<string>>(
  * What the `parse` of `arg` says it takes, as JSON Schema. Undefined if the
  * argument has no `parse`, or its schema can't describe itself.
  */
-function describedBy(arg: Arg): Record<string, unknown> | undefined {
+export function describedBy(arg: Arg): Record<string, unknown> | undefined {
   try {
     return arg.parse?.["~standard"].jsonSchema?.input({ target: "draft-2020-12" });
   } catch {
@@ -143,26 +153,33 @@ export function choicesOf(arg: Arg): string[] | undefined {
   return Array.isArray(values) ? values.map(String) : undefined;
 }
 
+/** The range a JSON Schema for a number gives. */
+export function boundsOf(schema: Record<string, unknown>): Bounds {
+  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum } = schema;
+  const min = typeof exclusiveMinimum === "number" ? exclusiveMinimum : minimum;
+  const max = typeof exclusiveMaximum === "number" ? exclusiveMaximum : maximum;
+  return {
+    min: typeof min === "number" ? min : undefined,
+    max: typeof max === "number" ? max : undefined,
+    minExclusive: typeof exclusiveMinimum === "number",
+    maxExclusive: typeof exclusiveMaximum === "number",
+  };
+}
+
 /**
- * What the `parse` of `arg` accepts, in words for help: its values if the
- * schema lists them, or else its type and range if it's a number. Undefined
- * if the schema says neither.
+ * What the `parse` of `arg` accepts, in words for help: each of its values
+ * if the schema lists them, or else its type and range if it's a number, as
+ * the one element. Undefined if the schema says neither. Help joins the
+ * elements with ` | `, and starts a new line between two when it has to.
  */
-export function constraintOf(arg: Arg): string | undefined {
+export function constraintOf(arg: Arg): string[] | undefined {
   const schema = describedBy(arg);
   if (!schema) {
     return undefined;
   }
   if (Array.isArray(schema.enum)) {
-    return describeChoices(schema.enum);
+    return schema.enum.map(describeChoice);
   }
-  const { type, minimum, maximum } = schema;
-  if (type !== "integer" && type !== "number") {
-    return undefined;
-  }
-  return describeRange(
-    type,
-    typeof minimum === "number" ? minimum : undefined,
-    typeof maximum === "number" ? maximum : undefined,
-  );
+  const { type } = schema;
+  return type === "integer" || type === "number" ? [describeRange(type, boundsOf(schema))] : undefined;
 }

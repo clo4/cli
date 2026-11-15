@@ -13,6 +13,7 @@ import { CommandScope, loadAll, optionKey, writeForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
+import { boundsOf, describedBy, describeRange } from "./schemas.js";
 import { apply, Rejected } from "./values.js";
 
 const repr = JSON.stringify;
@@ -595,6 +596,53 @@ const specChecks: readonly SpecCheck[] = [
           }`,
         );
       }
+    },
+  },
+  {
+    /*
+     * A schema like `number({ min: 10, max: 1 })` rejects every value, which
+     * is a mistake in the spec. It's checked here and not when the schema is
+     * made, so a CLI doesn't pay for the check each time it starts.
+     */
+    sentence: "Every number range has a number in it",
+    name: "assertRangesAreNotEmpty",
+    check(walk) {
+      const check = (arg: Arg, where: string) => {
+        const schema = arg.parse === undefined ? undefined : describedBy(arg);
+        if (!schema || (schema.type !== "integer" && schema.type !== "number")) {
+          return;
+        }
+        const bounds = boundsOf(schema);
+        const { min, max } = bounds;
+        if (min === undefined || max === undefined) {
+          return;
+        }
+        // The least and greatest numbers the range has, for a range of integers.
+        const least =
+          schema.type === "integer" ? (bounds.minExclusive ? Math.floor(min) + 1 : Math.ceil(min)) : min;
+        const greatest =
+          schema.type === "integer" ? (bounds.maxExclusive ? Math.ceil(max) - 1 : Math.floor(max)) : max;
+        const hasNone =
+          least > greatest ||
+          (schema.type === "number" && least === greatest && (bounds.minExclusive || bounds.maxExclusive));
+        assert(
+          !hasNone,
+          `${where} has a \`parse\` that rejects every value, since it asks for ${schema.type === "integer" ? "an" : "a"} ${describeRange(schema.type, bounds)}`,
+        );
+      };
+      walk.forEachCommand(({ command, path }) => {
+        for (const [index, arg] of makeArray(command.args).entries()) {
+          check(arg, `In ${namedArrayToString(...path)}, argument ${arg.name || index}`);
+        }
+      });
+      walk.forEachOption(({ option, isDefinedHere, where }) => {
+        if (!isDefinedHere) {
+          return;
+        }
+        for (const [index, arg] of makeArray(option.args).entries()) {
+          check(arg, `${where}, argument ${arg.name || index}`);
+        }
+      });
     },
   },
   {

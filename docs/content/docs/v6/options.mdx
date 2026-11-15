@@ -112,7 +112,11 @@ const spec = CLI.spec({
     {
       name: "--inspect",
       description: "Enable the inspector",
-      args: { name: "port", isOptional: true, default: "9229" },
+      args: {
+        name: "port",
+        isOptional: true,
+        default: "9229",
+      },
     },
   ],
   action({ options }) {

@@ -22,12 +22,19 @@ const spec = CLI.spec({
     {
       name: "--port",
       description: "Listen on this port",
-      args: { name: "port", default: "8080", parse: port },
+      args: {
+        name: "port",
+        default: "8080",
+        parse: port,
+      },
     },
     {
       name: "--admin-port",
       description: "Serve the admin pages on this port",
-      args: { name: "port", parse: port },
+      args: {
+        name: "port",
+        parse: port,
+      },
     },
   ],
   action({ options }) {
