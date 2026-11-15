@@ -28,6 +28,10 @@ const groups = [
       "../cli/interfaces/Subcommand",
       "../cli/interfaces/Option",
       "../cli/interfaces/Arg",
+      "../cli/functions/number",
+      "../cli/functions/choice",
+      "../cli/interfaces/StandardSchemaV1",
+      "../cli/type-aliases/StandardResult",
     ],
   ],
   [

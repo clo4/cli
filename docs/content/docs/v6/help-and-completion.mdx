@@ -3,7 +3,9 @@ title: Help and completion
 description: How help and completion use command definitions and argument metadata.
 ---
 
-Help and completion use the arguments, options and subcommands in your spec. Add the built-ins where you want them available:
+Help and completion use the arguments, options and subcommands in your spec. Add all three built-ins to every CLI, unless you have a reason to leave one out. Users expect `--help` on every command, and completion is how most of them find a command's subcommands and options.
+
+Put `CLI.help` in the root's options, and `CLI.helpCommand` and `CLI.completion` in its subcommands:
 
 ```ts
 import * as CLI from "@clo4/cli";
