@@ -12,6 +12,10 @@ export default defineConfig({
     fumadocs({
       components: "./src/components/mdx.tsx",
       includeProcessedMarkdown: true,
+      collections: {
+        docs: { dir: "content/docs" },
+        blog: { dir: "content/blog" },
+      },
     }),
   ],
   vite: {

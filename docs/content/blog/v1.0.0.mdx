@@ -1,0 +1,95 @@
+---
+title: "Announcing @clo4/cli"
+description: "A magical CLI framework, with no magic"
+date: 2026-11-02T10:53:39.460Z
+---
+
+I love dev tools, and I keep writing small helpers in JavaScript and TypeScript at work. I want good help, clear errors and great completion to be the easy default, even for a tool that only a few people will use.
+
+Agents are making it easier to build new tools. I want the easiest way to write a CLI to give both its author and its users a good experience. That's my goal for `@clo4/cli`: the obvious choice for building a CLI, with the performance and features you need and an API you can understand.
+
+## The fig-cli experiment
+
+I used to work at Fig, where I maintained [withfig/autocomplete](https://github.com/withfig/autocomplete). A completion spec describes a CLI's commands, options and arguments so Fig can suggest what to type next. In 2022, I built `clo4/fig-cli`, an experimental executor based on Fig's spec structure.
+
+I deprecated `fig-cli` because a short-lived CLI is about the worst case for a JavaScript engine: start the runtime, load and compile the code, do a little work, then exit.
+
+Despite the deprecation, I kept wanting to use `fig-cli` whenever I wrote another JS/TS tool for work. I still think Fig's spec structure is the best way to describe a CLI, and I haven't found a CLI API I prefer. I want to make that API practical to reach for again.
+
+## Simplicity
+
+I care more about how much you need to learn and remember than how few characters you can type. The spec follows the structure of the CLI: arguments and options belong to commands, and commands can contain other commands. You can read the tool's structure directly from its definition.
+
+A command is an object, so sharing a command uses a normal import. An action is a function, so shared setup can be another function it calls. Cleanup can use `try`/`finally`. There are no lifecycle hooks to register; setup and cleanup follow the control flow of your own code.
+
+The library handles the command line. Your functions still control what the program does.
+
+## Custom completion
+
+This `tasks` helper runs npm scripts and completes their names from the current directory's `package.json`. Script suggestions include the commands as descriptions.
+
+In an ESM project, save the example as `tasks.ts`. Node 24 or later can run the TypeScript directly, without a build step:
+
+```ts
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { readFile } from "node:fs/promises";
+import * as CLI from "@clo4/cli";
+
+const spec: CLI.Spec = {
+  name: "tasks",
+  description: "Run a script from this package",
+  parserDirectives: { optionsMustPrecedeArguments: true },
+  options: [CLI.help],
+  subcommands: [CLI.completion],
+  args: [
+    {
+      name: "script",
+      generators: {
+        custom: async () => {
+          const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+          const scripts: Record<string, string> = packageJson.scripts ?? {};
+          return Object.entries(scripts).map(([name, description]) => ({
+            name,
+            description,
+          }));
+        },
+      },
+    },
+    {
+      name: "argument",
+      isOptional: true,
+      isVariadic: true,
+    },
+  ],
+  async action({ args: [script, ...args] }) {
+    const child = spawn("npm", ["run", script, "--", ...args], { stdio: "inherit" });
+    const [code] = await once(child, "close");
+    return code ?? 1;
+  },
+};
+
+process.exitCode = await CLI.run(spec);
+```
+
+Running `node tasks.ts build --watch` runs `npm run build -- --watch`. For a package with a `build` script that runs `tsc`, the generator returns `build` with `tsc` as its description. Add a script to the package and the next completion request includes the new name.
+
+Attaching the generator to `script` means the callback only needs to supply script names and descriptions. The library selects the argument being completed and formats the results for the shell.
+
+The action captures the script name and remaining arguments with `args: [script, ...args]`. There's no special argument-binding API to learn: it's ordinary JavaScript destructuring. The parser directive lets arguments after the script name, including flags, pass through to npm.
+
+## Magic, with no magic
+
+I want a little tool to feel polished without its author having to become an expert in a CLI framework. The complexity of shell completion belongs in the library. The part that depends on your project should be a function you can read, test and change.
+
+Even the built-ins use the same API as your commands and options. `CLI.help` is an ordinary option with an action, so renaming it is `{ ...CLI.help, name: "--usage" }`.
+
+That's the magic I want: a tool with good help, clear errors and completion that knows about your project, while your application code stays ordinary JavaScript.
+
+The performance concern that made me deprecate `fig-cli` still matters. The benchmarks run fresh processes, including help and error cases, because that's how these tools actually run. I believe we can have features and a simple API without accepting slow startup.
+
+## Starting at v1
+
+I get frustrated by libraries that stay on 0.x indefinitely. The core design here is settled: command definitions are data, and actions are ordinary functions that receive parsed input. Replacing that model would mean writing a different library.
+
+The edges will change. If a change breaks compatibility, I'll bump the major version. Semver is a promise about compatibility, not a release schedule. A major release doesn't need to be a rare event, and v1 doesn't mean development is finished. It means I'm committing to the core.

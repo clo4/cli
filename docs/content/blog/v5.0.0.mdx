@@ -1,0 +1,68 @@
+---
+title: "Version 5.0.0"
+description: "TypeScript now checks option names and which arguments can be missing."
+date: 2026-11-13T14:05:49Z
+---
+
+This is the release I've wanted to make since I started this library in 2022.
+
+Until now, you could define every argument and option in one object, but your action still received `args: string[]`, and `options` accepted any name. A misspelled option name would compile, and TypeScript couldn't tell which positional arguments could be missing.
+
+Wrap that object in `CLI.spec(...)` and TypeScript uses the definition to check your action. Values are still strings. The types describe how many arguments there are, which can be missing, and which option names you can read:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [CLI.help, { name: "--verbose", isPersistent: true }],
+  subcommands: [
+    {
+      name: "build",
+      args: [{ name: "source" }, { name: "destination", isOptional: true }],
+      options: [{ name: "--output", args: { name: "dir", default: "dist" } }],
+      action({ args: [source, destination], options }) {
+        source; // string
+        destination; // string | undefined
+        options.get("--output"); // string, because its argument has a default
+        options.has("--verbose"); // a persistent option of demo
+        // options.has("--outptu"); // compile error
+      },
+    },
+  ],
+});
+
+CLI.run(spec);
+```
+
+The types work in nested subcommands too, including persistent options from parent commands. Your editor suggests option names as you type them. You don't need a separate schema or annotations on the action.
+
+Reading a flag with `options.get()` used to compile, even though a flag has no argument to return. Both `get` and `all` now reject flag names with a compile error pointing you to `has` or `count`. TypeScript also catches misspelled names in `dependsOn` and `exclusiveOn`, so you can fix them in the editor rather than waiting for a spec test.
+
+## Commands in separate files
+
+Use `CLI.command` for a command defined outside the main spec. It infers types from that command's definition, but can't include persistent options from parents outside the object you pass it.
+
+If you define options or arguments once and share them between commands, use `as const`. Without it, TypeScript can widen an option's name to `string`, and you'll lose the checks for misspelled names.
+
+You'll need TypeScript 6.0 or later for the new types. If you're keeping the `CLI.Spec` annotation, your actions will have the same types as before.
+
+## Performance
+
+`CLI.spec` and `CLI.command` return the objects you pass them; the type checks happen in TypeScript before you run the CLI. In 200 runs each of bundled 100-command and 1,000-command CLIs, adding these calls made no measurable difference to startup. These measurements used an Apple M3 Pro with Node 26.3.0, and the 95% interval of each difference included zero.
+
+Type checking takes longer as the spec grows. TypeScript 7.0 checks 1,000 commands, each with six options and an inline action, in 3.5 seconds. You can run `node bench/check-time.mjs` to measure this.
+
+Leave off the top-level `await` when you call `CLI.run(spec)` in your entry file. In the benchmark, adding it made rolldown put the library in a separate file when a dynamically loaded command used `CLI.command`. Loading the extra file added 0.24 ms per run.
+
+## Upgrading
+
+`run` takes an options object as its second argument now. Change `CLI.run(spec, ["build", "src"])` to `CLI.run(spec, { argv: ["build", "src"] })`. If you're using JavaScript, watch out: passing the old array won't throw an error. It's ignored, and `run` reads `process.argv` instead.
+
+Previously, an entry file needed `process.exitCode = await CLI.run(spec)` to pass the result back to the shell. `run` now sets the exit code itself, so you can just call `CLI.run(spec)`. If you're calling it from a test, pass `setExitCode: false` to keep it from changing the test process's exit code.
+
+`options.all()` returns `[]` instead of `undefined` when an option wasn't used and has no defaults. You can iterate over the result without first checking whether it exists. Code like `options.all("--tag") ?? []` still works. If you're comparing the result with `undefined`, check its length instead.
+
+Finally, `allowShadowingPersistentOptions` is gone from `testSpec`. It let you reuse a persistent option's name in a subcommand, but reading that name couldn't distinguish the two options. For example, if a parent uses `-v` for verbose output and a child uses `-v` for version, `options.has("-v")` is true when either was used. Give each option a `ref`, such as `"verbose"` and `"version"`, and read those keys to tell them apart.
+
+The [release notes](https://github.com/clo4/cli/releases/tag/v5.0.0) have more detail on refs and the new types.

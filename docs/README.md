@@ -25,6 +25,14 @@ Pushing the branch deploys the docs, and pushing the tag publishes to npm.
 
 The README in the repository links to the working docs. When the package is packed for npm, `scripts/readme-links.mjs` points those links at the released version, and puts them back afterwards.
 
+## Blog
+
+Posts are in `content/blog`, one `.mdx` file each, and each is served at `/cli/blog/<file name>`. A post's frontmatter needs a `title` and a `date`. Its `description` is optional, and the blog's index shows it under the title. The index lists posts newest first.
+
+Write a post for a release worth explaining, or for anything else readers should know about. A post that covers only a release's highlights links to its GitHub release, which has the full list of changes.
+
+`pnpm --filter docs release` leaves posts as they are, because they don't belong to a version. The site search and `llms.txt` don't include them.
+
 ## Generated API reference
 
 Doc comments own the API reference. Edit comments beside public declarations, not files under a `reference` directory.

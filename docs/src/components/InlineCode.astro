@@ -1,0 +1,10 @@
+---
+// Shows text with its `backticked` spans as code, for a post's description.
+interface Props {
+  text: string;
+}
+
+const parts = Astro.props.text.split("`");
+---
+
+{parts.map((part, i) => (i % 2 === 1 ? <code>{part}</code> : part))}

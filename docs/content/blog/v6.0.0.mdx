@@ -1,0 +1,76 @@
+---
+title: "Version 6.0.0"
+description: "`loadSpec` returns a whole command, and loading no longer modifies your spec."
+date: 2026-11-14T00:41:20Z
+---
+
+`loadSpec` now returns a whole command, including its name. If you're not using `loadSpec`, you don't need to change anything.
+
+## Updating loaded commands
+
+In v5, a loaded file returned only part of a command, without its name. It now returns the same kind of definition you'd put directly in `subcommands`, so a command uses the same fields whether you load it on demand or include it at startup.
+
+Add the name to the object you return from `loadSpec`:
+
+```ts
+// remote.ts
+import * as CLI from "@clo4/cli";
+
+export default CLI.command({
+  name: "remote", // new in v6
+  requiresSubcommand: true,
+  subcommands: [
+    {
+      name: "add",
+      args: { name: "url" },
+      action({ args: [url] }) {
+        console.log(url);
+      },
+    },
+  ],
+});
+```
+
+The parent still needs the name and description so `demo --help` can list `remote` without importing `remote.ts`:
+
+```ts
+subcommands: [
+  {
+    name: "remote",
+    description: "Manage remotes.",
+    loadSpec: () => import("./remote.ts").then((module) => module.default),
+  },
+],
+```
+
+Keep `name`, `description`, `hidden` and `isPersistent` on that entry. Everything else, including options, arguments and actions, goes in the loaded command.
+
+Use the same name in both places. You don't need to repeat `description`, `hidden` or `isPersistent` in the loaded command, but if you do, their values must match the parent's. The command you run needs to agree with the name, description and visibility that parent help already showed you. `testSpec` now catches mismatches before you ship them.
+
+It also rejects a second `loadSpec` on the loaded command, since that loader would never be called.
+
+`CommandBody` is gone, and `CLI.command` now requires a name.
+
+## Reusing a spec
+
+The loading behavior changes when you call `run` several times with the same spec in one process, for example in tests.
+
+In v5, loading merged fields into the original command object and removed its `loadSpec`. A second call to `run` reused that modified command instead of calling the loader again. `testSpec` changed the spec in the same way, since it loaded every command before checking it.
+
+In v6, the loaded fields go into a separate command object, and the definition in your spec keeps its `loadSpec`. If two tests call `run` with that spec and select `remote`, its loader runs once for each test. Calling `testSpec` first won't cause those tests to skip the loader.
+
+## Reading an action's path
+
+For a command using `loadSpec`, v5's `path` contained the original command object from your spec, with the loaded fields merged into it. A check such as `path.includes(remote)` could identify the command because it was the same object you put in `subcommands`.
+
+In v6, that entry is a separate object. The same identity check returns `false`, even when `remote` was selected. If you're using object comparisons to find out which command ran, inspect the command names in `path` instead. Code that just reads fields from `path` doesn't need to change.
+
+## Validation and help fixes
+
+An inherited subcommand can have different options and parser settings available depending on where you use it. Previously, `testSpec` checked it only under the parent that defined it. It now checks under each descendant that inherits it too, so a spec test can catch conflicts that only occur further down the command tree. These extra checks can fail a spec that passed in v5.
+
+Option dependencies and exclusions now distinguish options from different commands correctly. A child's dependency could previously be satisfied by a parent's non-persistent option, even though the child couldn't use that option. Likewise, a child's `-v` could satisfy a dependency on a different `-v` in the parent. Those cases now fail instead of letting a command run without the option it requires.
+
+Help previously omitted unloaded subcommands on a supplied path, or printed only the usage line if a loader returned a promise. `help({ path })` now loads the commands before reading them. It still returns a string synchronously, so an asynchronous loader produces an error naming the command instead of incomplete help. Passing an action's own `path` works because those commands are already loaded.
+
+The [release notes](https://github.com/clo4/cli/releases/tag/v6.0.0) cover the remaining fixes.

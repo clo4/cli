@@ -1,0 +1,42 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
+import Layout from "@/layouts/Layout.astro";
+import { Blog } from "@/components/blog";
+import InlineCode from "@/components/InlineCode.astro";
+import { blog, formatDate } from "@/lib/blog";
+import { appName, base } from "@/lib/shared";
+
+export const prerender = true;
+
+export const getStaticPaths = (() => {
+  return blog.getPages().map((post) => ({
+    params: { slug: decodeURI(post.slugs.join("/")) },
+    props: { post },
+  }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { post } = Astro.props;
+const { body: Content } = await post.data.load();
+---
+
+<Layout title={`${post.data.title} · ${appName}`} description={post.data.description?.replaceAll("`", "")}>
+  <Blog client:load transition:persist="blog" pathname={post.url} params={Astro.params}>
+    <a href={`${base}/blog`} class="text-sm text-fd-muted-foreground hover:underline">
+      ← Blog
+    </a>
+    <time class="block mt-8 text-sm text-fd-muted-foreground" datetime={post.data.date.toISOString()}>
+      {formatDate(post.data.date)}
+    </time>
+    <h1 class="text-3xl font-semibold mt-1 mb-2">{post.data.title}</h1>
+    {
+      post.data.description && (
+        <p class="text-lg text-fd-muted-foreground mb-8">
+          <InlineCode text={post.data.description} />
+        </p>
+      )
+    }
+    <Content />
+  </Blog>
+</Layout>

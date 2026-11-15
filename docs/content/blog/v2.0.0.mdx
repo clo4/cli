@@ -1,0 +1,31 @@
+---
+title: "Version 2.0.0"
+description: "Repeatable options can take arguments, and parsing and completion use the same scanner."
+date: 2026-11-06T13:30:23Z
+---
+
+Repeatable options used to be limited to flags. They can now take arguments, so an option such as `--tag` can collect values from `--tag work --tag personal`. Your action gets both tags in the order you supplied them.
+
+Each use of the option still needs all its required arguments. If you set a repeat limit, it counts how many times you use the option, not how many values you give it.
+
+For options that aren't repeatable, the last value wins. If your shell alias includes `--output dist`, you can add `--output preview` to override it instead of getting an error.
+
+## Parsing and completion
+
+Parsing and completion used to interpret the command line separately. That meant maintaining two implementations of rules such as where an option's values end and a subcommand begins. A parsing fix didn't necessarily fix the suggestions you got when pressing Tab.
+
+They now use the same scanner. It reads the command line in one pass, without building an intermediate token tree, and gives completion the same rules for values, subcommands and inherited parser settings. This also removes duplicated work at startup.
+
+A parent option no longer prevents a following subcommand from matching. Consuming an option's value also no longer counts as consuming a positional argument, which could stop subcommand matching too early. Completion keeps suggesting values for a variadic option after you've entered the first one, and switches to positional arguments after `--`.
+
+Bash, Zsh and Fish now use small scripts that ask the CLI for suggestions at runtime. There's no separate set of static completion scripts.
+
+The old typo matching could suggest a name even when it wasn't close to what you typed. Suggestions now try a unique prefix first, then a unique abbreviation, then a close spelling match. Swapping two adjacent letters counts as one edit. If nothing is close enough, you won't get a suggestion.
+
+## Upgrading
+
+Completion always gets suggestions at runtime now. The old `--shell` and `--runtime` flags and the hidden `completion generate-suggestions` command are gone.
+
+If your tests call `assertRepeatableOptionsHaveNoArguments`, remove that call. The check is no longer exported from `@clo4/cli/testing`, since repeatable options can take arguments.
+
+The [release notes](https://github.com/clo4/cli/releases/tag/v2.0.0) cover the remaining parser fixes and performance changes.

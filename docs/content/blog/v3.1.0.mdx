@@ -1,0 +1,32 @@
+---
+title: "Version 3.1.0"
+description: "Faster startup and command completion after `help`."
+date: 2026-11-10T23:11:42Z
+---
+
+The main bundle is about half the size in this release: 31 KB, down from 61 KB. It's now minified, so Node has less code to read and compile each time you run a command.
+
+The parser also looks up each token's meaning once, and help uses fewer functions for V8 to compile. Usage errors no longer build stack traces: `run` only prints the message, so that work wasn't used. Reporting an error also no longer compiles the code that runs actions.
+
+Here's the difference in the 7-command benchmark CLI. These are median times over 200 runs on an Apple M3 Pro with Node 26.3.0. The CLI imports the published `dist/index.js` without bundling it, and each run is timed from that import to process exit.
+
+| Scenario                 | v3.0.1  | v3.1.0  | Change |
+| ------------------------ | ------- | ------- | ------ |
+| top-level `--help`       | 3.12 ms | 2.35 ms | −25%   |
+| nested help              | 3.24 ms | 2.45 ms | −25%   |
+| unknown option           | 3.43 ms | 2.58 ms | −25%   |
+| completion               | 3.21 ms | 2.54 ms | −21%   |
+| nested dispatch          | 3.80 ms | 3.23 ms | −15%   |
+| build variadic + options | 3.96 ms | 3.41 ms | −14%   |
+
+Source maps are still included. Run Node with `--enable-source-maps` to see the original names in stack traces. The testing bundle stays unminified so spec-check failures stay readable.
+
+The benchmark suite also includes CLIs with 100 and 1,000 generated commands now. Those measure the cost of constructing a large spec, which the 7-command CLI didn't show.
+
+## Completion
+
+You can complete command names after `help`. For example, `demo help remote <Tab>` lists the subcommands of `remote`, with their descriptions and without hidden commands. If `help` is persistent, `demo remote help <Tab>` works too.
+
+A completion request starts your CLI too. That can mean loading plugins or doing other application setup just to suggest a command name. The scripts now set `SHELL_COMPLETION_GENERATOR` to the shell's name for the request. Your startup code can read it before calling `CLI.run` and skip setup that completion doesn't need.
+
+There are no public API changes. The [release notes](https://github.com/clo4/cli/releases/tag/v3.1.0) include the remaining completion fixes and benchmark changes.

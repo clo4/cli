@@ -1,0 +1,17 @@
+---
+title: "Version 3.0.1"
+description: "Fixes for help and completion, plus clearer errors for invalid separators."
+date: 2026-11-08T13:41:42Z
+---
+
+This patch fixes a few cases where help and completion disagreed with the parser. You don't need to change any code.
+
+With `--gate-options`, completion now suggests values such as `-` when the parser accepts them as arguments. This also works after a variadic option's first value. Commands whose names start with a dash are suggested too, so typing `--v` can offer a subcommand named `--version`.
+
+Help no longer lists an option under Flags if the parser would read its name as a subcommand. Previously, help could advertise a flag that selected a subcommand instead of setting the option. Completion already left those names out.
+
+If an option requires a separator that you haven't enabled in `parserDirectives.optionArgSeparators`, validation now tells you that and lists the enabled separators. Previously, `assertNamesReadBack` reported an unknown option, which didn't explain what was wrong with the definition.
+
+Completion also reads the command line once instead of twice. That cuts 23–40% off the parser query, though it doesn't change the time for a whole completion run: Node startup and bundle loading take most of it. Spec validation is about 5% faster on a spec with 259 commands.
+
+See the [release notes](https://github.com/clo4/cli/releases/tag/v3.0.1) for the internal changes.

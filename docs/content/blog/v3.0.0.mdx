@@ -1,0 +1,41 @@
+---
+title: "Version 3.0.0"
+description: "Argument defaults, PowerShell and Nushell completion, and persistent subcommands."
+date: 2026-11-08T10:01:29Z
+---
+
+You can now give arguments a default value, use completion in PowerShell and Nushell, and share subcommands across a command tree. There are also fixes to help, completion and spec validation, which now use more of the parser's logic.
+
+## Argument defaults
+
+Set `default` on an argument to give it a fallback value:
+
+```ts
+args: { name: "directory", isOptional: true, default: "." },
+```
+
+Here, leaving out the directory gives your action `"."`. Previously, you'd supply that fallback in the action and describe it in help yourself. Defining it in the spec means help can show the same default that your action receives.
+
+You can also give an option's argument a default. If that argument is optional, you'll get the default when you use the option without a value. If it's required, you can read the default with `options.get()` or `options.all()` even when you don't use the option.
+
+A default doesn't count as using the option: `options.has()` still tells you whether the user supplied it. It also won't satisfy a dependency on that option.
+
+## Completion and persistent subcommands
+
+PowerShell and Nushell join Bash, Zsh and Fish. Their completion scripts handle quoted paths and arguments, empty words, and Windows paths with backslashes.
+
+Set `isPersistent` on a subcommand to define a shared command, such as `help`, once instead of repeating it in every branch. You can use it by its exact name from descendant commands. If a descendant defines its own command with that name, that command takes precedence.
+
+Completion also respects repeat limits and option exclusions across command levels. If you use a parent option that excludes another option, completion won't suggest the excluded option when you reach a child command. It also leaves out option names that the parser would read as a different option or a subcommand, rather than suggesting a name that won't do what help says it does.
+
+## Upgrading
+
+Selecting a command without an `action` could previously run a parent's action or return an error without printing anything. This was surprising for commands that only group subcommands. They now validate their input, print their own help and exit successfully, so running a group command shows you what's available inside it.
+
+Attaching a value now gives you a way to pass exactly one value to a variadic option. For example, `--include=a b` used to collect both `a` and `b` for that option. It now takes only `a`, leaving `b` as a positional argument.
+
+If you set `requiresSeparator: true`, short options now require a separator too. Hidden subcommands need their exact name, even with unique-prefix matching enabled.
+
+Three testing exports are gone: `assertLongOptionNamesDoNotStartWithSingleDash`, `assertOptionNamesStartWithDashes` and `assertNothingIsNamedDashDash`. The new `assertNamesReadBack` checks names by passing them through the parser, including the option forms shown in help. That catches names that look valid on their own but can't actually be used as advertised.
+
+Those changes account for the major version. The [release notes](https://github.com/clo4/cli/releases/tag/v3.0.0) have the full list of fixes and changes to the benchmarks.

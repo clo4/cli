@@ -11,6 +11,7 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 import { Provider, type ProviderProps } from "@/components/provider";
 import { baseOptions } from "@/lib/layout.shared";
+import { base } from "@/lib/shared";
 
 export interface DocsProps extends ProviderProps {
   tree: SerializedPageTree;
@@ -38,7 +39,20 @@ export function Docs({
 
   return (
     <Provider {...props}>
-      <DocsLayout {...baseOptions()} tree={data.tree}>
+      <DocsLayout
+        {...baseOptions()}
+        tree={data.tree}
+        sidebar={{
+          footer: (
+            <a
+              href={`${base}/blog`}
+              className="mt-2 rounded-lg px-2 py-2 text-sm text-fd-muted-foreground transition-colors hover:bg-fd-accent/50 hover:text-fd-accent-foreground"
+            >
+              Blog
+            </a>
+          ),
+        }}
+      >
         <DocsPage toc={toc}>
           {unreleased && (
             <Callout type="warn" title="Unreleased">

@@ -1,0 +1,52 @@
+---
+title: "Version 4.0.0"
+description: "Load commands on demand with `loadSpec`, plus shell completion fixes."
+date: 2026-11-11T12:13:54Z
+---
+
+Until now, the spec constructed every command at startup, even when you only ran one. Splitting commands into files didn't avoid that work if you still imported all of them at startup. `loadSpec` lets you defer both the construction and the imports until a command is used.
+
+You can use it to keep commands in separate files:
+
+```ts
+subcommands: [
+  {
+    name: "remote",
+    description: "Manage remotes.",
+    loadSpec: () => import("./remote.ts").then((module) => module.default),
+  },
+],
+```
+
+Running `demo remote add`, asking for `demo help remote`, or pressing Tab after `demo remote` loads `remote` without loading unrelated commands. It loads once, the first time it's needed. Top-level help can still list `remote` without importing its file, because the parent entry already has its name and description.
+
+Keep `name`, `description`, `hidden` and `isPersistent` on the parent entry so help and completion can list the command before it's loaded. Return the rest of the definition from `loadSpec`, including its arguments, options, subcommands and action. You can return an object directly, or a promise if you're loading it with `import()`.
+
+`testSpec` calls every loader, so your tests still check commands you rarely use.
+
+## Performance
+
+Loading on demand starts to help above about 50 commands in this benchmark. For smaller CLIs, loading separate files can cost more than it saves.
+
+These times are for running one command on an Apple M3 Pro. Each command has six options. The first two approaches use a single bundle. In the last column, each command group has its own file and its `import()` produces a separate chunk. The times don't include Node startup or stdout setup.
+
+| Commands | No `loadSpec` | Body from the same file | Body from a file per group |
+| -------- | ------------- | ----------------------- | -------------------------- |
+| 10       | 1.5 ms        | 1.6 ms                  | 1.8 ms                     |
+| 50       | 1.9 ms        | 1.9 ms                  | 1.9 ms                     |
+| 100      | 2.3 ms        | 2.1 ms                  | 1.9 ms                     |
+| 1,000    | 12.6 ms       | 7.5 ms                  | 2.1 ms                     |
+
+## Completion fixes
+
+Bash no longer expands shell syntax inside completion suggestions. A value containing `$(...)`, for example, is inserted as text instead of running a command. Zsh now handles colons in values and words you've started inside quotes. PowerShell also quotes values containing curly single quotes.
+
+Your existing 3.x scripts will keep working, but you'll need to regenerate them to get these fixes. For Bash, that looks like `demo completion bash > ~/.demo-completion.bash`.
+
+## Upgrading
+
+The major version is for the testing exports. If you're not calling the individual `assert*` functions, you don't need to change anything.
+
+Otherwise, replace those calls with `testSpec(spec)`, which runs every check. You won't need to keep a list of assertion calls up to date as checks are added. `@clo4/cli/testing` now exports only `test`, `testSpec` and their option types. You can still use `namingStyle: "function"` to see individual check names in the test output.
+
+The [release notes](https://github.com/clo4/cli/releases/tag/v4.0.0) have the full list of changes.
