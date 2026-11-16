@@ -1,7 +1,7 @@
 {
   "format": 1,
   "docsVersion": "v6",
-  "packageVersion": "6.1.0",
+  "packageVersion": "6.1.1",
   "typedocVersion": "0.28.20",
   "navigation": [
     ["", "API reference", ["index", "definitions", "execution", "completion", "testing", "utilities"]],
@@ -3816,29 +3816,25 @@
               ]
             },
             "type": {
-              "type": "union",
-              "types": [
-                {
-                  "type": "literal",
-                  "value": "bash"
-                },
-                {
-                  "type": "literal",
-                  "value": "zsh"
-                },
-                {
-                  "type": "literal",
-                  "value": "fish"
-                },
-                {
-                  "type": "literal",
-                  "value": "powershell"
-                },
-                {
-                  "type": "literal",
-                  "value": "nushell"
+              "type": "indexedAccess",
+              "indexType": {
+                "type": "intrinsic",
+                "name": "number"
+              },
+              "objectType": {
+                "type": "query",
+                "queryType": {
+                  "type": "reference",
+                  "target": {
+                    "packageName": "@clo4/cli",
+                    "packagePath": "src/completion.ts",
+                    "qualifiedName": "SHELLS"
+                  },
+                  "name": "SHELLS",
+                  "package": "@clo4/cli",
+                  "preferValues": true
                 }
-              ]
+              }
             }
           },
           {
@@ -4304,7 +4300,7 @@
                                 },
                                 {
                                   "kind": "text",
-                                  "text": ".\n\nHelp shows the values after the argument's description, and completion\noffers them unless the argument has suggestions of its own."
+                                  "text": ".\n\nHelp shows the values after the argument's description, and completion\noffers them unless the argument has suggestions of its own. A rejected\nvalue that's close to one of them gets a \"Did you mean\" line."
                                 }
                               ],
                               "blockTags": [
@@ -5598,7 +5594,7 @@
                     },
                     {
                       "kind": "text",
-                      "text": ".\n\nHelp shows the values after the argument's description, and completion\noffers them unless the argument has suggestions of its own."
+                      "text": ".\n\nHelp shows the values after the argument's description, and completion\noffers them unless the argument has suggestions of its own. A rejected\nvalue that's close to one of them gets a \"Did you mean\" line."
                     }
                   ],
                   "blockTags": [
