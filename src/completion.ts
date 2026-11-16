@@ -13,21 +13,20 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { choicesOf } from "./schemas.js";
+import { choice, choicesOf } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
-import { nextHelpNames, printUsageError } from "./help.js";
+import { nextHelpNames } from "./help.js";
 import { readNextOrWait } from "./parse.js";
 import { formStart } from "./scope.js";
 import type { NextToken } from "./parse.js";
 
+export const SHELLS = ["bash", "zsh", "fish", "powershell", "nushell"] as const;
+
 /** Shells supported by the built-in `completion` subcommand. */
-export type Shell = "bash" | "zsh" | "fish" | "powershell" | "nushell";
+export type Shell = (typeof SHELLS)[number];
 
-export const SHELLS: readonly Shell[] = ["bash", "zsh", "fish", "powershell", "nushell"];
-
-function isShell(value: string): value is Shell {
-  return (SHELLS as readonly string[]).includes(value);
-}
+/** Accepts a supported shell. Help lists the shells and completion offers them. */
+const shellSchema = choice(SHELLS);
 
 const firstLine = (description: string | undefined): string =>
   description ? description.split("\n", 1)[0].trim() : "";
@@ -509,17 +508,13 @@ const completeCommand: Subcommand = {
     {
       name: "--shell",
       description: "Print the lines this shell's completion script reads",
-      args: { name: "shell", suggestions: SHELLS },
+      args: { name: "shell", parse: shellSchema },
     },
   ],
   args: { name: "tokens", isVariadic: true, isOptional: true },
   async action({ path, args, options }) {
     const spec = path[0] as Spec;
-    const shell = options.get("--shell");
-    if (shell !== undefined && !isShell(shell)) {
-      printUsageError(path, `Unsupported shell '${shell}'`, { input: shell, choices: SHELLS });
-      return 1;
-    }
+    const shell = options.get("--shell") as Shell | undefined;
     // Windows PowerShell drops an empty argument, so its script says the word
     // is empty with --empty-word instead of passing "".
     const emptyWord = options.has("--empty-word");
@@ -570,20 +565,16 @@ export const completion: Subcommand = {
   args: {
     name: "shell",
     isOptional: true,
-    suggestions: SHELLS,
-    description: `One of: ${SHELLS.join(", ")}`,
+    description: "Shell to print the script for",
+    parse: shellSchema,
   },
   subcommands: [completeCommand],
-  action({ path, args: [shell] }) {
+  action({ path, args }) {
     const spec = path[0] as Spec;
+    const shell = args[0] as Shell | undefined;
     if (shell === undefined) {
       print(`Supported shells: ${SHELLS.join(", ")}`);
       return 0;
-    }
-
-    if (!isShell(shell)) {
-      printUsageError(path, `Unsupported shell '${shell}'`, { input: shell, choices: SHELLS });
-      return 1;
     }
 
     print(getCompletion(spec, shell));

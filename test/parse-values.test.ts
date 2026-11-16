@@ -314,6 +314,32 @@ test("a rejected value is a usage error that says what the schema said", async (
   expect(stderr).toContain("Usage:");
 });
 
+test("a rejected value close to one the schema lists gets a suggestion", async () => {
+  const typo = await received(serve, ["public", "--token", "abc", "--mode", "relese"]);
+  expect(typo.code).toBe(1);
+  expect(typo.stderr).toContain('Error: Invalid value "relese" for --mode: expected debug | release\n');
+  expect(typo.stderr).toContain("Did you mean 'release'?");
+
+  const far = await received(serve, ["public", "--token", "abc", "--mode", "fast"]);
+  expect(far.stderr).not.toContain("Did you mean");
+
+  // A number has no values to suggest.
+  const port = await received(serve, ["public", "--token", "abc", "--port", "http"]);
+  expect(port.stderr).not.toContain("Did you mean");
+});
+
+test("a rejected default gets no suggestion, because the user didn't type it", async () => {
+  const spec = CLI.spec({
+    name: "demo",
+    args: { name: "mode", isOptional: true, default: "relese", parse: CLI.choice(["debug", "release"]) },
+    action() {},
+  });
+  const { code, stderr } = await received(spec, []);
+  expect(code).toBe(1);
+  expect(stderr).toContain('The default "relese" for <mode> is invalid');
+  expect(stderr).not.toContain("Did you mean");
+});
+
 test("every problem with a readable command line is reported together", async () => {
   const argv = ["http", "-t", "maybe", "--retry", "0", "--retry", "3", "--mode", "fast"];
   let thrown: unknown;

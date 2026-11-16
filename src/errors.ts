@@ -96,13 +96,25 @@ export class InvalidValue extends ParseError {
   /**
    * `target` is what the value is for, as the user would write it: an option
    * name like `--port`, or `<port>` for a positional argument. `isDefault` is
-   * for a default from the spec, which the user didn't type.
+   * for a default from the spec, which the user didn't type. `choices` are
+   * the values the `parse` lists, and `run` suggests the closest one.
    */
-  constructor(value: string, target: string, reason: string, isDefault: boolean, context: ErrorContext) {
+  constructor(
+    value: string,
+    target: string,
+    reason: string,
+    isDefault: boolean,
+    context: ErrorContext,
+    choices?: readonly string[],
+  ) {
     const what = isDefault
       ? `The default ${repr(value)} for ${target} is invalid`
       : `Invalid value ${repr(value)} for ${target}`;
-    super(context, reason === "" ? what : `${what}: ${reason}`);
+    super(
+      context,
+      reason === "" ? what : `${what}: ${reason}`,
+      choices && !isDefault ? { input: value, choices } : undefined,
+    );
     this.value = value;
     this.reason = reason;
   }

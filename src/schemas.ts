@@ -109,7 +109,8 @@ export function number(
  * `choice(["debug", "release"])` gives `"debug" | "release"`.
  *
  * Help shows the values after the argument's description, and completion
- * offers them unless the argument has suggestions of its own.
+ * offers them unless the argument has suggestions of its own. A rejected
+ * value that's close to one of them gets a "Did you mean" line.
  *
  * @typeParam T - Inferred from the values. Do not supply it explicitly.
  * @param values - The values accepted, as the user types them.

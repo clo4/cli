@@ -709,7 +709,15 @@ test("completion subcommand lists shells when none is given", async () => {
 test("completion subcommand rejects an unknown shell", async () => {
   const result = await captureConsole(() => run(fixture, ["completion", "tcsh"]));
   expect(result.code).toBe(1);
-  expect(result.stderr).toMatch(/Unsupported shell 'tcsh'/);
+  expect(result.stderr).toContain(
+    'Invalid value "tcsh" for <shell>: expected bash | zsh | fish | powershell | nushell',
+  );
+});
+
+test("completion subcommand suggests the closest shell", async () => {
+  const result = await captureConsole(() => run(fixture, ["completion", "zhs"]));
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain("Did you mean 'zsh'?");
 });
 
 test("complete subcommand prints resolver candidates", async () => {
@@ -1249,7 +1257,9 @@ test("complete subcommand rejects an unknown shell", async () => {
     run(fixture, ["completion", "complete", "--shell", "tcsh", "--", ""]),
   );
   expect(result.code).toBe(1);
-  expect(result.stderr).toMatch(/Unsupported shell 'tcsh'/);
+  expect(result.stderr).toContain(
+    'Invalid value "tcsh" for --shell: expected bash | zsh | fish | powershell | nushell',
+  );
 });
 
 test("every shim asks for its own shell's lines", () => {

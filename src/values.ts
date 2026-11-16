@@ -8,6 +8,7 @@
 
 import type { Arg, Option, StandardResult, StandardSchemaV1 } from "./types.js";
 import { InvalidValue, problemsError } from "./errors.js";
+import { choicesOf } from "./schemas.js";
 import type { ErrorContext, ParseError } from "./errors.js";
 import { addDefaults, argAt, asArray, describeThrown } from "./util.js";
 
@@ -55,6 +56,7 @@ export class Rejected {
 
 /** One string to parse, and where the result goes. */
 interface Job {
+  arg: Arg;
   schema: StandardSchemaV1;
   raw: string;
   /** What the value is for, as the user would write it. */
@@ -112,6 +114,7 @@ function addJobs(
     const arg = argAt(args, i - start);
     if (arg?.parse !== undefined) {
       jobs.push({
+        arg,
         schema: arg.parse,
         raw: raw[i],
         // An option with several arguments says which one the value is for.
@@ -202,8 +205,10 @@ export function parseValues(unparsed: Unparsed): ParsedValues | Promise<ParsedVa
     for (let i = 0; i < jobs.length; i++) {
       const reason = rejected[i];
       if (reason) {
-        const { raw, target, isDefault } = jobs[i];
-        (problems ??= []).push(new InvalidValue(raw, target, reason.reason, isDefault, unparsed.context));
+        const { arg, raw, target, isDefault } = jobs[i];
+        (problems ??= []).push(
+          new InvalidValue(raw, target, reason.reason, isDefault, unparsed.context, choicesOf(arg)),
+        );
       }
     }
     if (problems) {
