@@ -1,7 +1,7 @@
 {
   "format": 1,
   "docsVersion": "v6",
-  "packageVersion": "6.1.1",
+  "packageVersion": "6.1.2",
   "typedocVersion": "0.28.20",
   "navigation": [
     ["", "API reference", ["index", "definitions", "execution", "completion", "testing", "utilities"]],
@@ -4829,7 +4829,7 @@
                                 },
                                 {
                                   "kind": "text",
-                                  "text": " and a value with a space in it are rejected.\n\nHelp shows the type and range after the argument's description, like\n"
+                                  "text": " and a value with a space in it are rejected. So is\na value with too many digits to be a finite number.\n\nHelp shows the type and range after the argument's description, like\n"
                                 },
                                 {
                                   "kind": "code",
@@ -5898,7 +5898,7 @@
                     },
                     {
                       "kind": "text",
-                      "text": " and a value with a space in it are rejected.\n\nHelp shows the type and range after the argument's description, like\n"
+                      "text": " and a value with a space in it are rejected. So is\na value with too many digits to be a finite number.\n\nHelp shows the type and range after the argument's description, like\n"
                     },
                     {
                       "kind": "code",
