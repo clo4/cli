@@ -54,7 +54,8 @@ function describeChoice(value: unknown): string {
  *
  * The value is written in decimal digits, with an optional minus sign and
  * decimal point. It isn't read the way `Number` reads it, so an empty
- * string, `0x1F`, `1e3` and a value with a space in it are rejected.
+ * string, `0x1F`, `1e3` and a value with a space in it are rejected. So is
+ * a value with too many digits to be a finite number.
  *
  * Help shows the type and range after the argument's description, like
  * `(integer from 1 to 65535)`.
@@ -76,7 +77,7 @@ export function number(
       validate(value) {
         const parsed = typeof value === "string" && pattern.test(value) ? Number(value) : NaN;
         if (
-          Number.isNaN(parsed) ||
+          !Number.isFinite(parsed) ||
           (int && !Number.isSafeInteger(parsed)) ||
           (min !== undefined && parsed < min) ||
           (max !== undefined && parsed > max)

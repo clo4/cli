@@ -577,6 +577,16 @@ test("number: reads decimal digits and nothing else", () => {
   }
 });
 
+test("number: rejects digits that read as infinity", () => {
+  const huge = "9".repeat(400);
+  expect(Number(huge)).toBe(Infinity);
+  expect(read(CLI.number(), huge)).toBe("expected a number");
+  expect(read(CLI.number(), `-${huge}`)).toBe("expected a number");
+  expect(read(CLI.number({ min: 0 }), huge)).toBe("expected a number, at least 0");
+  expect(read(CLI.number({ max: 0 }), `-${huge}`)).toBe("expected a number, at most 0");
+  expect(read(CLI.number(), "1" + "0".repeat(308))).toBe(1e308);
+});
+
 test("number: int accepts whole numbers only", () => {
   const whole = CLI.number({ int: true });
   expect(read(whole, "-12")).toBe(-12);
