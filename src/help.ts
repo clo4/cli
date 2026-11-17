@@ -408,7 +408,9 @@ function rows(
  * parser uses, like `(int from 1 to 65535, default: 8080)`. They go on a
  * line of their own when the last line would be too long for the 68
  * characters the spec checks allow. A list of values too long for one line
- * carries on to the next after a `|`.
+ * carries on to the next after a `|`. A single value too long for one line,
+ * like the pattern of a long format, carries on to the next where
+ * {@link chunks} divides it.
  */
 function withDetails(
   description: string | undefined,
@@ -422,18 +424,34 @@ function withDetails(
   const byDefault = defaults.length === 0 ? "" : `default: ${defaults.join(" ")}`;
   // Each value with what follows it, so a line only ends between two values.
   const pieces: string[] = [];
-  const values = constraint ?? [];
+  // The pieces that carry on a value from the line before, with no space between.
+  const carriesOn = new Set<number>();
+  // A parser that accepts nothing has an empty value, which says nothing.
+  const values: string[] = [];
+  for (const value of constraint ?? []) {
+    if (value !== "") {
+      values.push(value);
+    }
+  }
   for (let i = 0; i < values.length; i++) {
-    pieces.push(values[i] + (i < values.length - 1 ? " |" : byDefault === "" ? "" : ","));
+    const parts = chunks(values[i]);
+    for (let j = 0; j < parts.length - 1; j++) {
+      pieces.push(parts[j]);
+      carriesOn.add(pieces.length);
+    }
+    pieces.push(parts[parts.length - 1] + (i < values.length - 1 ? " |" : byDefault === "" ? "" : ","));
   }
   if (byDefault !== "") {
     pieces.push(byDefault);
+  }
+  if (pieces.length === 0) {
+    return description ?? defaultDesc;
   }
   let shown = "(";
   let line = 1;
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i] + (i === pieces.length - 1 ? ")" : "");
-    if (i > 0 && line + 1 + piece.length > 68) {
+    if (carriesOn.has(i) || (i > 0 && line + 1 + piece.length > 68)) {
       shown += `\n${piece}`;
       line = piece.length;
     } else {
@@ -446,6 +464,32 @@ function withDetails(
   }
   const lastLine = description.slice(description.lastIndexOf("\n") + 1);
   return `${description}${lastLine.length + 1 + shown.length <= 68 ? " " : "\n"}${shown}`;
+}
+
+/**
+ * A value in pieces of at most 64 characters, which leaves room on a line
+ * for a bracket and a `|`. A piece ends after a `|` if it has one, or else
+ * after a `>`, `)`, `]` or `,`, so that a pattern is divided between two of
+ * its parts.
+ */
+function chunks(value: string): string[] {
+  const parts: string[] = [];
+  while (value.length > 64) {
+    let cut = value.lastIndexOf("|", 63) + 1;
+    if (cut === 0) {
+      cut = Math.max(
+        value.lastIndexOf(">", 63),
+        value.lastIndexOf(")", 63),
+        value.lastIndexOf("]", 63),
+        value.lastIndexOf(",", 63),
+      );
+      cut = cut < 0 ? 64 : cut + 1;
+    }
+    parts.push(value.slice(0, cut));
+    value = value.slice(cut);
+  }
+  parts.push(value);
+  return parts;
 }
 
 /** The first of the longest strings. */

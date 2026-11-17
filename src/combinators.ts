@@ -17,7 +17,7 @@
  * @module
  */
 
-import { fail, number, Parser, patternOf, tooBig } from "./schemas.js";
+import { fail, literal, mapAtom, number, Parser, patternOf, tooBig } from "./schemas.js";
 import type { Atom, Part, State, ValueOf } from "./schemas.js";
 
 /** Read one part. A string part gives itself as the value. */
@@ -33,7 +33,29 @@ function read(part: Part, input: string, start: number, state: State): number {
 }
 
 /** A part as help shows it. */
-const show = (part: Part): string => (typeof part === "string" ? part : patternOf(part));
+const show = (part: Part): string => (typeof part === "string" ? literal(part) : patternOf(part));
+
+/**
+ * A part as help shows it before the `...` of a repeat. A part that
+ * repeats is in brackets, like `((a|b)...),...`, so that each `...` can be
+ * matched with what it repeats. With `whole`, so is a part made of several,
+ * like `(<int>(s|m))...`.
+ */
+function showRepeated(part: Part, whole: boolean): string {
+  const shown = show(part);
+  if (typeof part === "string") {
+    return whole && part.length > 1 && shown === part ? `(${shown})` : shown;
+  }
+  let inner = part;
+  while (inner.label === undefined && inner.atom === mapAtom) {
+    inner = inner.of;
+  }
+  const { atom, label, of } = inner;
+  return label === undefined &&
+    (atom === manyAtom || atom === sepByAtom || (whole && atom === seqAtom && of.length > 1))
+    ? `(${shown})`
+    : shown;
+}
 
 const seqAtom: Atom = {
   run(self, input, start, state) {
@@ -69,6 +91,7 @@ const optionalAtom: Atom = {
     return start;
   },
   pattern: (self) => `[${show(self.of)}]`,
+  optional: true,
 };
 
 const manyAtom: Atom = {
@@ -91,7 +114,7 @@ const manyAtom: Atom = {
     state.out = values;
     return at;
   },
-  pattern: (self) => `${show(self.of)}...`,
+  pattern: (self) => `${showRepeated(self.of, true)}...`,
 };
 
 const sepByAtom: Atom = {
@@ -113,7 +136,7 @@ const sepByAtom: Atom = {
     state.out = values;
     return start;
   },
-  pattern: (self) => `${show(self.of)}${self.fn}...`,
+  pattern: (self) => `${showRepeated(self.of, false)}${literal(self.fn)}...`,
 };
 
 const someText = { label: "some text" };
@@ -199,7 +222,15 @@ export class Seq<const P extends readonly Part[]> extends Parser<Values<P>> {
       const fields: Record<string, unknown> = {};
       for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
-        if (key !== undefined) {
+        if (key === "__proto__") {
+          // Assigning to this key would set the object's prototype.
+          Object.defineProperty(fields, key, {
+            value: values[i],
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        } else if (key !== undefined) {
           fields[key] = values[i];
         }
       }

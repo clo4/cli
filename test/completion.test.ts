@@ -501,7 +501,7 @@ test("getCompletion emits the shim", () => {
   const bash = getCompletion(fixture, "bash");
   expectIncludes(bash, "completion complete --");
   expectIncludes(bash, 'command -v "$bin"'); // guarded
-  expectIncludes(bash, "complete -F _forge_complete 'forge'");
+  expectIncludes(bash, "complete -o nospace -F _forge_complete 'forge'");
 
   const fish = getCompletion(fixture, "fish");
   expectIncludes(fish, "function __forge_complete");
@@ -1052,15 +1052,16 @@ const awkward = [
 ];
 
 test("formatCandidates quotes values for bash and drops descriptions", () => {
+  // Each ends with the space that follows a finished value.
   expect(formatCandidates(awkward, "bash", "")).toEqual([
-    "plain",
-    "http://example.com",
-    "a:b",
-    "my\\ file.txt",
-    "it\\'s",
-    "\\$\\(touch\\ x\\)",
-    "back\\\\slash",
-    "Upper",
+    "plain ",
+    "http://example.com ",
+    "a:b ",
+    "my\\ file.txt ",
+    "it\\'s ",
+    "\\$\\(touch\\ x\\) ",
+    "back\\\\slash ",
+    "Upper ",
   ]);
 });
 
@@ -1073,27 +1074,27 @@ test("formatCandidates escapes every character bash treats specially", () => {
       "",
     ),
   ).toEqual([
-    "\\~home",
-    "\\#tag",
-    "\\!bang",
-    "a\\*b\\?",
-    "\\[x]",
-    "\\{a,b\\}",
-    "a\\;b\\|c\\&d",
-    "\\<in\\>",
-    '\\"q\\"',
-    "\\`x\\`",
-    "end\\ ",
+    "\\~home ",
+    "\\#tag ",
+    "\\!bang ",
+    "a\\*b\\? ",
+    "\\[x] ",
+    "\\{a,b\\} ",
+    "a\\;b\\|c\\&d ",
+    "\\<in\\> ",
+    '\\"q\\" ',
+    "\\`x\\` ",
+    "end\\  ",
   ]);
 });
 
 test("formatCandidates keeps the bash values whose quoted form starts with the word", () => {
   // Bash replaces the word as typed with the reply, so the CLI matches the
   // word against the quoted value, case and all.
-  expect(formatCandidates(awkward, "bash", "my")).toEqual(["my\\ file.txt"]);
-  expect(formatCandidates(awkward, "bash", "my\\ f")).toEqual(["my\\ file.txt"]);
-  expect(formatCandidates(awkward, "bash", "\\$")).toEqual(["\\$\\(touch\\ x\\)"]);
-  expect(formatCandidates(awkward, "bash", "U")).toEqual(["Upper"]);
+  expect(formatCandidates(awkward, "bash", "my")).toEqual(["my\\ file.txt "]);
+  expect(formatCandidates(awkward, "bash", "my\\ f")).toEqual(["my\\ file.txt "]);
+  expect(formatCandidates(awkward, "bash", "\\$")).toEqual(["\\$\\(touch\\ x\\) "]);
+  expect(formatCandidates(awkward, "bash", "U")).toEqual(["Upper "]);
   expect(formatCandidates(awkward, "bash", "u")).toEqual([]);
   expect(formatCandidates(awkward, "bash", "it'")).toEqual([]);
 });
@@ -1234,7 +1235,7 @@ test("complete subcommand prints the shell's lines with --shell", async () => {
   const bash = await captureConsole(() =>
     run(awkwardSpec, ["completion", "complete", "--shell", "bash", "--", "go", "e"]),
   );
-  expect(bash.stdout).toBe("end\\ \n");
+  expect(bash.stdout).toBe("end\\  \n");
 
   const none = await captureConsole(() =>
     run(awkwardSpec, ["completion", "complete", "--shell", "bash", "--", "go", "zzz"]),
@@ -1308,7 +1309,7 @@ test.skipIf(!hasShell("bash") || process.platform === "win32")(
     try {
       const script = [
         "source shim",
-        't() { COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _forge_complete; printf "[%s]" "${COMPREPLY[@]}"; echo; }',
+        't() { COMP_WORDS=("$@"); COMP_LINE="$*"; COMP_CWORD=$(( $# - 1 )); _forge_complete; printf "[%s]" "${COMPREPLY[@]}"; echo; }',
         "t forge go ''",
         "t forge go my",
         "t forge 'x y' go 'my\\ f'",
@@ -1321,10 +1322,10 @@ test.skipIf(!hasShell("bash") || process.platform === "win32")(
         encoding: "utf8",
       });
       expect(output.split("\n")).toEqual([
-        "[http://example.com][a:b][my\\ file.txt][\\$\\(touch\\ PWNED\\)][back\\\\slash][Upper]",
-        "[my\\ file.txt]",
-        "[my\\ file.txt]",
-        "[\\$\\(touch\\ PWNED\\)]",
+        "[http://example.com ][a:b ][my\\ file.txt ][\\$\\(touch\\ PWNED\\) ][back\\\\slash ][Upper ]",
+        "[my\\ file.txt ]",
+        "[my\\ file.txt ]",
+        "[\\$\\(touch\\ PWNED\\) ]",
         "[]",
         "",
       ]);
@@ -1338,6 +1339,52 @@ test.skipIf(!hasShell("bash") || process.platform === "win32")(
     }
   },
 );
+
+test.skipIf(!hasShell("bash") || process.platform === "win32")(
+  "the bash shim joins the pieces bash makes of a word at = and :",
+  () => {
+    const dir = trickyDir("bash", ["a:", "http://ex", "--url=ht", "--url="]);
+    try {
+      // COMP_WORDS as bash divides each line, with the line as it was typed.
+      const script = [
+        "source shim",
+        't() { COMP_LINE="$1"; shift; COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _forge_complete; printf "[%s]" "${COMPREPLY[@]}"; echo; }',
+        "t 'forge go a:' forge go a :",
+        "t 'forge go http://ex' forge go http : //ex",
+        "t 'forge go --url=ht' forge go --url = ht",
+        "t 'forge go --url=' forge go --url =",
+        "t 'forge go --url= ' forge go --url = ''",
+      ].join("\n");
+      const output = execFileSync("bash", ["--norc", "-c", script], {
+        cwd: dir,
+        env: shellEnv(dir),
+        encoding: "utf8",
+      });
+      const args = readFileSync(join(dir, "args"), "utf8").split("\n");
+      const sent = "<completion><complete><--shell><bash><--gate-options><--><go>";
+      expect(args).toEqual([
+        `${sent}<a:>`,
+        `${sent}<http://ex>`,
+        `${sent}<--url=ht>`,
+        `${sent}<--url=>`,
+        // A space ends the word, so the next one is new.
+        `${sent}<--url=><>`,
+        "",
+      ]);
+      // Bash replaces the last piece, so each reply starts after the pieces before it.
+      expect(output.split("\n").slice(0, 2)).toEqual(["[b ]", "[//example.com ]"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("formatCandidates leaves the space off an open value for bash, and marks it for zsh", () => {
+  const candidates = [{ value: "12:", open: true }, { value: "12:am" }];
+  expect(formatCandidates(candidates, "bash", "12")).toEqual(["12:", "12:am "]);
+  expect(formatCandidates(candidates, "zsh", "12")).toEqual(["12\\:\t", "12\\:am"]);
+  expect(formatCandidates(candidates, "fish", "12")).toEqual(["12:", "12:am"]);
+});
 
 test.skipIf(!hasShell("fish") || process.platform === "win32")(
   "the fish shim hands the lines to fish",

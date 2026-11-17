@@ -13,7 +13,7 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { choice, choicesOf, completionsOf, isParser } from "./schemas.js";
+import { accepts, choice, choicesOf, completionsOf, isParser } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
 import { nextHelpNames } from "./help.js";
 import { readNextOrWait } from "./parse.js";
@@ -69,6 +69,8 @@ function nuQuote(value: string): string {
 interface Candidate {
   value: string;
   description?: string;
+  /** The value needs more text after it, like `1920x`, so the shell adds no space. */
+  open?: boolean;
 }
 
 /** Enumerate filesystem entries matching `partial` for a path template. */
@@ -146,9 +148,15 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
     arg.generators === undefined &&
     arg.template === undefined
   ) {
-    const values = isParser(arg.parse) ? completionsOf(arg.parse, partial) : choicesOf(arg);
-    for (const value of values ?? []) {
-      candidates.push({ value });
+    const parser = arg.parse;
+    if (isParser(parser)) {
+      for (const value of completionsOf(parser, partial)) {
+        candidates.push(accepts(parser, value) ? { value } : { value, open: true });
+      }
+    } else {
+      for (const value of choicesOf(arg) ?? []) {
+        candidates.push({ value });
+      }
     }
   }
 
@@ -199,10 +207,7 @@ export async function completeRuntime(req: CompletionRequest): Promise<Candidate
   if (next.attached) {
     const { prefix, arg, value } = next.attached;
     const values = await argValues(arg, tokens, value);
-    return values.map((candidate) => ({
-      value: prefix + candidate.value,
-      description: candidate.description,
-    }));
+    return values.map((candidate) => ({ ...candidate, value: prefix + candidate.value }));
   }
 
   // The open option needs this word as its value.
@@ -308,10 +313,12 @@ function optionCandidates(next: NextToken): Candidate[] {
  * Format candidates as the lines a shell's completion script reads, one line
  * per candidate. `word` is the word being completed, as the script passed it.
  *
- * - bash: the quoted value. Bash inserts a candidate as written and doesn't
- *   filter, so this keeps the values whose quoted form starts with the word.
+ * - bash: the quoted value, then a space unless the value is open. Bash
+ *   inserts a candidate as written and doesn't filter, so this keeps the
+ *   values whose quoted form starts with the word.
  * - zsh: `value:description` for `_describe`, with `\` and `:` escaped in the
- *   value. Zsh filters and quotes the values itself.
+ *   value, then a tab if the value is open. Zsh filters and quotes the
+ *   values itself.
  * - fish: `value<Tab>description`. Fish filters and quotes the values itself.
  * - powershell: `text<Tab>value<Tab>tooltip`, the arguments of a
  *   CompletionResult. Only values that start with the word, ignoring case.
@@ -334,13 +341,14 @@ export function formatCandidates(candidates: readonly Candidate[], shell: Shell,
     if (shell === "bash") {
       const text = value.replace(/[ '"\\$`|&;()<>{}*?[!#~]/g, "\\$&");
       if (text.startsWith(word)) {
-        lines.push(text);
+        lines.push(candidate.open ? text : `${text} `);
       }
     } else if (shell === "zsh") {
       // `_describe` splits at the first colon without a backslash before it,
       // then removes the backslashes from both parts.
       const text = value.replace(/[\\:]/g, "\\$&");
-      lines.push(description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text);
+      const line = description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text;
+      lines.push(candidate.open ? `${line}\t` : line);
     } else if (shell === "fish") {
       lines.push(description ? `${value}\t${description}` : value);
     } else if (startsWithWord(value)) {
@@ -374,25 +382,62 @@ function renderRuntimeShim(spec: Spec, shell: Shell): string {
   if (shell === "bash") {
     // Each line is one reply. Reading the lines into the array keeps them as
     // written. compgen -W would run the expansions in them, such as $(...).
+    //
+    // Bash divides a word at each = and :, so the loop joins the pieces that
+    // have no space between them back into the word as it was typed. Bash
+    // only replaces the last piece, so each reply leaves out the pieces
+    // before it. Bash 3 keeps the word whole, and still only replaces the
+    // text after its last = or :.
+    //
+    // A reply ends with its own space, and nospace stops bash adding one
+    // after a value that needs more text.
     return `_${id}_complete() {
   local bin="\${COMP_WORDS[0]}"
   command -v "$bin" >/dev/null 2>&1 || return
-  local line
+  local -a words=()
+  local rest="$COMP_LINE" piece last="" before="" line i joined
+  for ((i = 0; i <= COMP_CWORD; i++)); do
+    piece="\${COMP_WORDS[i]}"
+    joined=0
+    if [[ $i -gt 0 && $rest != [[:space:]]* ]] && [[ $piece =~ ^[=:]+$ || $last =~ ^[=:]+$ ]]; then joined=1; fi
+    rest="\${rest#"\${rest%%[![:space:]]*}"}"
+    rest="\${rest#"$piece"}"
+    if [[ $joined -eq 1 ]]; then
+      before="\${words[\${#words[@]}-1]}"
+      words[\${#words[@]}-1]="$before$piece"
+    else
+      before=""
+      words[\${#words[@]}]="$piece"
+    fi
+    last="$piece"
+  done
+  if [[ $last =~ ^[=:]+$ ]]; then before="\${words[\${#words[@]}-1]}"; fi
+  if [[ \${BASH_VERSINFO[0]} -lt 4 && $last != [\\"\\']* ]]; then
+    piece=""
+    if [[ $COMP_WORDBREAKS == *=* ]]; then piece="$piece="; fi
+    if [[ $COMP_WORDBREAKS == *:* ]]; then piece="$piece:"; fi
+    if [[ -n $piece && $last == *[$piece]* ]]; then before="\${last%"\${last##*[$piece]}"}"; fi
+  fi
   COMPREPLY=()
-  while IFS= read -r line; do COMPREPLY+=( "$line" ); done < <(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --shell bash --gate-options -- "\${COMP_WORDS[@]:1:COMP_CWORD-1}" "\${COMP_WORDS[COMP_CWORD]}" 2>/dev/null)
+  while IFS= read -r line; do COMPREPLY+=( "\${line#"$before"}" ); done < <(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --shell bash --gate-options -- "\${words[@]:1}" 2>/dev/null)
 }
-complete -F _${id}_complete ${shQuote(name)}`;
+complete -o nospace -F _${id}_complete ${shQuote(name)}`;
   }
   if (shell === "zsh") {
     // The CLI gets the words without their quotes. Zsh leaves the quote that
     // opens the word being completed out of $PREFIX, and (Q) removes the rest.
+    // A line that ends with a tab is a value that needs more text, and -S ''
+    // stops zsh adding a space after it.
     return `#compdef ${name}
 _${id}_complete() {
   local bin="\${(Q)words[1]}"
   command -v "$bin" >/dev/null 2>&1 || return
-  local -a lines
-  lines=( \${(f)"$(SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete --shell zsh -- "\${(@Q)words[2,CURRENT-1]}" "\${(Q)PREFIX}\${(Q)SUFFIX}" 2>/dev/null)"} )
-  _describe -t values ${shQuote(name)} lines
+  local -a lines open
+  local line
+  for line in \${(f)"$(SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete --shell zsh -- "\${(@Q)words[2,CURRENT-1]}" "\${(Q)PREFIX}\${(Q)SUFFIX}" 2>/dev/null)"}; do
+    if [[ $line == *$'\\t' ]]; then open+=( "\${line%$'\\t'}" ); else lines+=( "$line" ); fi
+  done
+  _describe -t values ${shQuote(name)} lines -- open -S ''
 }
 _${id}_complete "$@"`;
   }

@@ -277,7 +277,18 @@ Help shows the input format after the argument's description. `.map` preserves t
 | `seq(optional("v"), uint, ".", uint, ".", uint)` | `[v]<int>.<int>.<int>`     |
 | `sepBy(choice("read", "write", "admin"), ",")`   | `(read\|write\|admin),...` |
 
-Label a combined parser to replace its whole pattern. For example, `seq(uint, "x", uint).as("dimensions")` shows `<dimensions>`. A standalone number still shows its type and bounds, and a choice of strings still lists its values.
+Label a combined parser to replace its whole pattern. For example, `seq(uint, "x", uint).as("dimensions")` shows `<dimensions>`. A labelled `optional` keeps its brackets, so `optional(uint).as("to")` shows `[<to>]`. A standalone number still shows its type and bounds, and a choice of strings still lists its values.
+
+Help marks the parts of a pattern that could be misread:
+
+| Parser definition                           | Format in help        |
+| ------------------------------------------- | --------------------- |
+| `seq("[", uint, "]")`                       | `"["<int>"]"`         |
+| `seq(uint, choice("a\|b", "c"))`            | `<int>("a\|b"\|c)`    |
+| `many(seq(uint, choice("h", "m", "s")), 1)` | `(<int>(h\|m\|s))...` |
+| `sepBy(many(choice("r", "w"), 1), ",")`     | `((r\|w)...),...`     |
+
+A literal string is in quotes when it has a character the pattern uses, such as a bracket or a `|`. A repeated part is in parentheses when its `...` could be read as repeating only the last part. A pattern too long for one line of help continues on the next.
 
 With [shell completion installed](./install-completion.mdx), the parser offers literal strings that can complete partially typed input:
 
@@ -287,6 +298,8 @@ With [shell completion installed](./install-completion.mdx), the parser offers l
 | `seq(uint, choice("s", "m", "h"))`             | `30`         | `30s`, `30m`, `30h` |
 | `sepBy(choice("read", "write", "admin"), ",")` | `read,w`     | `read,write`        |
 | `choice("auto", number())`                     | Empty        | `auto`              |
+
+After `1920x`, the value still needs a height, so bash and zsh leave the cursor directly after the `x`. They add a space once the value is complete, such as `30s`. Fish adds its own space after a suggestion unless the suggestion ends with a character such as `=` or `:`.
 
 Completion does not invent numbers or arbitrary text. An argument's own `suggestions` or `generators` take precedence over suggestions from its parser. A choice of strings also supplies spelling suggestions when a rejected argument value is close to one of them.
 

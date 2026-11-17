@@ -229,6 +229,12 @@ test("asObject: gives each labelled value under its label, and drops the rest", 
   expect(read(nested, "3x4@2")).toEqual({ size: { width: 3, height: 4 }, scale: 2 });
 });
 
+test("asObject: gives a value labelled __proto__ as a key of its own", () => {
+  const fields = read(seq(seq(uint.as("x")).asObject().as("__proto__"), ",", uint.as("y")).asObject(), "1,2");
+  expect(Object.keys(fields)).toEqual(["__proto__", "y"]);
+  expect(Object.getPrototypeOf(fields)).toBe(Object.prototype);
+});
+
 test("asObject: rejects two parts with the same label", () => {
   const twice = seq(uint.as("width"), "x", uint.as("width"));
   // @ts-expect-error Two parts are labelled "width".
@@ -255,6 +261,97 @@ test("completionsOf: offers the strings that can come next, and a whole value th
     throw new Error("no");
   });
   expect(completionsOf(strict, "5")).toEqual(["5s", "5m"]);
+});
+
+test("completionsOf: offers a longer string of a choice after a shorter one was read", () => {
+  const unit = seq(uint, choice("s", "sec", "seconds"));
+  expect(completionsOf(unit, "5")).toEqual(["5s", "5sec", "5seconds"]);
+  expect(completionsOf(unit, "5se")).toEqual(["5sec", "5seconds"]);
+  expect(completionsOf(unit, "5seco")).toEqual(["5seconds"]);
+  expect(completionsOf(choice("auto", "automatic"), "autom")).toEqual(["automatic"]);
+  expect(completionsOf(many(choice("a", "ab")), "ab")).toEqual(["ab", "aba", "abab"]);
+  // The first reads `a` and then wants `d`, and the second is still open.
+  expect(completionsOf(seq(choice("a", seq("a", "b", "c")), "d"), "ab")).toEqual(["abc"]);
+});
+
+test("completionsOf: offers the other values of a choice that has an empty string", () => {
+  const level = choice("", "low", "high");
+  expect(completionsOf(level, "")).toEqual(["low", "high"]);
+  expect(completionsOf(level, "l")).toEqual(["low"]);
+  expect(completionsOf(seq(uint, level), "5")).toEqual(["5low", "5high"]);
+  expect(read(level, "")).toBe("");
+  expect(read(level, "x")).toBe('expected "" | low | high');
+});
+
+test("patternOf: keeps the brackets of an optional part that has a label", () => {
+  const range = seq(optional(int).as("from"), "..", optional(int).as("to")).asObject();
+  expect(patternOf(range)).toBe("[<from>]..[<to>]");
+  // Through map, whichever is called first.
+  expect(patternOf(optional(int).as("n").map(String))).toBe("[<n>]");
+  expect(patternOf(optional(int).map(String).as("n"))).toBe("[<n>]");
+  expect(patternOf(many(int).as("n"))).toBe("<n>");
+});
+
+test("patternOf: quotes a string that could be read as part of the pattern", () => {
+  expect(patternOf(seq("[", uint, "]"))).toBe('"["<int>"]"');
+  expect(patternOf(seq("<", text(">"), ">"))).toBe('"<"<text>">"');
+  expect(patternOf(seq(uint, "...", uint))).toBe('<int>"..."<int>');
+  expect(patternOf(seq(uint, choice("a|b", "(c)", "d")))).toBe('<int>("a|b"|"(c)"|d)');
+  expect(patternOf(sepBy(uint, "|"))).toBe('<int>"|"...');
+  expect(patternOf(seq(uint, "\t", uint, ""))).toBe('<int>"\\t"<int>""');
+  // A space, a dot and a comma can only be themselves.
+  expect(patternOf(seq(uint, " ", uint, "..", uint, ",", uint))).toBe("<int> <int>..<int>,<int>");
+});
+
+test("patternOf: puts a repeated part in brackets when its dots could be misread", () => {
+  expect(patternOf(many(seq(uint, choice("h", "m", "s")), 1))).toBe("(<int>(h|m|s))...");
+  expect(patternOf(many(many(choice("a"))))).toBe("((a)...)...");
+  expect(patternOf(sepBy(sepBy(many(choice("a", "b")), ","), ";"))).toBe("(((a|b)...),...);...");
+  expect(patternOf(many("ab"))).toBe("(ab)...");
+  // Through map, and a label is one part.
+  expect(patternOf(many(seq(uint, "x").map(([n]) => n)))).toBe("(<int>x)...");
+  expect(patternOf(many(seq(uint, "x").as("n")))).toBe("<n>...");
+  // One part needs none, and the separator of a sepBy says what repeats.
+  expect(patternOf(many(choice("r", "w")))).toBe("(r|w)...");
+  expect(patternOf(many("a"))).toBe("a...");
+  expect(patternOf(sepBy(seq(text("="), "=", text(",")), ","))).toBe("<text>=<text>,...");
+});
+
+test("help carries a pattern too long for one line on to the next", async () => {
+  const units = Array.from({ length: 30 }, (_, i) => `unit${i}`) as [string, ...string[]];
+  const parts = Array.from({ length: 12 }, (_, i) => [uint.as(`part${i}`), "-"] as const).flat();
+  const spec: Spec = {
+    name: "long",
+    options: [
+      CLI.help,
+      {
+        name: "--amount",
+        description: "How much",
+        args: { name: "amount", parse: seq(uint, choice(...units)) },
+      },
+      { name: "--parts", description: "Each part", args: { name: "parts", parse: seq(...parts) } },
+      { name: "--empty", description: "No parts", args: { name: "empty", parse: seq() } },
+    ],
+  };
+  const { stdout } = await captureConsole(() => run(spec, ["--help"]));
+  const details = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /^[(<u-]/.test(line) && !line.includes("--help"));
+  expect(details).toEqual([
+    "--amount <amount>  How much",
+    "(<int>(unit0|unit1|unit2|unit3|unit4|unit5|unit6|unit7|unit8|",
+    "unit9|unit10|unit11|unit12|unit13|unit14|unit15|unit16|unit17|",
+    "unit18|unit19|unit20|unit21|unit22|unit23|unit24|unit25|unit26|",
+    "unit27|unit28|unit29))",
+    "--parts <parts>    Each part",
+    "(<part0>-<part1>-<part2>-<part3>-<part4>-<part5>-<part6>-<part7>",
+    "-<part8>-<part9>-<part10>-<part11>-)",
+    "--empty <empty>    No parts",
+  ]);
+  for (const line of stdout.split("\n")) {
+    expect(line.length).toBeLessThanOrEqual(100);
+  }
 });
 
 const watch = CLI.spec({

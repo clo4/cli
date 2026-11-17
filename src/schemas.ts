@@ -38,6 +38,8 @@ export interface Atom {
   schema?(self: Parser<any>): Record<string, unknown> | undefined;
   /** Each value the parser accepts, for a parser that help shows as a list of them. */
   list?(self: Parser<any>): string[] | undefined;
+  /** Whether the value can leave the part out. Help shows its label in brackets, like `[<to>]`. */
+  optional?: boolean;
 }
 
 /** A piece of a parser: a string that must appear exactly as written, or another parser. */
@@ -203,12 +205,32 @@ export function isParser(value: unknown): value is Parser<unknown> {
   return typeof (value as Parser<unknown> | undefined)?.atom?.run === "function";
 }
 
-/** A parser as help shows it: its label in angle brackets, or else its atom's pattern. */
+/**
+ * A parser as help shows it: its label in angle brackets, or else its
+ * atom's pattern. The label of a part that can be left out is in brackets
+ * too, like `[<to>]`.
+ */
 export function patternOf(parser: Parser<unknown>): string {
-  return parser.label === undefined ? parser.atom.pattern(parser) : `<${parser.label}>`;
+  if (parser.label === undefined) {
+    return parser.atom.pattern(parser);
+  }
+  let inner = parser;
+  while (inner.atom === mapAtom) {
+    inner = inner.of;
+  }
+  return inner.atom.optional ? `[<${parser.label}>]` : `<${parser.label}>`;
 }
 
-const mapAtom: Atom = {
+/**
+ * A string that has to be there as written, as a pattern shows it. One
+ * that could be read as part of the pattern is in quotes, like `"["` or
+ * `"..."`, and so is one that's empty or has a tab or a line break.
+ */
+export function literal(text: string): string {
+  return text === "" || text.includes("...") || /[\t\n\r|()[\]<>"']/.test(text) ? JSON.stringify(text) : text;
+}
+
+export const mapAtom: Atom = {
   run(self, input, start, state) {
     const inner: Parser<unknown> = self.of;
     const end = inner.atom.run(inner, input, start, state);
@@ -376,11 +398,15 @@ const choiceAtom: Atom = {
     if (end < 0) {
       return fail(state, start, values);
     }
+    if (end === start) {
+      // Only a value that reads nothing fit, so completion can still offer the rest.
+      fail(state, start, values);
+    }
     state.out = chosen;
     return end;
   },
   pattern: (self) =>
-    `(${self.of.map((value: Part) => (typeof value === "string" ? value : patternOf(value))).join("|")})`,
+    `(${self.of.map((value: Part) => (typeof value === "string" ? literal(value) : patternOf(value))).join("|")})`,
   words: (self) => choiceAtom.list!(self)!.join(" | "),
   schema: (self) =>
     self.of.every((value: Part) => typeof value === "string")
@@ -527,25 +553,28 @@ function addCompletions(found: string[], parser: Parser<unknown>, typed: string,
  * `10s` and `10m`. Nothing is offered where a number or other text comes
  * next.
  *
+ * It reads each shorter start of `partial` the same way, because a string
+ * can be expected before the place the reading stopped. `choice("s", "sec")`
+ * reads the `s` of `se` and stops, and only the empty start expects `sec`.
+ *
  * A value that's already whole is offered as it is when it ends with one of
  * those strings, so the shell can finish the word.
  */
 export function completionsOf(parser: Parser<unknown>, partial: string): string[] {
   const found: string[] = [];
-  if (partial !== "") {
-    addCompletions(found, parser, partial.slice(0, -1), partial);
-    // `read,` ends with a string that was expected, and isn't a whole value.
-    const whole = found.indexOf(partial);
-    if (whole >= 0 && !accepts(parser, partial)) {
-      found.splice(whole, 1);
-    }
+  for (let end = 0; end <= partial.length; end++) {
+    addCompletions(found, parser, partial.slice(0, end), partial);
   }
-  addCompletions(found, parser, partial, partial);
+  // `read,` ends with a string that was expected, and isn't a whole value.
+  const whole = found.indexOf(partial);
+  if (whole >= 0 && !accepts(parser, partial)) {
+    found.splice(whole, 1);
+  }
   return found;
 }
 
 /** Whether `parser` reads all of `value`. */
-function accepts(parser: Parser<unknown>, value: string): boolean {
+export function accepts(parser: Parser<unknown>, value: string): boolean {
   try {
     return parser.atom.run(parser, value, 0, { out: undefined, far: -1, want: undefined }) === value.length;
   } catch {
