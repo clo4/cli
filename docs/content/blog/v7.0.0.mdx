@@ -1,0 +1,121 @@
+---
+title: "Version 7.0.0"
+description: "A parser can read a value with a format, such as `10s` or `1920x1080`, and help and completion follow the format."
+date: 2026-11-18T00:00:00Z
+draft: true
+---
+
+In 6.1, an argument could turn its value into a number or one of a few choices. A value with a format of its own, like `10s` or `1920x1080`, still reached your action as a string, and you took it apart yourself. Now you describe the format in the spec, and your action receives the parts:
+
+```ts
+import * as CLI from "@clo4/cli";
+import { choice, seq, uint } from "@clo4/cli";
+
+const duration = seq(uint, choice("s", "m", "h", "d")).map(([amount, unit]) => ({ amount, unit }));
+
+const spec = CLI.spec({
+  name: "watch",
+  description: "Run a command again and again",
+  args: { name: "command", description: "Command to run" },
+  options: [
+    CLI.help,
+    {
+      name: "--every",
+      description: "Time between runs",
+      args: { name: "duration", default: "2s", parse: duration },
+    },
+  ],
+  action({ args: [command], options }) {
+    const { amount, unit } = options.get("--every"); // { amount: number; unit: "s" | "m" | "h" | "d" }
+    console.log(`Running ${command} every ${amount}${unit}`);
+  },
+});
+
+CLI.run(spec);
+```
+
+```console
+$ watch "make test" --every 30s
+Running make test every 30s
+```
+
+`seq` reads its parts in order. `uint` reads the digits, `choice` reads the unit, and `.map` turns the two into an object. TypeScript infers the type of each step.
+
+## Help, completion and errors follow the format
+
+The spec is the only place the format is written down. Help shows it after the option's description:
+
+```console
+$ watch --help
+Run a command again and again
+
+Usage:
+  watch [flags] <command>
+
+Arguments:
+  command  Command to run
+
+Flags:
+  -h, --help          Print a help message
+  --every <duration>  Time between runs (<int>(s|m|h|d), default: 2s)
+```
+
+A rejected value says what was expected, and after which part of the value:
+
+```console
+$ watch "make test" --every 30x
+Error: Invalid value "30x" for --every: expected s | m | h | d after "30"
+```
+
+Completion offers what can come next. Pressing Tab after `--every 30` offers `30s`, `30m`, `30h` and `30d`.
+
+## The parsers
+
+| Parser                    | Reads                                                 |
+| ------------------------- | ----------------------------------------------------- |
+| `number()`, `int`, `uint` | A number, a whole number, a whole number with no sign |
+| `choice("a", "b")`        | One of its values                                     |
+| `seq(a, "x", b)`          | Each part in order                                    |
+| `optional(a)`             | The part if it's there                                |
+| `sepBy(a, ",")`           | The part one or more times, with a separator between  |
+| `many(a)`                 | The part zero or more times in a row                  |
+| `text("=")`               | Characters up to a stop                               |
+
+A part is a string, which must appear exactly as written, or another parser. That's enough for most values a command line takes:
+
+```ts
+const size = seq(uint.as("width"), "x", uint.as("height")); // "1920x1080" gives [1920, 1080]
+const scopes = sepBy(choice("read", "write", "admin"), ","); // "read,write" gives ["read", "write"]
+const jobs = choice("auto", number({ int: true, min: 1, max: 64 })); // "auto" | number
+
+const pair = seq(text("="), "=", text(",")).map(([key, value]) => ({ key, value }));
+const env = sepBy(pair, ","); // "A=1,B=two" gives [{ key: "A", value: "1" }, { key: "B", value: "two" }]
+```
+
+`.as` names a part for help, so `size` is shown as `<width>x<height>`.
+
+Every parser is a named export, and is on `CLI` too. `CLI.number` and `CLI.choice` are now parsers like the rest, so they work as parts.
+
+Schemas from Zod, ArkType and Valibot work in `parse` as they did in 6.1.
+
+## Upgrading
+
+`choice` takes its values as arguments, where 6.1 took an array:
+
+```ts
+CLI.choice(["debug", "release"]); // 6.1
+CLI.choice("debug", "release"); // 7.0
+
+CLI.choice(...regions); // for values you have in an array
+```
+
+`CLI.number()` now rejects a number that ends with a dot, such as `3.`. A decimal point needs a digit after it, so that `seq(number(), "..", number())` can read `1..5`.
+
+Four kinds of test can need updating:
+
+- A test that compares help output for a whole number. Help now says `int` where it said `integer`, as in `(int from 1 to 65535)`.
+- A test that compares the message for a number with too many digits to hold exactly. It was `expected an integer`, and is now `too large, the limit is 9007199254740991`.
+- A test that compares completion output for a `choice` with part of a value typed. Completion now offers only the values that start with what was typed.
+- A test that compares the message of the `assertDefaultsPassTheirParse` or `assertRangesAreNotEmpty` spec check. Each says `parser` where it said `parse`.
+
+The minified bundle grew from 39.0 kB to 43.7 kB, and importing it takes about 0.1 ms longer, even in a CLI that uses no parser.

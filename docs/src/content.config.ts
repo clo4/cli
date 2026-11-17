@@ -8,6 +8,6 @@ export const collections = {
   meta: defineCollection({ loader: metaLoader() }),
   blog: defineCollection({
     loader: pageLoader("blog"),
-    schema: pageSchema.extend({ date: z.coerce.date() }),
+    schema: pageSchema.extend({ date: z.coerce.date(), draft: z.boolean().optional() }),
   }),
 };
