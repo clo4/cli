@@ -1,35 +1,79 @@
 ---
 title: Parsers
-description: Read a value with a format, such as `10s` or `1920x1080`, and give the action its parts.
+description: Combine small parsers to turn argument text into typed values, with help and shell completion.
 ---
 
-A parser reads the string the user typed and gives the action a value. `number` and `choice` each read a whole value. The other parsers on this page combine to read a value with a format, such as `10s`, `1920x1080` or `KEY=a,KEY=b`. The action receives the parts, already converted.
+A parser converts text into a value or reports why the text does not match. For example, `uint` converts `"30"` into the number `30`. `choice("s", "m", "h")` accepts one of those strings.
 
-A parser goes in an argument's [`parse`](./arguments.mdx#parsing-values) field. Every parser is exported by name and is on `CLI` too, so `seq` and `CLI.seq` are the same function. The examples here import parsers by name, because a parser is usually written inside another one.
+A parser combinator builds a parser from smaller parsers. Use `seq` to read parts in sequence, `choice` to accept alternatives, and `.map` to transform the result. These operations let you describe both the syntax of the input and the data that your application receives.
 
-## A value with a format
+Put the resulting parser in an argument's [`parse`](./arguments.mdx#parsing-values) field. The library parses each value before the action runs, infers its TypeScript type, and uses the parser for help and completion.
+
+## Build a parser
+
+Start with a size written as `width` followed by `x` and `height`:
 
 ```ts
-import * as CLI from "@clo4/cli";
-import { choice, seq, uint } from "@clo4/cli";
+import { seq, uint } from "@clo4/cli";
 
-const duration = seq(uint, choice("s", "m", "h", "d")).map(([amount, unit]) => ({ amount, unit }));
+const dimensions = seq(uint, "x", uint);
+```
+
+For `1920x1080`, the first `uint` reads `1920`, the string `"x"` matches the separator, and the second `uint` reads `1080`. The result is `[1920, 1080]`.
+
+`seq` returns a tuple, an array with a type for each position. Only parsers contribute values to the tuple. Literal strings must match exactly, but do not appear in the result. Here, TypeScript infers `[number, number]`.
+
+Use `.map` to transform that tuple into an object:
+
+```ts
+const size = dimensions.map(([width, height]) => ({ width, height }));
+// "1920x1080" → { width: 1920, height: 1080 }
+```
+
+The result is another parser. It accepts the same text and returns `{ width: number; height: number }`. You can reuse it in several arguments or as part of a larger parser.
+
+To try the parser directly, call `.validate` with a string:
+
+```ts
+const result = size.validate("1920x1080");
+// { value: { width: 1920, height: 1080 } }
+```
+
+A successful result contains `value`. If the text does not match, the result contains `issues`, an array of problems with a `message` field.
+
+Every parser is a named export and is also available on `CLI`. For example, `seq` and `CLI.seq` are the same function. The examples below use named imports for the parser definitions.
+
+## Use the parser in a command
+
+This complete example calculates the number of pixels in an image from its dimensions. Save it as `pixels.ts`:
+
+```ts
+import CLI, { seq, uint } from "@clo4/cli";
+
+const size = seq(uint.as("width"), "x", uint.as("height")).map(([width, height]) => ({
+  width,
+  height,
+}));
 
 const spec = CLI.spec({
-  name: "watch",
-  description: "Run a command again and again",
-  args: { name: "command", description: "Command to run" },
+  name: "pixels",
+  description: "Calculate the number of pixels in an image",
   options: [
     CLI.help,
     {
-      name: "--every",
-      description: "Time between runs",
-      args: { name: "duration", default: "2s", parse: duration },
+      name: "--size",
+      description: "Image dimensions",
+      args: {
+        name: "size",
+        default: "1920x1080",
+        parse: size,
+      },
     },
   ],
-  action({ args: [command], options }) {
-    const { amount, unit } = options.get("--every"); // { amount: number; unit: "s" | "m" | "h" | "d" }
-    console.log(`Running ${command} every ${amount}${unit}`);
+  subcommands: [CLI.completion],
+  action({ options }) {
+    const { width, height } = options.get("--size");
+    console.log(width * height);
   },
 });
 
@@ -37,183 +81,47 @@ CLI.run(spec);
 ```
 
 ```console
-$ node watch.ts "make test" --every 30s
-Running make test every 30s
-$ node watch.ts "make test"
-Running make test every 2s
+$ node pixels.ts --size 800x600
+480000
+$ node pixels.ts
+2073600
 ```
 
-`uint` reads the digits and `choice` reads the unit. `seq` reads its parts in order and gives their values as a tuple. `.map` turns the tuple into an object.
+The action receives an object with two numbers. The default is a string that goes through the same parser as user input. No type annotations are needed on the action.
 
-A value that doesn't fit is rejected before the action runs. The message says what was expected, and after which part of the value:
+The `.as` calls give the parts names for help. The `--size` entry shows the format and default:
 
 ```console
-$ node watch.ts "make test" --every 30x
-Error: Invalid value "30x" for --every: expected s | m | h | d after "30"
+  --size <size>  Image dimensions (<width>x<height>, default: 1920x1080)
 ```
 
-Help shows the format after the option's description:
+If the input does not match, the action does not run. The error names the expected part and the text before it:
 
 ```console
-$ node watch.ts --help
-Run a command again and again
-
-Usage:
-  watch [flags] <command>
-
-Arguments:
-  command  Command to run
-
-Flags:
-  -h, --help          Print a help message
-  --every <duration>  Time between runs (<int>(s|m|h|d), default: 2s)
+$ node pixels.ts --size 800*600
+Error: Invalid value "800*600" for --size: expected "x" after "800"
 ```
 
-With [shell completion](./help-and-completion.mdx) installed, pressing Tab after `--every 30` offers `30s`, `30m`, `30h` and `30d`.
+The parser must consume the entire argument value. `800x600x2` fails with `unexpected "x2" after "800x600"`. A parser reads one argument value, so it does not combine separate tokens such as `--size 800 600`.
 
-## Numbers
+## Transform the result
 
-| Parser                 | Reads                                                         | Example |
-| ---------------------- | ------------------------------------------------------------- | ------- |
-| `number()`             | Decimal digits, with an optional minus sign and decimal point | `-1.5`  |
-| `int`                  | A whole number, with an optional minus sign                   | `-3`    |
-| `uint`                 | A whole number written in digits alone                        | `12`    |
-| `number({ min, max })` | A number from `min` to `max`, each included                   | `0.5`   |
-
-`int` is the same as `number({ int: true })`. `min`, `max` and `int` can be used together.
-
-Use `uint` for the numbers in a format. A minus sign is nearly always a mistake there, and `int` accepts one:
+`.map` takes a function whose input is the preceding parser's result. The function's return value determines the new parser's output type. It can return any type, including an object, a boolean or a number:
 
 ```ts
-seq(int, "x", int); // reads "1920x-1080" as [1920, -1080]
-seq(uint, "x", uint); // rejects "1920x-1080": expected an integer, at least 0 after "1920x"
+import { choice, seq, uint } from "@clo4/cli";
+
+const enabled = choice("on", "off").map((value) => value === "on");
+// "on" → true
+
+const millisecondsPerUnit = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 };
+const milliseconds = seq(uint, choice("ms", "s", "m", "h")).map(
+  ([amount, unit]) => amount * millisecondsPerUnit[unit],
+);
+// "30s" → 30000
 ```
 
-A range inside a format needs `number`:
-
-```ts
-const hour = number({ int: true, min: 0, max: 23 });
-const minute = number({ int: true, min: 0, max: 59 });
-const time = seq(hour, ":", minute);
-```
-
-| Value   | Result                                         |
-| ------- | ---------------------------------------------- |
-| `12:30` | `[12, 30]`                                     |
-| `24:00` | `expected an integer from 0 to 23`             |
-| `12:75` | `expected an integer from 0 to 59 after "12:"` |
-
-Numbers are written in decimal digits. An empty string, `0x1F`, `1e3` and a value with spaces around it are rejected. Leading zeros are dropped, so `007` is `7`. A decimal point needs a digit after it, so `.5` is a number and `3.` is rejected.
-
-A whole number has to be one that JavaScript holds exactly. A larger one is rejected with the limit:
-
-```console
-$ node resize.ts --width 9007199254740993
-Error: Invalid value "9007199254740993" for --width: too large, the limit is 9007199254740991
-```
-
-## Choices
-
-`choice` reads one of its values. A string gives itself, so `choice("debug", "release")` gives `"debug" | "release"`.
-
-A value can also be a parser. This reads the word `auto` or a number of jobs:
-
-```ts
-const jobs = choice("auto", number({ int: true, min: 1, max: 64 })); // "auto" | number
-```
-
-Where more than one value fits, the one that reads the most wins. `choice("m", "ms")` reads `ms` as `"ms"` whichever is listed first.
-
-A value that's close to one of the strings gets a suggestion:
-
-```console
-$ node serve.ts --mode relese
-Error: Invalid value "relese" for --mode: expected debug | release
-
-    Did you mean 'release'?
-```
-
-## Parts in order
-
-`seq` reads each part in order, with nothing between them. A part is a string or a parser.
-
-- A string must appear exactly as written. It gives no value.
-- A parser gives a value.
-
-The values come back as a tuple in the order of the parsers:
-
-```ts
-const size = seq(uint, "x", uint); // [number, number]
-```
-
-| Value         | Result                                          |
-| ------------- | ----------------------------------------------- |
-| `1920x1080`   | `[1920, 1080]`                                  |
-| `1920*1080`   | `expected "x" after "1920"`                     |
-| `1920x-1080`  | `expected an integer, at least 0 after "1920x"` |
-| `1920x1080x2` | `unexpected "x2" after "1920x1080"`             |
-
-## Optional and repeated parts
-
-`optional` reads a part if it's there. It gives the part's value, or `undefined`:
-
-```ts
-const version = seq(optional("v"), uint, ".", uint, ".", uint).map(([, major, minor, patch]) => ({
-  major,
-  minor,
-  patch,
-}));
-// reads both "v7.0.0" and "7.0.0" as { major: 7, minor: 0, patch: 0 }
-```
-
-`sepBy` reads a part one or more times, with a separator between each pair. It gives the values as an array:
-
-```ts
-const scopes = sepBy(choice("read", "write", "admin"), ","); // ("read" | "write" | "admin")[]
-```
-
-| Value         | Result                                          |
-| ------------- | ----------------------------------------------- |
-| `read`        | `["read"]`                                      |
-| `read,write`  | `["read", "write"]`                             |
-| `read,delete` | `expected read \| write \| admin after "read,"` |
-| `read;write`  | `expected "," after "read"`                     |
-
-`many` reads a part zero or more times in a row, with nothing between them. Its second argument is the fewest times the part must appear:
-
-```ts
-const mode = many(choice("r", "w", "x"), 1); // reads "rwx" as ["r", "w", "x"]
-```
-
-A string given to `optional`, `sepBy`, `many` or `choice` gives itself as the value. Only a string in a `seq` gives none.
-
-## Text
-
-`text` reads one or more characters, up to the first of its stops or the end of the value:
-
-```ts
-const pair = seq(text("="), "=", text(",")).map(([key, value]) => ({ key, value }));
-const env = sepBy(pair, ",");
-```
-
-| Value              | Result                                                   |
-| ------------------ | -------------------------------------------------------- |
-| `A=1,B=two`        | `[{ key: "A", value: "1" }, { key: "B", value: "two" }]` |
-| `URL=http://x?a=b` | `[{ key: "URL", value: "http://x?a=b" }]`                |
-| `A=1,B`            | `expected "=" after "A=1,B"`                             |
-
-The key stops at the first `=`, and the value runs to the next `,`. A later `=` is part of the value.
-
-## Changing the value
-
-`.map` passes a parser's value through a function. The function runs only on a value the parser read, and what it returns is what the action receives. TypeScript infers the type.
-
-```ts
-const toggle = choice("on", "off").map((value) => value === "on"); // boolean
-const minutes = seq(uint, ":", uint).map(([hours, minutes]) => hours * 60 + minutes); // number
-```
-
-To reject a value the parser read, throw an error from the function. The user sees its message:
+To reject a parsed value, throw an error from the function. The command reports the error message as an invalid value:
 
 ```ts
 const even = uint.map((value) => {
@@ -222,71 +130,145 @@ const even = uint.map((value) => {
   }
   return value;
 });
+// "3" → must be even
 ```
 
-```console
-$ node grid.ts --columns 3
-Error: Invalid value "3" for --columns: must be even
-```
+Keep mapping functions free of side effects, such as writing files or changing application state. Completion also runs parsers against partially typed input and can call these functions. Put application work in the action.
 
-## What help shows
+## Choose numbers and alternatives
 
-Help shows a parser as a pattern after the description. A whole-value `number` shows its type and range, and a `choice` lists its values.
+Use `uint` for digits without a sign, `int` for signed integers, and `number()` for decimal numbers. An integer is a whole number. All three return JavaScript numbers:
 
-| Parser                                                   | Help shows                 |
-| -------------------------------------------------------- | -------------------------- |
-| `number({ int: true, min: 1, max: 65535 })`              | `int from 1 to 65535`      |
-| `choice("debug", "release")`                             | `debug \| release`         |
-| `choice("auto", number({ int: true, min: 1, max: 64 }))` | `auto \| <int>`            |
-| `seq(uint, choice("s", "m", "h", "d"))`                  | `<int>(s\|m\|h\|d)`        |
-| `seq(optional("v"), uint, ".", uint, ".", uint)`         | `[v]<int>.<int>.<int>`     |
-| `sepBy(choice("read", "write", "admin"), ",")`           | `(read\|write\|admin),...` |
-| `sepBy(seq(text("="), "=", text(",")), ",")`             | `<text>=<text>,...`        |
+| Parser                                   | Accepted examples  | Restrictions                        |
+| ---------------------------------------- | ------------------ | ----------------------------------- |
+| `uint`                                   | `0`, `12`, `007`   | No sign or decimal point            |
+| `int`                                    | `0`, `12`, `-3`    | No decimal point                    |
+| `number()`                               | `12`, `-1.5`, `.5` | Decimal notation only               |
+| `number({ int: true, min: 1, max: 64 })` | `1`, `32`, `64`    | Integer within the inclusive bounds |
 
-`.as` gives a parser a name, and help shows the name in its place:
+`int` is equivalent to `number({ int: true })`. Use `min` and `max` with or without `int` to set inclusive bounds. For dimensions, version components or other digits without a sign, use `uint`: it rejects both `-3` and `-0`.
+
+Numbers reject empty input, surrounding whitespace, hexadecimal notation such as `0x1F`, and exponent notation such as `1e3`. A decimal point needs a digit after it, so `3.` fails. Leading zeros do not affect the result: `007` becomes `7`.
+
+`int` and `uint` reject values outside JavaScript's safe integer range, from `-9007199254740991` to `9007199254740991`. `uint` also rejects negative values. `number()` rejects values that become infinity.
+
+`choice` accepts strings, parsers, or both. Its output type includes each alternative's result:
 
 ```ts
-const size = seq(uint.as("width"), "x", uint.as("height"));
+import { choice, number } from "@clo4/cli";
+
+const mode = choice("debug", "release");
+// "debug" | "release"
+
+const jobs = choice("auto", number({ int: true, min: 1, max: 64 }));
+// "auto" | number
 ```
 
-```console
-  --size <size>  Size of the image (<width>x<height>, default: 1920x1080)
-```
+If several alternatives match, `choice` selects the one that consumes the most text. `choice("m", "ms")` reads `ms` as `"ms"`, regardless of their order. If alternatives consume the same amount, the first one wins.
 
-A name on the whole parser hides the pattern. `version.as("version")` shows `<version>`. A label only changes what help shows. The parser reads the same values and gives the same messages.
+## Add optional and repeated parts
 
-## Completion
-
-Completion offers the text that can come next in a partly typed value. It reads the value as far as it can, then offers each string the parser expects there.
-
-| Typed so far         | Offered                                 |
-| -------------------- | --------------------------------------- |
-| `--every 30`         | `30s`, `30m`, `30h`, `30d`              |
-| `--size 1920`        | `1920x`                                 |
-| `--scope read,`      | `read,read`, `read,write`, `read,admin` |
-| `--jobs` and nothing | `auto`                                  |
-
-Nothing is offered where a number or text comes next. An argument with `suggestions` or `generators` of its own uses those.
-
-## How a value is read
-
-Parts are read left to right. Each part reads as much of the value as it can, and nothing goes back to try a shorter read.
-
-This matters when a part can read the character that follows it. `number()` reads a decimal point, so in `seq(number(), ".", number())` the first number reads `1.5` whole and the `"."` finds nothing:
+`optional(part)` returns the part's value when it matches, or `undefined` when it does not. For example, a version can accept an optional `v` prefix:
 
 ```ts
-seq(number(), ".", number()); // rejects "1.5": expected "." after "1.5"
-seq(uint, ".", uint); // reads "1.5" as [1, 5]
+import { optional, seq, uint } from "@clo4/cli";
+
+const version = seq(optional("v"), uint, ".", uint, ".", uint).map(([, major, minor, patch]) => ({
+  major,
+  minor,
+  patch,
+}));
+// "v7.0.0" and "7.0.0" → { major: 7, minor: 0, patch: 0 }
 ```
 
-Use `uint` or `int` for a number that a `.` follows.
+Unlike a literal string directly in `seq`, `optional("v")` contributes a value: `"v"` or `undefined`. The mapping function skips that first tuple position. The other combinators also retain the values of string parts.
 
-A dot with no digit after it is never part of a number, so a range written with two dots works with `number()`:
+Use `sepBy(part, separator)` for one or more values with a separator between them:
 
 ```ts
-seq(number(), "..", number()); // reads "1.5..2.5" as [1.5, 2.5]
+import { choice, sepBy } from "@clo4/cli";
+
+const scopes = sepBy(choice("read", "write", "admin"), ",");
+// "read,write" → ["read", "write"]
 ```
 
-## Schemas from other libraries
+An empty list fails. A trailing separator also fails because it requires another value. Spaces are significant: this parser accepts `read,write` and rejects `read, write`.
 
-An argument's `parse` also takes a schema from Zod, Valibot, ArkType or another library that follows [Standard Schema](https://standardschema.dev). [Arguments](./arguments.mdx#schemas-from-other-libraries) covers what help and completion read from one. A schema reads a whole value, so it can't be a part of a `seq`.
+Use `many(part)` for zero or more repetitions without a separator. Its optional second argument sets the minimum number of repetitions:
+
+```ts
+import { choice, many } from "@clo4/cli";
+
+const permissions = many(choice("r", "w", "x"), 1);
+// "rwx" → ["r", "w", "x"]
+```
+
+Without the minimum of `1`, empty input returns `[]`. These parsers preserve order and duplicate values. A rule such as unique permissions belongs in a mapping function.
+
+## Read text between separators
+
+`text(...stops)` reads one or more characters until a stop string or the end of the input. It leaves the stop for the next part to consume. With no stops, `text()` reads the remaining input.
+
+This parser reads a comma-separated list of key-value pairs:
+
+```ts
+import { sepBy, seq, text } from "@clo4/cli";
+
+const pair = seq(text("=", ","), "=", text(",")).map(([key, value]) => ({ key, value }));
+const env = sepBy(pair, ",");
+// "A=1,B=two" → [{ key: "A", value: "1" }, { key: "B", value: "two" }]
+```
+
+The key stops at `=` or `,`, so each pair needs its own `=`. The value stops only at `,`, so `URL=http://x?a=b` keeps the second `=` in the value. Both the key and value need at least one character.
+
+Stops are literal strings. This definition does not provide escaping or quoting for commas within a value. Add those rules to the parser if your format needs them.
+
+## Understand how parts consume text
+
+Parts read from left to right without inserting or skipping characters. Each part consumes as much text as it can. After a part succeeds, a later failure does not cause it to retry a shorter match.
+
+For example, `text()` consumes all remaining text. In `seq(text(), "=", text())`, it leaves nothing for `"="`. Use `text("=")` for the first part instead.
+
+The same rule applies to numbers and alternatives:
+
+```ts
+import { number, seq, uint } from "@clo4/cli";
+
+seq(number(), ".", number()); // "1.5" fails: the first number consumes "1.5".
+seq(uint, ".", uint); // "1.5" → [1, 5]
+
+seq(number(), "..", number()); // "1.5..2.5" → [1.5, 2.5]
+```
+
+Use integer parsers when a single dot separates numbers. Two dots work with `number()` because it only consumes a decimal point when a digit follows. Likewise, `choice` selects its longest match without considering what a later part needs.
+
+## Help and completion
+
+Help shows the input format after the argument's description. `.map` preserves that format even when it changes the output type. `.as("name")` labels a part in the pattern without changing its accepted input or output type:
+
+| Parser definition                                | Format in help             |
+| ------------------------------------------------ | -------------------------- |
+| `seq(uint, "x", uint)`                           | `<int>x<int>`              |
+| `seq(uint.as("width"), "x", uint.as("height"))`  | `<width>x<height>`         |
+| `seq(uint, choice("s", "m", "h"))`               | `<int>(s\|m\|h)`           |
+| `seq(optional("v"), uint, ".", uint, ".", uint)` | `[v]<int>.<int>.<int>`     |
+| `sepBy(choice("read", "write", "admin"), ",")`   | `(read\|write\|admin),...` |
+
+Label a combined parser to replace its whole pattern. For example, `seq(uint, "x", uint).as("dimensions")` shows `<dimensions>`. A standalone number still shows its type and bounds, and a choice of strings still lists its values.
+
+With [shell completion installed](./install-completion.mdx), the parser offers literal strings that can complete partially typed input:
+
+| Parser                                         | Input so far | Suggestions         |
+| ---------------------------------------------- | ------------ | ------------------- |
+| `seq(uint, "x", uint)`                         | `1920`       | `1920x`             |
+| `seq(uint, choice("s", "m", "h"))`             | `30`         | `30s`, `30m`, `30h` |
+| `sepBy(choice("read", "write", "admin"), ",")` | `read,w`     | `read,write`        |
+| `choice("auto", number())`                     | Empty        | `auto`              |
+
+Completion does not invent numbers or arbitrary text. An argument's own `suggestions` or `generators` take precedence over suggestions from its parser. A choice of strings also supplies spelling suggestions when a rejected argument value is close to one of them.
+
+## Use a schema from another library
+
+The `parse` field also accepts schemas from Zod, Valibot, ArkType and other libraries that implement Standard Schema, a shared interface for validation. These schemas parse an entire argument value. They cannot be parts in built-in combinators such as `seq` or `choice`.
+
+[Arguments](./arguments.mdx#schemas-from-other-libraries) explains schema input types, asynchronous validation, and the information that help and completion can read from a schema.

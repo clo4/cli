@@ -112,6 +112,7 @@ Read the [introduction](https://clo4.net/cli/next) or go directly to a topic:
 
 - [Options](https://clo4.net/cli/next/options): names, values, defaults, repetition and relationships.
 - [Arguments](https://clo4.net/cli/next/arguments): positional and variadic inputs, and parsing values into numbers and choices.
+- [Parsers](https://clo4.net/cli/next/parsers): combine small parsers to turn text into typed values, objects and arrays.
 - [Subcommands](https://clo4.net/cli/next/subcommands): command trees and persistent options.
 - [Actions](https://clo4.net/cli/next/actions): input types, errors and exit codes.
 - [Help and completion](https://clo4.net/cli/next/help-and-completion): built-ins, suggestions and shell setup.

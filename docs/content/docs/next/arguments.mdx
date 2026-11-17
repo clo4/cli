@@ -196,7 +196,7 @@ Error: Invalid value "relese" for --mode: expected debug | release
 
 `CLI.number` reads digits, where `Number` would read more. It rejects an empty string, `0x1F`, `1e3` and a value with spaces around it.
 
-A value with a format of its own, such as `10s` or `1920x1080`, is read by parsers put together. `CLI.seq(CLI.uint, CLI.choice("s", "m", "h", "d"))` reads `10s` as `[10, "s"]`. [Parsers](./parsers.mdx) covers every built-in parser, what help shows for each, and what completion offers.
+Combine parsers to read structured values. For example, `CLI.seq(CLI.uint, "x", CLI.uint)` turns `1920x1080` into `[1920, 1080]`. Add `.map(([width, height]) => ({ width, height }))` to return an object instead. [Parsers](./parsers.mdx) introduces parser combinators, the functions that build these parsers from smaller parts.
 
 ### Schemas from other libraries
 

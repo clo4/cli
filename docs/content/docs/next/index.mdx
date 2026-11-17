@@ -104,6 +104,8 @@ The `template: "folders"` fields tell completion to suggest directories. They do
 
 [Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs, and how a parser turns a typed value into a number or one of a few choices. [Commands](./subcommands.mdx) explains command trees and inherited options.
 
+[Parsers](./parsers.mdx) introduces parser combinators, the functions that combine small parsers into larger ones. Use them to turn text such as `30s` or `1920x1080` into values that your action can use directly.
+
 [Actions](./actions.mdx) covers errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
 
 The [API reference](./reference/index.mdx) is generated from the library's doc comments. [Parsing behavior](./parsing-behavior.mdx) collects rules that involve several fields.
