@@ -5,7 +5,7 @@ description: Define positional inputs and values accepted by options.
 
 Arguments describe values. A command's arguments are positional: their order identifies them. An option's arguments follow its name.
 
-Both use the same definition fields. A value reaches the action as a string, regardless of its name or completion suggestions, unless the argument has a [`parse`](#parsing-values).
+Both use the same definition fields. A value reaches the action as a string, regardless of its name or completion suggestions, unless the argument has a [parser](#parsing-values).
 
 ## Positional arguments
 
@@ -80,7 +80,7 @@ args: {
 
 When the user omits this argument, the action receives `"."`. For multiple omitted arguments, the parser fills defaults in order. It stops at the first argument without a default.
 
-A variadic argument's default supplies one value. Help displays positional defaults beside their descriptions. A default goes through the argument's [`parse`](#parsing-values), if it has one.
+A variadic argument's default supplies one value. Help displays positional defaults beside their descriptions. A default goes through the argument's [parser](#parsing-values), if it has one.
 
 ## Option arguments
 
@@ -104,7 +104,7 @@ Optional option arguments have different default behavior from required option a
 
 ## Parsing values
 
-An argument's `parse` turns the string the user typed into the value the action receives, and rejects a string that isn't valid. It takes a schema. `CLI.number` and `CLI.choice` are built in:
+An argument's parser turns the string the user typed into the value the action receives, and rejects a string that isn't valid. `CLI.number` and `CLI.choice` each read a whole value:
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -129,7 +129,7 @@ const spec = CLI.spec({
       isRequired: true,
       args: {
         name: "mode",
-        parse: CLI.choice(["debug", "release"]),
+        parse: CLI.choice("debug", "release"),
       },
     },
   ],
@@ -150,9 +150,9 @@ $ node serve.ts public --mode debug
 Serving public on port 8080 in debug mode
 ```
 
-The default `"8080"` goes through `parse` like a value the user typed.
+The default `"8080"` goes through the parser like a value the user typed.
 
-Every `parse` runs before the action. If a value is rejected, the action doesn't run, and the user sees every problem with the command line at once:
+Every argument's parser runs before the action. If a value is rejected, the action doesn't run, and the user sees every problem with the command line at once:
 
 ```console
 $ node serve.ts --port 70000 --mode fast
@@ -168,7 +168,7 @@ Arguments:
 
 Flags:
   -h, --help     Print a help message
-  --port <port>  Listen on this port (integer from 1 to 65535, default: 8080)
+  --port <port>  Listen on this port (int from 1 to 65535, default: 8080)
   --mode <mode>  Build mode (debug | release)
 ```
 
@@ -183,16 +183,20 @@ Error: Invalid value "relese" for --mode: expected debug | release
     Did you mean 'release'?
 ```
 
-### Built-in schemas
+### Built-in parsers
 
-| Schema                      | Accepts                                                | Action receives |
+| Parser                      | Accepts                                                | Action receives |
 | --------------------------- | ------------------------------------------------------ | --------------- |
 | `CLI.number()`              | Decimal digits, with an optional `-` and decimal point | `number`        |
 | `CLI.number({ int: true })` | Whole numbers only                                     | `number`        |
 | `CLI.number({ min, max })`  | Numbers from `min` to `max`, each included             | `number`        |
-| `CLI.choice(["a", "b"])`    | One of the listed strings                              | `"a" \| "b"`    |
+| `CLI.int`                   | The same as `CLI.number({ int: true })`                | `number`        |
+| `CLI.uint`                  | A whole number written in digits alone                 | `number`        |
+| `CLI.choice("a", "b")`      | One of the listed strings                              | `"a" \| "b"`    |
 
 `CLI.number` reads digits, where `Number` would read more. It rejects an empty string, `0x1F`, `1e3` and a value with spaces around it.
+
+A value with a format of its own, such as `10s` or `1920x1080`, is read by parsers put together. `CLI.seq(CLI.uint, CLI.choice("s", "m", "h", "d"))` reads `10s` as `[10, "s"]`. [Parsers](./parsers.mdx) covers every built-in parser, what help shows for each, and what completion offers.
 
 ### Schemas from other libraries
 
@@ -207,26 +211,26 @@ args: {
 },
 ```
 
-The schema has to accept a string. `z.number()` only accepts a number, so TypeScript rejects it as a `parse`.
+The schema has to accept a string. `z.number()` only accepts a number, so TypeScript rejects it as a parser.
 
 A rejected value shows the schema's issue messages. Help and completion read what a schema takes through its JSON Schema, which Zod and ArkType schemas provide. They show a list of values from either library, and a number's range where the schema describes its input as a number, as `z.coerce.number().min(1)` does. The suggestion for a rejected value comes from the same list of values. For a schema that says nothing, such as Valibot's, describe the values in the description and add `suggestions`.
 
-### What a schema is given
+### What a parser is given
 
-Each `parse` is given one value, and its result takes that value's place:
+Each parser is given one value, and its result takes that value's place:
 
 - A variadic argument and a repeatable option have each value parsed on its own.
-- An option with several arguments has each argument's value parsed by that argument's `parse`.
+- An option with several arguments has each argument's value parsed by that argument's parser.
 - A default is parsed wherever the parser uses it.
-- A flag has no value, so it has no `parse`.
+- A flag has no value, so it has no parser.
 
-A rule about two values belongs in the action. A schema can be async, and `CLI.run` waits for every `parse` before it reports problems or calls the action.
+A rule about two values belongs in the action. A schema can be async, and `CLI.run` waits for every parser before it reports problems or calls the action.
 
-An [option action](./actions.mdx#option-actions) such as `--help` runs without any `parse`, so `serve --port 70000 --help` prints help.
+An [option action](./actions.mdx#option-actions) such as `--help` runs without any parser, so `serve --port 70000 --help` prints help.
 
 ### Outside `CLI.spec`
 
-A definition typed as `Spec`, `Subcommand`, `Option` or `Arg` takes any `parse`, but has no inferred types, so its actions read every value as a string. Say what a value is where you read it:
+A definition typed as `Spec`, `Subcommand`, `Option` or `Arg` takes any parser, but has no inferred types, so its actions read every value as a string. Say what a value is where you read it:
 
 ```ts
 const spec: CLI.Spec = {
@@ -252,7 +256,7 @@ TypeScript can't check the type you write there, as it can't check an option's n
 
 Positional arguments have no reader, so `args` is `string[]` in an untyped action. Write the action as `(init: CLI.ActionInit<unknown>) => ...` to read parsed positional arguments, and narrow each one.
 
-Inside `CLI.spec`, an option made by a function typed `CLI.Option` is read as a string for the same reason. Define a shared option with `as const` to keep the type of its `parse`.
+Inside `CLI.spec`, an option made by a function typed `CLI.Option` is read as a string for the same reason. Define a shared option with `as const` to keep the type of its parser.
 
 ## Values that look like options
 

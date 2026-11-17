@@ -9,7 +9,7 @@ This division keeps application code in ordinary functions. It also means that f
 
 ## Value conversion and validation
 
-An argument's `parse` converts a value and rejects bad input before the action runs. It takes a built-in schema, or any [Standard Schema](https://standardschema.dev), so a Zod, Valibot or ArkType schema works as written:
+An argument's parser converts a value and rejects bad input before the action runs. It can be a built-in parser, or any [Standard Schema](https://standardschema.dev), so a Zod, Valibot or ArkType schema works as written:
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -23,7 +23,7 @@ const spec = CLI.spec({
       args: {
         name: "mode",
         default: "debug",
-        parse: CLI.choice(["debug", "release"]),
+        parse: CLI.choice("debug", "release"),
       },
     },
   ],
@@ -39,7 +39,7 @@ CLI.run(spec);
 
 The schema enforces the restriction and gives the action its type. Help shows the two values after the description, and completion offers them.
 
-Every `parse` runs before the action, and `@clo4/cli` reports each rejected value together with any missing argument or option. [Parsing values](./arguments.mdx#parsing-values) covers the built-in schemas and schemas from other libraries.
+Every argument's parser runs before the action, and `@clo4/cli` reports each rejected value together with any missing argument or option. [Parsing values](./arguments.mdx#parsing-values) covers the built-in parsers and schemas from other libraries.
 
 Yargs provides `coerce` and `choices`. citty provides enum arguments. Commander supports custom option processing.
 

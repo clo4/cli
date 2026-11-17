@@ -5,7 +5,7 @@ description: Define a CLI with plain TypeScript objects.
 
 `@clo4/cli` builds command-line tools from plain objects. A command definition describes its arguments, options and subcommands. The library uses that definition to parse input, infer TypeScript types, print help and answer shell completion requests.
 
-An action is the function that runs a command. It receives each value as a string, or as the result of the argument's [`parse`](./arguments.mdx#parsing-values) when the argument has one. Your code decides what work to do with those values.
+An action is the function that runs a command. It receives each value as a string, or as the result of the argument's [parser](./arguments.mdx#parsing-values) when the argument has one. Your code decides what work to do with those values.
 
 ## Install
 
@@ -102,7 +102,7 @@ The `template: "folders"` fields tell completion to suggest directories. They do
 
 ## Where to go next
 
-[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs, and how a `parse` turns a typed value into a number or one of a few choices. [Commands](./subcommands.mdx) explains command trees and inherited options.
+[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs, and how a parser turns a typed value into a number or one of a few choices. [Commands](./subcommands.mdx) explains command trees and inherited options.
 
 [Actions](./actions.mdx) covers errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
 

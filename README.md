@@ -2,7 +2,7 @@
 
 _A magical CLI framework, with no magic._
 
-Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings, or the numbers and choices a `parse` turns them into, and run your application code.
+Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings, or the numbers and choices an argument's parser turns them into, and run your application code.
 
 The package has no runtime dependencies. It supports completion for Bash, Zsh, Fish, PowerShell and Nushell, with static suggestions, file paths and sync or async generators on individual arguments. Large CLIs can load command definitions on demand.
 
@@ -80,9 +80,9 @@ $ node demo.ts build --jobs many
 Error: Invalid value "many" for --jobs: expected an integer from 1 to 64
 ```
 
-`CLI.spec` returns the definition unchanged and infers the action's inputs. Here, `input` and the output value are strings because they have defaults, and `--jobs` is a number because its `parse` is `CLI.number`. TypeScript rejects unknown option names.
+`CLI.spec` returns the definition unchanged and infers the action's inputs. Here, `input` and the output value are strings because they have defaults, and `--jobs` is a number because its parser is `CLI.number`. TypeScript rejects unknown option names.
 
-A `parse` runs before the action. Help shows `--jobs` as `(integer from 1 to 64, default: 4)`, and every rejected value is reported together with anything else that's wrong with the command line.
+An argument's parser runs before the action. Help shows `--jobs` as `(int from 1 to 64, default: 4)`, and every rejected value is reported together with anything else that's wrong with the command line.
 
 `CLI.run` parses the command line and runs the selected action. `demo build --help` and `demo help build` print help for `build`. Running `demo` without a subcommand prints root help.
 

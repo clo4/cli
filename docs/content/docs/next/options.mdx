@@ -136,7 +136,7 @@ $ node demo.ts
 undefined
 ```
 
-Defaults are strings. Help displays them automatically. A default goes through the argument's [`parse`](./arguments.mdx#parsing-values), if it has one. [Spec checks](./testing.mdx) reject defaults that the parser cannot use or that their `parse` rejects.
+Defaults are strings. Help displays them automatically. A default goes through the argument's [parser](./arguments.mdx#parsing-values), if it has one. [Spec checks](./testing.mdx) reject defaults that the command-line parser cannot use or that the argument's parser rejects.
 
 ## Repeated options
 

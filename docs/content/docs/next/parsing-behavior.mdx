@@ -85,7 +85,7 @@ The last supplied option with an action takes precedence over the selected comma
 | Positional argument count         | Enforced       | Skipped       |
 | Required options                  | Enforced       | Skipped       |
 | Option dependencies and conflicts | Enforced       | Skipped       |
-| `parse` of each value             | Run            | Skipped       |
+| Each argument's parser            | Run            | Skipped       |
 
 A command with `requiresSubcommand: true`, no action and no positional values prints help without requiring its options. If it defines an action, that action runs with the normal required-input checks.
 
@@ -95,12 +95,12 @@ An option action receives broader types because required inputs can be missing. 
 
 The parser stops at the first token it can't read, such as an unknown option or a value for an option that takes none. It reports that problem alone, because it can't tell what the tokens after it mean.
 
-Once it has read the whole command line, the parser runs the remaining checks and every [`parse`](./arguments.mdx#parsing-values), then reports each failure on a line of its own:
+Once it has read the whole command line, the command-line parser runs the remaining checks and every argument's [parser](./arguments.mdx#parsing-values), then reports each failure on a line of its own:
 
 - too few or too many positional arguments
 - an option with too few values
 - a missing required option
 - an unmet option dependency, or a conflict between options
-- a value its `parse` rejects
+- a value its parser rejects
 
 Positional arguments are parsed first, then options in the order used. A default is parsed like a typed value. Async schemas run concurrently, and the parser waits for all of them.
