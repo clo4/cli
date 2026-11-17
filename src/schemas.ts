@@ -136,8 +136,9 @@ function explain(self: Parser<any>, state: State, input: unknown, end: number): 
  * anywhere one is accepted.
  *
  * @typeParam T - What the parser gives.
+ * @typeParam L - The label `as` gave the parser. Inferred, so do not supply it explicitly.
  */
-export class Parser<T> {
+export class Parser<T, L extends string | undefined = string | undefined> {
   /** How the parser reads a value. */
   declare readonly atom: Atom;
   /** What the atom reads, such as a choice's values, a `seq`'s parts or the parser that `map` wraps. */
@@ -145,33 +146,34 @@ export class Parser<T> {
   /** What else the atom needs, like the function of a `map`. */
   declare readonly fn: any;
   /** The name `as` gave the parser. */
-  declare readonly label: string | undefined;
+  declare readonly label: L;
   declare readonly version: 1;
   declare readonly vendor: string;
   declare readonly types?: { readonly input: string; readonly output: T } | undefined;
 
-  constructor(atom: Atom, of?: unknown, fn?: unknown, label?: string) {
+  constructor(atom: Atom, of?: unknown, fn?: unknown, label?: L) {
     this.atom = atom;
     this.of = of;
     this.fn = fn;
-    this.label = label;
+    this.label = label as L;
   }
 
   /**
    * Pass the value through `fn`.
    * `seq(int, "x", int).map(([width, height]) => ({ width, height }))` gives
-   * an object in place of the tuple.
+   * an object in place of the tuple. The new parser keeps the label.
    */
-  map<U>(fn: (value: T) => U): Parser<U> {
-    return new Parser(mapAtom, this, fn);
+  map<U>(fn: (value: T) => U): Parser<U, L> {
+    return new Parser(mapAtom, this, fn, this.label);
   }
 
   /**
    * Name the parser. Help shows the name in place of its pattern, so
    * `seq(int.as("width"), "x", int.as("height"))` is shown as
-   * `<width>x<height>`.
+   * `<width>x<height>`. A `seq` also uses the name as the key for the value
+   * in `asObject`.
    */
-  as(label: string): Parser<T> {
+  as<const Label extends string>(label: Label): Parser<T, Label> {
     return new Parser(this.atom, this.of, this.fn, label);
   }
 

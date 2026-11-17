@@ -37,14 +37,14 @@ The same operations can produce objects and arrays:
 ```ts
 import { sepBy } from "@clo4/cli";
 
-const size = seq(uint, "x", uint).map(([width, height]) => ({ width, height }));
+const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
 // "1920x1080" → { width: 1920, height: 1080 }
 
 const scopes = sepBy(choice("read", "write", "admin"), ",");
 // "read,write" → ["read", "write"]
 ```
 
-Strings in `seq`, such as `"x"`, match literal text and stay out of the result. `sepBy` builds a list parser from an existing parser and a separator. There are also functions for optional parts, repetition and text between separators.
+Strings in `seq`, such as `"x"`, match literal text and stay out of the result. `.as` labels a parser, and `.asObject()` returns each labelled value of a `seq` under its label, with the inferred type `{ width: number; height: number }`. Help shows the same labels, as `<width>x<height>`. `sepBy` builds a list parser from an existing parser and a separator. There are also functions for optional parts, repetition and text between separators.
 
 ## Help and completion use the parser
 
@@ -99,7 +99,7 @@ I measured matching minified builds of 6.1.2 and v7 on an Apple M3 Pro with Node
 
 Each row has 200 samples. Every sample runs in a fresh Node process, with Node's compile cache disabled. The last two rows use the duration-to-milliseconds parser above in a command with one `--timeout` option and an action that reads its value. Times exclude Node's own startup and output.
 
-The minified library grows from 39.0 kB to 43.7 kB. Importing it costs about 0.11 ms more in this measurement, including for a CLI that does not use the new parsers.
+The minified library grows from 39.0 kB to 44.1 kB. Importing it costs about 0.11 ms more in this measurement, including for a CLI that does not use the new parsers.
 
 The [parser guide](https://clo4.net/cli/next/parsers) walks through a complete command and the rest of the API. Schemas from Zod, ArkType and Valibot still work in `parse` as they did in 6.1.
 

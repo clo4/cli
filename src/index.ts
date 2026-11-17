@@ -28,6 +28,7 @@ export type { Shell } from "./completion.js";
 export { help, helpCommand } from "./help.js";
 export { printError, run } from "./run.js";
 export { int, many, optional, sepBy, seq, text, uint } from "./combinators.js";
+export type { Seq } from "./combinators.js";
 export { choice, number } from "./schemas.js";
 export type { Parser, Part } from "./schemas.js";
 export type { RunOptions } from "./run.js";

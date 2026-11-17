@@ -42,7 +42,10 @@ test("each parser gives the type its parts say", () => {
   is<Parser<("read" | "write" | "admin")[]>>()(scopes);
   is<Parser<("r" | "w" | "x")[]>>()(mode);
   is<Parser<{ key: string; value: string }[]>>()(env);
-  is<Parser<[number, "v" | undefined, string]>>()(seq(int, "-", optional("v"), text()));
+  // A seq is a Seq, so map it to compare what it gives as a plain Parser.
+  is<Parser<[number, "v" | undefined, string]>>()(
+    seq(int, "-", optional("v"), text()).map((values) => values),
+  );
 });
 
 test("seq: reads its parts in order, and a string gives no value", () => {
@@ -193,6 +196,43 @@ test("a pattern shows each part, and a label in place of the part it names", () 
   // A label is only for help. The parser reads and gives the same.
   expect(read(size, "3x4")).toEqual({ width: 3, height: 4 });
   expect(read(int.as("width"), "x")).toBe("expected an integer");
+});
+
+test("asObject: gives each labelled value under its label, and drops the rest", () => {
+  const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
+  is<Parser<{ width: number; height: number }>>()(size);
+  expect(read(size, "1920x1080")).toEqual({ width: 1920, height: 1080 });
+  expect(read(size, "1920x")).toBe('expected an integer, at least 0 after "1920x"');
+  expect(patternOf(size)).toBe("<width>x<height>");
+
+  // A part without a label gives no key.
+  const major = seq(optional("v"), uint.as("major"), ".", uint).asObject();
+  is<Parser<{ major: number }>>()(major);
+  expect(read(major, "v2.1")).toEqual({ major: 2 });
+  is<Parser<{}>>()(seq(uint, "x", uint).asObject());
+  expect(read(seq(uint, "x", uint).asObject(), "1x2")).toEqual({});
+
+  // A label stays on a parser through map, whichever is called first.
+  const span = seq(
+    uint.as("start").map(String),
+    "-",
+    choice("a", "b")
+      .map((letter) => letter === "a")
+      .as("end"),
+  ).asObject();
+  is<Parser<{ start: string; end: boolean }>>()(span);
+  expect(read(span, "1-b")).toEqual({ start: "1", end: false });
+
+  // A seq inside a seq gives its own object.
+  const nested = seq(size.as("size"), "@", uint.as("scale")).asObject();
+  is<Parser<{ size: { width: number; height: number }; scale: number }>>()(nested);
+  expect(read(nested, "3x4@2")).toEqual({ size: { width: 3, height: 4 }, scale: 2 });
+});
+
+test("asObject: rejects two parts with the same label", () => {
+  const twice = seq(uint.as("width"), "x", uint.as("width"));
+  // @ts-expect-error Two parts are labelled "width".
+  expect(() => twice.asObject()).toThrow('Two parts of the seq are labelled "width"');
 });
 
 test("completionsOf: offers the strings that can come next, and a whole value that ends with one", () => {

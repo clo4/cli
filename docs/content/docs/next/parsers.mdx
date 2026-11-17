@@ -45,15 +45,12 @@ Every parser is a named export and is also available on `CLI`. For example, `seq
 
 ## Use the parser in a command
 
-This complete example calculates the number of pixels in an image from its dimensions. Save it as `pixels.ts`:
+This complete example calculates the number of pixels in an image from its dimensions. It labels each number and calls `.asObject()` to return them as `{ width, height }`. Save it as `pixels.ts`:
 
 ```ts
 import CLI, { seq, uint } from "@clo4/cli";
 
-const size = seq(uint.as("width"), "x", uint.as("height")).map(([width, height]) => ({
-  width,
-  height,
-}));
+const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
 
 const spec = CLI.spec({
   name: "pixels",
@@ -134,6 +131,32 @@ const even = uint.map((value) => {
 ```
 
 Keep mapping functions free of side effects, such as writing files or changing application state. Completion also runs parsers against partially typed input and can call these functions. Put application work in the action.
+
+## Return labelled parts as an object
+
+`.as("name")` labels a parser. Call `.asObject()` on a `seq` to return each labelled value under its label, in place of the tuple:
+
+```ts
+import { seq, uint } from "@clo4/cli";
+
+const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
+// "1920x1080" → { width: 1920, height: 1080 }
+```
+
+TypeScript infers `{ width: number; height: number }` from the labels. Help also shows each label in the format, as `<width>x<height>`.
+
+A part without a label stays out of the object, so label only the values the action needs:
+
+```ts
+import { optional, seq, uint } from "@clo4/cli";
+
+const major = seq(optional("v"), uint.as("major"), ".", uint).asObject();
+// "v2.1" → { major: 2 }
+```
+
+A label stays on a parser through `.map`, so `uint.as("port").map(String)` and `uint.map(String).as("port")` both return their value under `port`.
+
+Call `.asObject()` directly on the result of `seq`. `.map` and `.as` return a parser without that method. Each label can appear once in a `seq`. A repeated label is a type error, and `.asObject()` throws when it runs.
 
 ## Choose numbers and alternatives
 

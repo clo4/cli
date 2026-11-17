@@ -147,6 +147,67 @@ export type Values<P extends readonly Part[]> = P extends readonly [
     : Values<Rest>
   : [];
 
+/** The label of the part `P`, or never for a string and for a parser without a label. */
+type LabelOf<P> = P extends Parser<unknown, infer L> ? (string extends L ? never : L & string) : never;
+
+/** What `asObject` gives for the parts `P` of a `seq`: the value of each labelled parser, under its label. */
+export type Fields<P extends readonly Part[]> = {
+  [K in P[number] as LabelOf<K>]: K extends Parser<infer T> ? T : never;
+};
+
+/** The first label that two of the parts `P` share, or never. */
+type Duplicate<P extends readonly Part[], Seen = never> = P extends readonly [
+  infer First,
+  ...infer Rest extends readonly Part[],
+]
+  ? [LabelOf<First>] extends [never]
+    ? Duplicate<Rest, Seen>
+    : LabelOf<First> extends Seen
+      ? LabelOf<First>
+      : Duplicate<Rest, Seen | LabelOf<First>>
+  : never;
+
+/**
+ * The parser that {@link seq} returns. It's a {@link Parser} that can also
+ * give its values as an object.
+ *
+ * @typeParam P - The parts the `seq` reads.
+ */
+export class Seq<const P extends readonly Part[]> extends Parser<Values<P>> {
+  /**
+   * Give the values as an object in place of the tuple. Each part labelled
+   * with `as` gives its value under its label, and a part without a label
+   * gives none, so `seq(int.as("width"), "x", int.as("height")).asObject()`
+   * reads `1920x1080` as `{ width: 1920, height: 1080 }`.
+   *
+   * @throws If two parts have the same label.
+   */
+  asObject(
+    ...duplicate: [Duplicate<P>] extends [never] ? [] : [error: `Two parts are labelled "${Duplicate<P>}"`]
+  ): Parser<Fields<P>>;
+  asObject(): Parser<Record<string, unknown>> {
+    const keys: (string | undefined)[] = [];
+    for (const part of this.of as P) {
+      if (typeof part !== "string") {
+        if (part.label !== undefined && keys.includes(part.label)) {
+          throw new Error(`Two parts of the seq are labelled ${JSON.stringify(part.label)}`);
+        }
+        keys.push(part.label);
+      }
+    }
+    return this.map((values: unknown[]) => {
+      const fields: Record<string, unknown> = {};
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        if (key !== undefined) {
+          fields[key] = values[i];
+        }
+      }
+      return fields;
+    });
+  }
+}
+
 /** A whole number, like `12` or `-3`. The same as `number({ int: true })`. */
 export const int: Parser<number> = number({ int: true });
 
@@ -182,11 +243,11 @@ export const uint: Parser<number> = new Parser(uintAtom);
 /**
  * Reads each part in order. Gives the values as a tuple, and a string gives
  * no value, so `seq(int, "x", int)` reads `1920x1080` as `[1920, 1080]`.
+ * Call `asObject` on the result to give the labelled values as an object.
  *
  * @typeParam P - Inferred from the parts. Do not supply it explicitly.
  */
-export const seq = <const P extends readonly Part[]>(...parts: P): Parser<Values<P>> =>
-  new Parser(seqAtom, parts);
+export const seq = <const P extends readonly Part[]>(...parts: P): Seq<P> => new Seq(seqAtom, parts);
 
 /**
  * Reads the part if it's there. Gives its value, or undefined, so
