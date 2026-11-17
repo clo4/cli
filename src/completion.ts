@@ -320,6 +320,10 @@ function optionCandidates(next: NextToken): Candidate[] {
  *   value, then a tab if the value is open. Zsh filters and quotes the
  *   values itself.
  * - fish: `value<Tab>description`. Fish filters and quotes the values itself.
+ *   It adds a space after the only value that starts with the word, and has
+ *   no way to be told not to. So an open value that would be the only one
+ *   is followed by the same value with a `.` after it. Fish then has two
+ *   values, and inserts what they share with no space.
  * - powershell: `text<Tab>value<Tab>tooltip`, the arguments of a
  *   CompletionResult. Only values that start with the word, ignoring case.
  * - nushell: `text<Tab>description`. Only values that start with the word,
@@ -332,6 +336,23 @@ export function formatCandidates(candidates: readonly Candidate[], shell: Shell,
   const lines: string[] = [];
   const lowerWord = word.toLowerCase();
   const startsWithWord = (value: string) => value.slice(0, word.length).toLowerCase() === lowerWord;
+  // The one value fish would insert with a space after it. Fish takes the
+  // values that start with the word as written, or else in any case.
+  let only: Candidate | undefined;
+  if (shell === "fish") {
+    for (const sameCase of [true, false]) {
+      const matches = candidates.filter(
+        ({ value }) =>
+          value !== "" &&
+          !/[\t\n\r]/.test(value) &&
+          (sameCase ? value.startsWith(word) : startsWithWord(value)),
+      );
+      if (matches.length > 0) {
+        only = matches.length === 1 ? matches[0] : undefined;
+        break;
+      }
+    }
+  }
   for (const candidate of candidates) {
     const value = candidate.value;
     if (value === "" || /[\t\n\r]/.test(value)) {
@@ -351,6 +372,9 @@ export function formatCandidates(candidates: readonly Candidate[], shell: Shell,
       lines.push(candidate.open ? `${line}\t` : line);
     } else if (shell === "fish") {
       lines.push(description ? `${value}\t${description}` : value);
+      if (candidate === only && candidate.open) {
+        lines.push(`${value}.`);
+      }
     } else if (startsWithWord(value)) {
       if (shell === "powershell") {
         // A CompletionResult needs a tooltip, so the value stands in for a

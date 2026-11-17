@@ -99,7 +99,7 @@ I measured matching minified builds of 6.1.2 and v7 on an Apple M3 Pro with Node
 
 Each row has 200 samples. Every sample runs in a fresh Node process, with Node's compile cache disabled. The last two rows use the duration-to-milliseconds parser above in a command with one `--timeout` option and an action that reads its value. Times exclude Node's own startup and output.
 
-The minified library grows from 39.0 kB to 46.2 kB. Importing it costs about 0.11 ms more in this measurement, including for a CLI that does not use the new parsers.
+The minified library grows from 39.0 kB to 46.4 kB. Importing it costs about 0.11 ms more in this measurement, including for a CLI that does not use the new parsers.
 
 The [parser guide](https://clo4.net/cli/next/parsers) walks through a complete command and the rest of the API. Schemas from Zod, ArkType and Valibot still work in `parse` as they did in 6.1.
 

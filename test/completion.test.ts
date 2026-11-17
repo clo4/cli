@@ -1386,6 +1386,23 @@ test("formatCandidates leaves the space off an open value for bash, and marks it
   expect(formatCandidates(candidates, "fish", "12")).toEqual(["12:", "12:am"]);
 });
 
+test("formatCandidates gives fish a second value after an open one that would be the only one", () => {
+  const amount = { value: "amount", open: true };
+  // Fish adds a space after the only value that starts with the word.
+  expect(formatCandidates([amount, { value: "--help" }], "fish", "")).toEqual(["amount", "--help"]);
+  expect(formatCandidates([amount, { value: "--help" }], "fish", "a")).toEqual([
+    "amount",
+    "amount.",
+    "--help",
+  ]);
+  expect(formatCandidates([amount], "fish", "")).toEqual(["amount", "amount."]);
+  expect(formatCandidates([amount, { value: "amounts" }], "fish", "am")).toEqual(["amount", "amounts"]);
+  expect(formatCandidates([{ value: "amount" }], "fish", "am")).toEqual(["amount"]);
+  // Fish takes the values in the word's own case before the rest.
+  expect(formatCandidates([amount, { value: "Apple" }], "fish", "a")).toEqual(["amount", "amount.", "Apple"]);
+  expect(formatCandidates([amount, { value: "Apple" }], "fish", "A")).toEqual(["amount", "Apple"]);
+});
+
 test.skipIf(!hasShell("fish") || process.platform === "win32")(
   "the fish shim hands the lines to fish",
   () => {
