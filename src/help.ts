@@ -327,7 +327,7 @@ function requiredOptions(options: readonly VisibleOption[], names: readonly stri
 /**
  * Whether help lists the arguments in a section of their own. An argument's
  * name is often description enough, so they're only listed when one of them
- * has a description, a default or a `parse`. Otherwise the section would only repeat the
+ * has a description, a default or a parser. Otherwise the section would only repeat the
  * usage line. It's checked before {@link argumentRows} is called, so that help
  * for a command without one doesn't compile that.
  */
@@ -405,7 +405,7 @@ function rows(
 
 /**
  * A description ending with what the value can be and the defaults the
- * parser uses, like `(integer from 1 to 65535, default: 8080)`. They go on a
+ * parser uses, like `(int from 1 to 65535, default: 8080)`. They go on a
  * line of their own when the last line would be too long for the 68
  * characters the spec checks allow. A list of values too long for one line
  * carries on to the next after a `|`.

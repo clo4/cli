@@ -40,8 +40,8 @@ type Parsed<P> = P extends { readonly "~standard": { readonly types?: infer T } 
   : unknown;
 
 /**
- * What argument `H` gives an action: a string, or what its `parse` gives. An
- * argument typed `Arg` might have a `parse` without its type saying what it
+ * What argument `H` gives an action: a string, or what its parser gives. An
+ * argument typed `Arg` might have a parser without its type saying what it
  * gives. Its value is read as a string, like any value outside a spec, and
  * the action says otherwise when it reads it: `options.get<number>(name)`.
  */
@@ -327,7 +327,7 @@ type Typed<Y, Inherited> = { action?: (init: InitFor<Y, Inherited>) => Result };
 /**
  * The action of a command whose action was written for any command, against
  * `ActionInit<unknown>`. One written against `ActionInit` reads strings, and
- * has to fit the typed action, which it doesn't where a `parse` gives
+ * has to fit the typed action, which it doesn't where an argument's parser gives
  * something else.
  */
 type Loose = { action?: (init: ActionInit<unknown>) => Result };
@@ -335,7 +335,7 @@ type Loose = { action?: (init: ActionInit<unknown>) => Result };
 /**
  * The options an option's action can read: the ones in `O`, by name. Each
  * value is as loose as `OptionArgs` gives it, because an option's action
- * runs without the checks for required options and without any `parse`.
+ * runs without the checks for required options and without any argument's parser.
  */
 type OptionsIn<O> = [O] extends [never]
   ? OptionReader<never, never, unknown, unknown>
@@ -498,7 +498,7 @@ type Passed<X, I, Inherited> = I extends "options"
   : Inherited | Persistent<OptionsOf<X>>;
 
 /**
- * What a `parse` with the type `V` has to be: a Standard Schema that takes a
+ * What an argument's parser with the type `V` has to be: a Standard Schema that takes a
  * string, or some strings, like a schema for one of a few words.
  */
 type ParseAt<V> = V extends { readonly "~standard": { readonly types?: infer T } }
@@ -514,7 +514,7 @@ type ParseAt<V> = V extends { readonly "~standard": { readonly types?: infer T }
 /**
  * `S` is the schema of `X`, or of the elements of `X` where it's a list.
  *
- * A `parse` is read in one piece and no further. It can be a schema from
+ * An argument's parser is read in one piece and no further. It can be a schema from
  * another library, which is a large object that has nothing to check.
  */
 type Tree<X, Inherited, S> = {

@@ -13,7 +13,7 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { choice, choicesOf } from "./schemas.js";
+import { choice, choicesOf, completionsOf, isParser } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
 import { nextHelpNames } from "./help.js";
 import { readNextOrWait } from "./parse.js";
@@ -26,7 +26,7 @@ export const SHELLS = ["bash", "zsh", "fish", "powershell", "nushell"] as const;
 export type Shell = (typeof SHELLS)[number];
 
 /** Accepts a supported shell. Help lists the shells and completion offers them. */
-const shellSchema = choice(SHELLS);
+const shellSchema = choice(...SHELLS);
 
 const firstLine = (description: string | undefined): string =>
   description ? description.split("\n", 1)[0].trim() : "";
@@ -137,15 +137,17 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
     candidates.push(...(await enumeratePaths(partial, arg.template)));
   }
 
-  // An argument that says nothing about completion offers the values its
-  // `parse` accepts, if the schema lists them.
+  // An argument that says nothing about completion offers what its parser
+  // accepts. A built-in parser gives what the word could become, and
+  // another schema gives the values it lists.
   if (
     arg.parse !== undefined &&
     arg.suggestions === undefined &&
     arg.generators === undefined &&
     arg.template === undefined
   ) {
-    for (const value of choicesOf(arg) ?? []) {
+    const values = isParser(arg.parse) ? completionsOf(arg.parse, partial) : choicesOf(arg);
+    for (const value of values ?? []) {
       candidates.push({ value });
     }
   }

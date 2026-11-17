@@ -12,10 +12,17 @@ test("public API stays minimal and namespace-friendly", () => {
     "default",
     "help",
     "helpCommand",
+    "int",
+    "many",
     "number",
+    "optional",
     "printError",
     "run",
+    "sepBy",
+    "seq",
     "spec",
+    "text",
+    "uint",
   ]);
   expect(Object.keys(CLI.default).sort()).toEqual(
     Object.keys(CLI)
@@ -59,6 +66,8 @@ test("the entrypoints export these types", async () => {
     "NonEmptyArray",
     "Option",
     "OptionArgs",
+    "Parser",
+    "Part",
     "RunOptions",
     "Shell",
     "SingleOrArray",

@@ -96,7 +96,7 @@ export class CommandScope {
    */
   hasRequiredOption = false;
   /**
-   * Whether an option of a command on the path has a `parse`. Like
+   * Whether an option of a command on the path has a parser. Like
    * {@link hasRequiredOption}, it stays true once it is.
    */
   hasParse = false;

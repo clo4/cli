@@ -30,6 +30,18 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Form**: How one name of an option is written with its value at one command: as a separate token, after a separator, or glued on.
 
-**Parse**: An argument's `parse`: a Standard Schema that turns the string the user typed into the value the action receives, or rejects it. Written as "a `parse`" or "the argument's `parse`". "The parser" always means the command-line parser. _Avoid_: value parser, validator, coercion
+**Argument's parser**: What an argument's `parse` property holds. It turns the string the user typed into the value the action receives, or rejects it. It's a built-in parser or a Standard Schema from another library. Written as "the argument's parser" or "its parser". _Avoid_: `parse` as a noun, validator, coercion
+
+**Built-in parser**: A `Parser` object, which is what `number`, `choice`, `seq` and the other parser functions return.
+
+**Command-line parser**: The part of the library that reads the command line against the spec. "The parser" on its own means this one. Where a sentence mentions an argument's parser too, it's written out in full.
+
+**Part**: A piece of a parser: a string that must appear exactly as written, or another parser.
+
+**Atom**: The kind of a parser, such as a number, a choice or a `seq`. It reads the value and describes the parser.
+
+**Pattern**: A parser as help shows it, like `<integer>(s|m|h|d)`.
+
+**Label**: A name that `as` gives a parser. A pattern shows it in the parser's place, like `<width>x<height>`.
 
 **Spec check**: An assertion from `./testing` that a spec is one the parser reads the way help and completion present it.

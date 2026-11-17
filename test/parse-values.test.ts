@@ -97,7 +97,7 @@ CLI.spec({
     {
       name: "--mode",
       description: "x",
-      args: { name: "m", default: "debug", parse: CLI.choice(["debug", "release"]) },
+      args: { name: "m", default: "debug", parse: CLI.choice("debug", "release") },
     },
     {
       name: "--size",
@@ -166,12 +166,12 @@ CLI.spec({
   ],
 });
 
-// An option made by a function typed `Option` doesn't say what its parse
+// An option made by a function typed `Option` doesn't say what its parser
 // gives, so its value is read as a string unless the action says otherwise.
 function retries(): CLI.Option {
   return { name: "--retries", description: "x", args: { name: "n", parse: port } };
 }
-// One written `as const` keeps the type of its parse.
+// One written `as const` keeps the type of its parser.
 const level = { name: "--level", description: "x", args: { name: "n", parse: port } } as const;
 CLI.command({
   name: "made",
@@ -256,7 +256,7 @@ const serve = CLI.spec({
     {
       name: "--mode",
       description: "Build mode",
-      args: { name: "mode", parse: CLI.choice(["debug", "release"]) },
+      args: { name: "mode", parse: CLI.choice("debug", "release") },
     },
   ],
 });
@@ -289,7 +289,7 @@ test("a parse turns each value into what the action receives", async () => {
   expect(init!.options.options.get("--toggle")).toEqual([true]);
 });
 
-test("a default goes through its argument's parse", async () => {
+test("a default goes through its argument's parser", async () => {
   const { init } = await received(serve, ["80", "--token", "abc", "--inspect"]);
   // The default of an optional argument, for a bare option.
   expect(init!.options.get("--inspect")).toBe(9229);
@@ -331,7 +331,7 @@ test("a rejected value close to one the schema lists gets a suggestion", async (
 test("a rejected default gets no suggestion, because the user didn't type it", async () => {
   const spec = CLI.spec({
     name: "demo",
-    args: { name: "mode", isOptional: true, default: "relese", parse: CLI.choice(["debug", "release"]) },
+    args: { name: "mode", isOptional: true, default: "relese", parse: CLI.choice("debug", "release") },
     action() {},
   });
   const { code, stderr } = await received(spec, []);
@@ -552,7 +552,7 @@ test("spec check: every number range has a number in it", async () => {
   await expect(
     runSpecCheck("assertRangesAreNotEmpty", withRange(CLI.number({ min: 10, max: 1 }))),
   ).rejects.toThrow(
-    "Option `demo --n` (index 0), argument n has a `parse` that rejects every value, since it asks for a number from 10 to 1",
+    "Option `demo --n` (index 0), argument n has a parser that rejects every value, since it asks for a number from 10 to 1",
   );
   // A range of integers with no whole number in it.
   await expect(
@@ -572,7 +572,21 @@ test("number: reads decimal digits and nothing else", () => {
   expect(read(any, "-1.5")).toBe(-1.5);
   expect(read(any, ".5")).toBe(0.5);
   expect(read(any, "007")).toBe(7);
-  for (const value of ["", " 42 ", "0x1F", "1e3", "+7", "abc", "Infinity", "1,000", "--1", "."]) {
+  for (const value of [
+    "",
+    " 42 ",
+    "0x1F",
+    "1e3",
+    "+7",
+    "abc",
+    "Infinity",
+    "1,000",
+    "--1",
+    ".",
+    "3.",
+    "-3.",
+    "-.",
+  ]) {
     expect(read(any, value), value).toBe("expected a number");
   }
 });
@@ -580,10 +594,13 @@ test("number: reads decimal digits and nothing else", () => {
 test("number: rejects digits that read as infinity", () => {
   const huge = "9".repeat(400);
   expect(Number(huge)).toBe(Infinity);
-  expect(read(CLI.number(), huge)).toBe("expected a number");
-  expect(read(CLI.number(), `-${huge}`)).toBe("expected a number");
-  expect(read(CLI.number({ min: 0 }), huge)).toBe("expected a number, at least 0");
-  expect(read(CLI.number({ max: 0 }), `-${huge}`)).toBe("expected a number, at most 0");
+  expect(read(CLI.number(), huge)).toBe("too large to be a number");
+  expect(read(CLI.number(), `-${huge}`)).toBe("too small to be a number");
+  expect(read(CLI.number({ min: 0 }), huge)).toBe("too large to be a number");
+  expect(read(CLI.number({ max: 0 }), `-${huge}`)).toBe("too small to be a number");
+  // A range the value is outside says the range.
+  expect(read(CLI.number({ max: 10 }), huge)).toBe("expected a number, at most 10");
+  expect(read(CLI.number({ min: 0 }), `-${huge}`)).toBe("expected a number, at least 0");
   expect(read(CLI.number(), "1" + "0".repeat(308))).toBe(1e308);
 });
 
@@ -593,7 +610,10 @@ test("number: int accepts whole numbers only", () => {
   expect(read(whole, "1.0")).toBe("expected an integer");
   expect(read(whole, "1.5")).toBe("expected an integer");
   // Too large to be the number that was typed.
-  expect(read(whole, "9007199254740993")).toBe("expected an integer");
+  expect(read(whole, "9007199254740993")).toBe("too large, the limit is 9007199254740991");
+  expect(read(whole, "-9007199254740993")).toBe("too small, the limit is -9007199254740991");
+  expect(read(whole, "9007199254740991")).toBe(9007199254740991);
+  expect(read(port, "9007199254740993")).toBe("expected an integer from 1 to 65535");
 });
 
 test("number: min and max are included, and the message says the range", () => {
@@ -607,7 +627,7 @@ test("number: min and max are included, and the message says the range", () => {
 });
 
 test("choice: accepts one of its values, as written", () => {
-  const mode = CLI.choice(["debug", "release", "very loud", "a|b", ""]);
+  const mode = CLI.choice("debug", "release", "very loud", "a|b", "");
   expect(read(mode, "release")).toBe("release");
   expect(read(mode, "very loud")).toBe("very loud");
   expect(read(mode, "")).toBe("");
@@ -621,7 +641,7 @@ const described = CLI.spec({
   args: [
     { name: "count", description: "How many to make", parse: CLI.number({ min: 1, max: 10, int: true }) },
     { name: "scale", isOptional: true, default: "1", parse: CLI.number({ min: 0 }) },
-    { name: "kind", isOptional: true, parse: CLI.choice(["a", "b", "c"]) },
+    { name: "kind", isOptional: true, parse: CLI.choice("a", "b", "c") },
   ],
   options: [
     {
@@ -632,12 +652,12 @@ const described = CLI.spec({
     {
       name: "--mode",
       description: "Build mode",
-      args: { name: "mode", parse: CLI.choice(["debug", "release"]) },
+      args: { name: "mode", parse: CLI.choice("debug", "release") },
     },
     {
       name: "--level",
       description: "Log level",
-      args: { name: "name", parse: CLI.choice(["quiet", "very loud"]) },
+      args: { name: "name", parse: CLI.choice("quiet", "very loud") },
     },
     { name: "--ratio", args: { name: "n", parse: CLI.number() } },
     {
@@ -687,7 +707,7 @@ test("help carries a long list of values on to the next line", async () => {
       {
         name: "--region",
         description: "Where to deploy",
-        args: { name: "region", default: "us-east-1", parse: CLI.choice(regions) },
+        args: { name: "region", default: "us-east-1", parse: CLI.choice(...regions) },
       },
     ],
   });
@@ -737,8 +757,8 @@ test("help says which bounds a range leaves out", async () => {
   const { stdout } = await captureConsole(() => run(spec, ["-h"]));
   expect(stdout).toContain("--a <n>     A (number, more than 0)\n");
   expect(stdout).toContain("--b <n>     B (number, more than 0 and less than 1)\n");
-  expect(stdout).toContain("--c <n>     C (integer, at least 0 and less than 10)\n");
-  expect(stdout).toContain("--d <n>     D (integer, at most 5)\n");
+  expect(stdout).toContain("--c <n>     C (int, at least 0 and less than 10)\n");
+  expect(stdout).toContain("--d <n>     D (int, at most 5)\n");
 });
 
 test("a rejected value of an option with several arguments says which argument", () => {
@@ -764,10 +784,10 @@ test("help shows what a value can be, before its default", async () => {
   const { stdout } = await captureConsole(() =>
     run({ ...described, options: [CLI.help, ...described.options!] }, ["-h"]),
   );
-  expect(stdout).toContain("  count  How many to make (integer from 1 to 10)\n");
+  expect(stdout).toContain("  count  How many to make (int from 1 to 10)\n");
   expect(stdout).toContain("  scale  (number, at least 0, default: 1)\n");
   expect(stdout).toContain("  kind   (a | b | c)\n");
-  expect(stdout).toContain("--port <port>   Listen on this port (integer from 1 to 65535, default: 8080)\n");
+  expect(stdout).toContain("--port <port>   Listen on this port (int from 1 to 65535, default: 8080)\n");
   expect(stdout).toContain("--mode <mode>   Build mode (debug | release)\n");
   expect(stdout).toContain('--level <name>  Log level (quiet | "very loud")\n');
   expect(stdout).toContain("--ratio <n>     (number)\n");
@@ -802,12 +822,12 @@ test("completion offers the values a schema lists, and never runs a parse", asyn
   const spec = CLI.spec({
     name: "demo",
     options: [
-      { name: "--mode", description: "x", args: { name: "mode", parse: CLI.choice(["debug", "release"]) } },
+      { name: "--mode", description: "x", args: { name: "mode", parse: CLI.choice("debug", "release") } },
       {
         name: "--level",
         description: "x",
         // The argument's own suggestions win.
-        args: { name: "level", suggestions: ["low"], parse: CLI.choice(["low", "high"]) },
+        args: { name: "level", suggestions: ["low"], parse: CLI.choice("low", "high") },
       },
       { name: "--word", description: "x", args: { name: "word", parse: counting } },
     ],
@@ -818,7 +838,7 @@ test("completion offers the values a schema lists, and never runs a parse", asyn
   expect(calls).toBe(0);
 });
 
-test("spec check: every default passes its argument's parse", async () => {
+test("spec check: every default passes its argument's parser", async () => {
   await runSpecCheck("assertDefaultsPassTheirParse", serve);
   await expect(
     runSpecCheck(
@@ -831,7 +851,7 @@ test("spec check: every default passes its argument's parse", async () => {
       }),
     ),
   ).rejects.toThrow(
-    'Option `demo --listen` (index 0), argument port has the default "http", which its `parse` rejects: expected an integer from 1 to 65535',
+    'Option `demo --listen` (index 0), argument port has the default "http", which its parser rejects: expected an integer from 1 to 65535',
   );
   await expect(
     runSpecCheck(
@@ -851,5 +871,5 @@ test("spec check: every default passes its argument's parse", async () => {
         },
       }),
     ),
-  ).rejects.toThrow('In `demo`, argument word has the default "no", which its `parse` rejects: say yes');
+  ).rejects.toThrow('In `demo`, argument word has the default "no", which its parser rejects: say yes');
 });

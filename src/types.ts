@@ -3,7 +3,7 @@
  *
  * The schema is intentionally small: define commands, positional args, options,
  * and actions. A value from argv is a string, unless its argument has a
- * `parse` that turns it into something else.
+ * parser that turns it into something else.
  *
  * @module
  */
@@ -43,7 +43,7 @@ export type CommandPath = readonly [Spec, ...Subcommand[]];
  * Access parsed options.
  *
  * `spec` and `command` give an action the type of each value. Anywhere else
- * a value is read as a string. For an option whose `parse` gives something
+ * a value is read as a string. For an option whose parser gives something
  * else, say what when reading it: `options.get<number>("--port")`.
  *
  * `Value` is what a value is when the reader doesn't say. A function that
@@ -94,7 +94,7 @@ export interface OptionArgs<Value = string> {
  * without satisfying required inputs.
  *
  * `Value` is what a value is. It's a string, unless the action is in a `spec`
- * or `command` whose `parse` gives something else. An action written as
+ * or `command` whose parser gives something else. An action written as
  * `(init: ActionInit<unknown>) => ...` fits any command.
  */
 export interface ActionInit<Value = string> {
@@ -327,7 +327,7 @@ export interface Option {
    *
    * The last supplied option with an action replaces the command action.
    * It bypasses positional counts, required options and option relationships,
-   * and no `parse` runs, so it reads every value as the string that was typed.
+   * and no argument's parser runs, so it reads every value as the string that was typed.
    * Unknown options and malformed option values still fail parsing.
    */
   action?: Action;
@@ -382,7 +382,7 @@ export interface Generator {
 
 /**
  * A positional argument or an argument of an option. A value is a string,
- * unless `parse` turns it into something else.
+ * unless the argument's parser turns it into something else.
  *
  * Use an object for one argument and an array for two or more. Required
  * arguments precede optional arguments. A variadic argument must be last.
@@ -421,23 +421,26 @@ export interface Arg {
    * argument without a default. A variadic default contributes one value.
    * Defaults do not count as supplied options for requirements or relationships.
    * Help shows an option's defaults after its description. A default goes
-   * through `parse` like a value the user typed.
+   * through the argument's parser like a value the user typed.
    */
   default?: string;
 
   /**
-   * Turn the value into what the action receives, or reject it, with a
-   * [Standard Schema](https://standardschema.dev): {@link number},
-   * {@link choice}, or a schema from Zod, Valibot, ArkType or another
-   * library that follows the specification. The schema can be async.
+   * Turn the value into what the action receives, or reject it. Use
+   * {@link number}, {@link choice} or a parser made of others with
+   * {@link seq}, or a [Standard Schema](https://standardschema.dev)
+   * from Zod, Valibot, ArkType or another library that follows the
+   * specification. A schema can be async.
    *
-   * Every `parse` on the command line runs before the action, and every
+   * Every argument's parser runs before the action, and every
    * rejected value is reported together, so the user can fix them in one go.
-   * The schema's issues say what's wrong with a value.
+   * The issues say what's wrong with a value.
    *
    * Each value of a variadic argument or a repeatable option is parsed on
-   * its own. A schema that can describe itself as JSON Schema also gives
-   * help the type and range to show, and completion the values to offer.
+   * its own. Help shows what a built-in parser accepts, and completion
+   * offers the text that can come next in a value. A schema that can
+   * describe itself as JSON Schema gives help the type and range to show,
+   * and completion the values to offer.
    */
   parse?: StandardSchemaV1;
 

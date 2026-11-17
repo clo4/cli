@@ -798,7 +798,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "A command with a loadSpec sets only what its parent reads, and loads a command that agrees",
     "Required arguments don't follow optional arguments",
     "The parser can use every default",
-    "Every default passes its argument's parse",
+    "Every default passes its argument's parser",
     "Every number range has a number in it",
     "Repeatable options that are numbers are integers greater than 1",
     "Options have locally unique names",

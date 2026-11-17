@@ -563,11 +563,11 @@ const specChecks: readonly SpecCheck[] = [
   },
   {
     /*
-     * A default goes through its argument's `parse` when the parser uses it,
-     * so one that the `parse` rejects would fail every command line that
+     * A default goes through its argument's parser when the command-line parser uses it,
+     * so one that its parser rejects would fail every command line that
      * leaves the argument out.
      */
-    sentence: "Every default passes its argument's parse",
+    sentence: "Every default passes its argument's parser",
     name: "assertDefaultsPassTheirParse",
     async check(walk) {
       const defaults: { arg: Arg; where: string }[] = [];
@@ -591,7 +591,7 @@ const specChecks: readonly SpecCheck[] = [
         const result = await apply(arg.parse, arg.default);
         assert(
           !(result instanceof Rejected),
-          `${where} has the default ${JSON.stringify(arg.default)}, which its \`parse\` rejects${
+          `${where} has the default ${JSON.stringify(arg.default)}, which its parser rejects${
             result instanceof Rejected && result.reason !== "" ? `: ${result.reason}` : ""
           }`,
         );
@@ -627,7 +627,7 @@ const specChecks: readonly SpecCheck[] = [
           (schema.type === "number" && least === greatest && (bounds.minExclusive || bounds.maxExclusive));
         assert(
           !hasNone,
-          `${where} has a \`parse\` that rejects every value, since it asks for ${schema.type === "integer" ? "an" : "a"} ${describeRange(schema.type, bounds)}`,
+          `${where} has a parser that rejects every value, since it asks for ${schema.type === "integer" ? "an" : "a"} ${describeRange(schema.type, bounds)}`,
         );
       };
       walk.forEachCommand(({ command, path }) => {

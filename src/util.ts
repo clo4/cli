@@ -131,7 +131,7 @@ export function addDefaults(values: string[], args: Arg | readonly Arg[] | undef
   }
 }
 
-/** Whether one of the arguments has a `parse`. */
+/** Whether one of the arguments has a parser. */
 export function hasParse(args: Arg | readonly Arg[] | undefined): boolean {
   if (args === undefined) {
     return false;
@@ -157,7 +157,7 @@ export function argAt(args: readonly Arg[], index: number): Arg | undefined {
 }
 
 /**
- * The message for a value that an action, a `loadSpec` or a `parse` threw. A
+ * The message for a value that an action, a `loadSpec` or an argument's parser threw. A
  * value that isn't an Error is shown as JSON where it can be, since `String`
  * turns an object into "[object Object]".
  */

@@ -27,10 +27,13 @@ export { completion } from "./completion.js";
 export type { Shell } from "./completion.js";
 export { help, helpCommand } from "./help.js";
 export { printError, run } from "./run.js";
+export { int, many, optional, sepBy, seq, text, uint } from "./combinators.js";
 export { choice, number } from "./schemas.js";
+export type { Parser, Part } from "./schemas.js";
 export type { RunOptions } from "./run.js";
 export { command, spec } from "./spec.js";
 
+import { int, many, optional, sepBy, seq, text, uint } from "./combinators.js";
 import { completion } from "./completion.js";
 import { help, helpCommand } from "./help.js";
 import { printError, run } from "./run.js";
@@ -43,8 +46,15 @@ export default {
   completion,
   help,
   helpCommand,
+  int,
+  many,
   number,
+  optional,
   printError,
   run,
+  sepBy,
+  seq,
   spec,
+  text,
+  uint,
 };

@@ -89,7 +89,7 @@ export class MissingRequiredOption extends ParseError {
   }
 }
 
-/** A value that its argument's `parse` rejected. `reason` is what the `parse` said about it. */
+/** A value that its argument's parser rejected. `reason` is what that parser said about it. */
 export class InvalidValue extends ParseError {
   readonly value: string;
   readonly reason: string;
@@ -97,7 +97,7 @@ export class InvalidValue extends ParseError {
    * `target` is what the value is for, as the user would write it: an option
    * name like `--port`, or `<port>` for a positional argument. `isDefault` is
    * for a default from the spec, which the user didn't type. `choices` are
-   * the values the `parse` lists, and `run` suggests the closest one.
+   * the values that parser lists, and `run` suggests the closest one.
    */
   constructor(
     value: string,
@@ -123,7 +123,7 @@ export class InvalidValue extends ParseError {
 /**
  * Every problem with a command line that has more than one. The parser stops
  * at a token it can't read, and reports that alone. Once it has read the
- * whole line, what's missing and what a `parse` rejected don't depend on each
+ * whole line, what's missing and what an argument's parser rejected don't depend on each
  * other, so it reports all of it for the user to fix in one go.
  *
  * `run` prints each message on a line of its own, then the help once.

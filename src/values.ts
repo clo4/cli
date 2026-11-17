@@ -1,7 +1,8 @@
 /**
- * Runs each `parse` on a command line the parser has accepted. It's a module
- * of its own, and the parser only calls it for a command line that has a
- * `parse` to run, so a spec without one never compiles it.
+ * Runs each argument's parser on a command line the command-line parser has
+ * accepted. It's a module of its own, and the command-line parser only calls
+ * it for a command line with an argument's parser to run, so a spec without
+ * one never compiles it.
  *
  * @module
  */
@@ -12,7 +13,7 @@ import { choicesOf } from "./schemas.js";
 import type { ErrorContext, ParseError } from "./errors.js";
 import { addDefaults, argAt, asArray, describeThrown } from "./util.js";
 
-/** The values one use of an option took, for an option with a `parse`. */
+/** The values one use of an option took, for an option with a parser. */
 export interface ParsedUse {
   option: Option;
   /** The name the option was used by. */
@@ -49,7 +50,7 @@ export interface ParsedValues {
   defaults: Map<Option, unknown[]> | null;
 }
 
-/** A value a `parse` rejected, with what it said about the value. */
+/** A value its parser rejected, with what that parser said about the value. */
 export class Rejected {
   constructor(readonly reason: string) {}
 }
@@ -133,10 +134,10 @@ function addJobs(
 }
 
 /**
- * Run every `parse` for the values in `unparsed`, and replace each value in
+ * Run each argument's parser for the values in `unparsed`, and replace each value in
  * `unparsed.options` with what it parsed to. Throws every problem together,
- * the ones the parser found and each value a `parse` rejected. Gives a
- * promise only if a `parse` did.
+ * the ones the command-line parser found and each value its parser rejected.
+ * Gives a promise only if one of those parsers did.
  */
 export function parseValues(unparsed: Unparsed): ParsedValues | Promise<ParsedValues> {
   const jobs: Job[] = [];
@@ -201,7 +202,7 @@ export function parseValues(unparsed: Unparsed): ParsedValues | Promise<ParsedVa
   const finish = (): ParsedValues => {
     let problems = unparsed.problems;
     // Positional arguments first, then options in the order used, whichever
-    // `parse` settled first.
+    // parser settled first.
     for (let i = 0; i < jobs.length; i++) {
       const reason = rejected[i];
       if (reason) {

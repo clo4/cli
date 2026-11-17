@@ -18,7 +18,7 @@ import { parseValues } from "./values.js";
 import type { ParsedUse, ParsedValues } from "./values.js";
 
 export interface ParseResult {
-  /** The positional arguments: each one a string, or what its `parse` gave. */
+  /** The positional arguments: each one a string, or what its parser gave. */
   args: unknown[];
   argSeparatorIndex: number;
   /** The options used, as the action receives them. */
@@ -256,7 +256,7 @@ function checkRequiredOptions(
  * The options used, as an action asks about them. `options` has every name of
  * each option used, and `scope` is for the selected command, which decides
  * the option each unused name refers to. `defaults` is what the defaults of
- * the unused options parsed to, if a `parse` ran. Each function is a property
+ * the unused options parsed to, if an argument's parser ran. Each function is a property
  * of the object, so an action can take one off it and call it alone. A cold
  * parse only makes the object, and each function compiles the first time it's
  * called.
@@ -347,7 +347,7 @@ class Scanner {
   // The last option action used.
   private optionAction: Action | undefined = undefined;
   private readonly args: string[] = [];
-  // The values of each name used. They're strings until `finish` runs each `parse`.
+  // The values of each name used. They're strings until `finish` runs each argument's parser.
   private readonly options: Map<string, unknown[]> = new Map();
   private readonly seenOptions: Option[] = [];
   private argSeparatorIndex = -1;
@@ -404,7 +404,7 @@ class Scanner {
   // action like --help allows it.
   private tooManyArgs: (() => ParseError) | null = null;
 
-  // Each use of an option with a `parse`, or null until one is used.
+  // Each use of an option whose argument has a parser, or null until one is used.
   private uses: ParsedUse[] | null = null;
 
   // The uses of each repeatable option, keyed by `optionKey`, or null until
@@ -498,7 +498,7 @@ class Scanner {
   }
 
   /**
-   * Keep the values the open option just finished taking, for its `parse`.
+   * Keep the values the open option just finished taking, for its parser.
    * It's a method of its own so that a cold parse of a line without such an
    * option doesn't compile it.
    */
@@ -687,11 +687,11 @@ class Scanner {
 
   /**
    * Throw everything that's wrong with the finished command line, then run
-   * each `parse`. Returns what the line was parsed as, or a promise of it if
-   * a `parse` gave one. Only call this when there's no {@link problem}.
+   * each argument's parser. Returns what the line was parsed as, or a promise
+   * of it if one of them gave a promise. Only call this when there's no {@link problem}.
    *
    * The checks here don't depend on each other, so every one that fails is
-   * reported, with each value a `parse` rejected.
+   * reported, with each value its parser rejected.
    */
   finish(): ParseResult | Promise<ParseResult> {
     // An option with an action, like --help, works however the rest of the
@@ -727,7 +727,7 @@ class Scanner {
     if (!command.requiresSubcommand && given >= this.scope.argsMin && given < this.scope.argsMax) {
       addDefaults(this.args, command.args, given);
     }
-    // No `parse` runs for an option action, which reads what was typed.
+    // No argument's parser runs for an option action, which reads what was typed.
     if (!skipsChecks && (this.uses || this.scope.hasParse || hasParse(command.args))) {
       return this.parsed(problems, given);
     }
@@ -738,11 +738,11 @@ class Scanner {
   }
 
   /**
-   * {@link finish}, for a command line with a `parse` to run. It's a method
+   * {@link finish}, for a command line with an argument's parser to run. It's a method
    * of its own so that a cold parse without one doesn't compile it.
    */
   private parsed(problems: ParseError[] | null, typedArgs: number): ParseResult | Promise<ParseResult> {
-    // The defaults of an option that wasn't used go through its `parse` too,
+    // The defaults of an option that wasn't used go through its parser too,
     // since an action can read them.
     const unused: Option[] = [];
     if (this.scope.hasParse) {
@@ -1004,7 +1004,7 @@ export function tokenReader(spec: Spec): TokenReader {
 }
 
 /**
- * Throw if `value` had to wait for a `loadSpec` or a `parse` that returned a
+ * Throw if `value` had to wait for a `loadSpec` or an argument's parser that returned a
  * promise.
  * {@link parse} and {@link readNext} use this to stay synchronous.
  */
@@ -1115,7 +1115,7 @@ export function readHelpNames(path: CommandPath, names: readonly string[]): Help
  * This returns a `ParseResult`, which contains the array of
  * subcommands used, the provided options, the arguments, and the action to
  * run. It returns a promise of one only if a command on the line had a
- * `loadSpec` that returned a promise, or a `parse` returned one.
+ * `loadSpec` that returned a promise, or an argument's parser returned one.
  *
  * If parsing fails, this function throws, or the promise rejects. `s` and
  * `from` are for carrying on after a wait, with the scanner that read the

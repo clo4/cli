@@ -156,7 +156,7 @@ test("zod and arktype: help shows the values a schema lists", async () => {
 
 test("zod: help shows the range of a coerced number", async () => {
   const { stdout } = await captureConsole(() => run(spec, ["zod", "--help"]));
-  expect(stdout).toMatch(/--port <port> +Port \(integer from 1 to 65535\)\n/);
+  expect(stdout).toMatch(/--port <port> +Port \(int from 1 to 65535\)\n/);
 });
 
 test("arktype: a schema that parses a string describes the string, so help shows no range", async () => {

@@ -29,9 +29,9 @@ export interface RunOptions {
  * Sync and async actions are supported. Returning nothing means code 0.
  * Numeric return values are limited to 0–255.
  *
- * Every `parse` on the command line runs before the action. Parse errors print
+ * Every argument's parser runs before the action. Parse errors print
  * a message and usage to stderr, with code 1. A command line with several
- * problems, like a missing option and a value its `parse` rejected, prints a
+ * problems, like a missing option and a value its parser rejected, prints a
  * message for each. Errors thrown by actions or loaders print their message
  * without a stack trace, with code 1.
  *
@@ -62,7 +62,7 @@ function exitCodeOf(spec: Spec, input: readonly string[]): Promise<number> {
   } catch (error: unknown) {
     return Promise.resolve(reportParseError(error));
   }
-  // Only a `loadSpec` or a `parse` that returned a promise makes the parse wait.
+  // Only a `loadSpec` or a parser that returned a promise makes parsing wait.
   return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
 }
 
