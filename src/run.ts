@@ -1,7 +1,7 @@
 import type { ActionInit, Spec } from "./types.js";
 import { getHelp, printUsageError } from "./help.js";
 import { ParseError } from "./errors.js";
-import { parseOrWait } from "./parse.js";
+import { parse } from "./parse.js";
 import { describeThrown, printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
 
@@ -42,44 +42,25 @@ export interface RunOptions {
  * @param options - Command-line input and process exit-code behavior.
  * @returns The selected action's exit code, or 1 on a reported error.
  */
-export function run(spec: Spec, options?: RunOptions): Promise<number> {
-  // This isn't an async function, because one costs more to compile on a
-  // cold start. Anything thrown here still becomes a rejected promise, as it
-  // would in an async function.
-  try {
-    const code = exitCodeOf(spec, options?.argv ?? defaultArgs());
-    return options?.setExitCode === false ? code : code.then(setExitCode);
-  } catch (error) {
-    return Promise.reject(error);
-  }
-}
-
-/** The exit code of running `input` against `spec`. */
-function exitCodeOf(spec: Spec, input: readonly string[]): Promise<number> {
-  let result: ParseResult | Promise<ParseResult>;
-  try {
-    result = parseOrWait(input, spec);
-  } catch (error: unknown) {
-    return Promise.resolve(reportParseError(error));
-  }
-  // Only a `loadSpec` or a parser that returned a promise makes parsing wait.
-  return result instanceof Promise ? result.then(runAction, reportParseError) : runAction(result);
-}
-
-function setExitCode(code: number): number {
-  const maybeProcess = globalThis as typeof globalThis & { process?: { exitCode?: number } };
-  if (maybeProcess.process) {
-    maybeProcess.process.exitCode = code;
+export async function run(spec: Spec, options?: RunOptions): Promise<number> {
+  const code = await exitCodeOf(spec, options?.argv ?? defaultArgs());
+  if (options?.setExitCode !== false) {
+    const maybeProcess = globalThis as typeof globalThis & { process?: { exitCode?: number } };
+    if (maybeProcess.process) {
+      maybeProcess.process.exitCode = code;
+    }
   }
   return code;
 }
 
-/**
- * Run the action `result` picked. It's a function of its own so that a usage
- * error, which runs no action, doesn't compile it.
- */
-function runAction(result: ParseResult): Promise<number> {
-  const action = result.action;
+/** The exit code of running `argv` against `spec`. */
+async function exitCodeOf(spec: Spec, argv: readonly string[]): Promise<number> {
+  let result: ParseResult;
+  try {
+    result = await parse(argv, spec);
+  } catch (error) {
+    return reportParseError(error);
+  }
   const actionInit: ActionInit<unknown> = {
     help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
     args: result.args,
@@ -87,29 +68,13 @@ function runAction(result: ParseResult): Promise<number> {
     argSeparatorIndex: result.argSeparatorIndex,
     options: result.options,
   };
-
-  let actionResult: ReturnType<typeof action>;
-  try {
-    // The spec's own types say what each value is. See `ActionInit`.
-    actionResult = action(actionInit as ActionInit);
-  } catch (error) {
-    return Promise.resolve(reportThrown(error));
-  }
-  return typeof actionResult === "object" ? settle(actionResult) : Promise.resolve(exitStatus(actionResult));
-}
-
-/** Wait for the value an action returned as an object, usually a promise. */
-async function settle(pending: unknown): Promise<number> {
   let exitCode: number | void;
   try {
-    exitCode = (await pending) as number | void;
+    // The spec's own types say what each value is. See `ActionInit`.
+    exitCode = await result.action(actionInit as ActionInit);
   } catch (error) {
     return reportThrown(error);
   }
-  return exitStatus(exitCode);
-}
-
-function exitStatus(exitCode: number | void): number {
   return Math.min(Math.max(exitCode ?? 0, 0), 255);
 }
 

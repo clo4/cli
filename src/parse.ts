@@ -328,10 +328,10 @@ export interface HelpNames {
 /** Reads a command line one token at a time. See {@link tokenReader}. */
 export interface TokenReader {
   /**
-   * Read the next token of the line, and say what it was read as. Throws if
-   * the token before it entered a command whose `loadSpec` returned a promise.
+   * Read the next token of the line, and say what it was read as, once the
+   * command the token before it entered has loaded.
    */
-  read(token: string): TokenReading;
+  read(token: string): Promise<TokenReading>;
 }
 
 /**
@@ -387,9 +387,8 @@ class Scanner {
 
   /**
    * The load of the command just entered, if its `loadSpec` returned a
-   * promise. Nothing can be read until it settles. Whoever reads the next
-   * token calls {@link afterLoad} to wait for it, or throws if it can't
-   * wait, as {@link tokenReader} does.
+   * promise. Nothing can be read until it settles, so whoever reads the next
+   * token waits for it first. It's null again once it settles.
    */
   pending: Promise<void> | null = null;
 
@@ -420,19 +419,6 @@ class Scanner {
   }
 
   /**
-   * Wait for the command just entered to load, then `resume`. Returns null
-   * if it isn't loading, and the caller carries on as it was.
-   */
-  afterLoad<T>(resume: () => T | Promise<T>): Promise<T> | null {
-    const pending = this.pending;
-    if (!pending) {
-      return null;
-    }
-    this.pending = null;
-    return pending.then(resume);
-  }
-
-  /**
    * Put the command the scope is at on the path once `loading` settles, in
    * place of the command whose `loadSpec` is loading it. It's a method of its
    * own so that a cold parse that waits for nothing doesn't compile it.
@@ -440,6 +426,7 @@ class Scanner {
   private placeLoaded(loading: Promise<void>): Promise<void> {
     return loading.then(() => {
       this.path[this.path.length - 1] = this.scope.command as Subcommand;
+      this.pending = null;
     });
   }
 
@@ -741,7 +728,7 @@ class Scanner {
    * {@link finish}, for a command line with an argument's parser to run. It's a method
    * of its own so that a cold parse without one doesn't compile it.
    */
-  private parsed(problems: ParseError[] | null, typedArgs: number): ParseResult | Promise<ParseResult> {
+  private async parsed(problems: ParseError[] | null, typedArgs: number): Promise<ParseResult> {
     // The defaults of an option that wasn't used go through its parser too,
     // since an action can read them.
     const unused: Option[] = [];
@@ -755,7 +742,7 @@ class Scanner {
         }
       }
     }
-    const values = parseValues({
+    const values = await parseValues({
       context: this.ctx(),
       problems,
       args: this.args,
@@ -765,9 +752,7 @@ class Scanner {
       uses: this.uses,
       unused,
     });
-    return values instanceof Promise
-      ? values.then((settled) => this.result(settled.args, settled.defaults))
-      : this.result(values.args, values.defaults);
+    return this.result(values.args, values.defaults);
   }
 
   private result(args: unknown[], defaults: ParsedValues["defaults"]): ParseResult {
@@ -933,22 +918,19 @@ class Scanner {
   }
 
   /**
-   * See {@link readHelpNamesOrWait}. Call it on a new scanner for the root of
-   * `path`. `from` is for carrying on after a wait, at that name.
+   * See {@link readHelpNames}. Call it on a new scanner for the root of
+   * `path`.
    */
-  readHelpNames(path: CommandPath, names: readonly string[], from = -1): HelpNames | Promise<HelpNames> {
+  async readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
     const help = path[path.length - 1];
-    if (from < 0) {
-      for (let i = 1; i < path.length - 1; i++) {
-        // The parser entered these on the way to help, so they're loaded.
-        this.scope.enterNow(path[i]);
-        this.path.push(this.scope.command as Subcommand);
-      }
-      // The parser read the names as arguments of help, so none is an option.
-      this.optionsAllowed = false;
-      from = 0;
+    for (let i = 1; i < path.length - 1; i++) {
+      // The parser entered these on the way to help, so they're loaded.
+      this.scope.enterNow(path[i]);
+      this.path.push(this.scope.command as Subcommand);
     }
-    for (let i = from; i < names.length; i++) {
+    // The parser read the names as arguments of help, so none is an option.
+    this.optionsAllowed = false;
+    for (let i = 0; i < names.length; i++) {
       const own = this.scope.command.subcommands;
       const reading = this.read(names[i]);
       if (reading.kind !== "subcommand") {
@@ -963,9 +945,8 @@ class Scanner {
         this.path.pop();
         return { path: this.path, error: null, subcommands: [] };
       }
-      const waited = this.afterLoad(() => this.readHelpNames(path, names, i + 1));
-      if (waited) {
-        return waited;
+      if (this.pending) {
+        await this.pending;
       }
     }
     const subcommands = this.scope.subcommands();
@@ -985,18 +966,14 @@ class Scanner {
 
 /**
  * Start reading a command line for `spec`, to say what each token is read as
- * in turn. Reads leniently, like {@link readNext}. It can't wait for a
- * `loadSpec` that returns a promise, so it throws instead of reading a token
- * after such a command.
+ * in turn. Reads leniently, like {@link readNext}.
  */
 export function tokenReader(spec: Spec): TokenReader {
   const s = new Scanner(spec);
   return {
-    read(token) {
-      // It's checked here and not in the scanner, which the parser's bundle
-      // would carry it in.
+    async read(token) {
       if (s.pending) {
-        unlessWaiting(s.pending);
+        await s.pending;
       }
       return s.read(token);
     },
@@ -1004,52 +981,17 @@ export function tokenReader(spec: Spec): TokenReader {
 }
 
 /**
- * Throw if `value` had to wait for a `loadSpec` or an argument's parser that returned a
- * promise.
- * {@link parse} and {@link readNext} use this to stay synchronous.
- */
-function unlessWaiting<T>(value: T | Promise<T>): T {
-  if (value instanceof Promise) {
-    // The caller can't wait for it, so it mustn't become an unhandled rejection.
-    value.catch(() => {});
-    throw new Error(
-      "A loadSpec or a parse returned a promise, so this command line can't be read synchronously",
-    );
-  }
-  return value;
-}
-
-/**
  * Work out what the token after `before` can be, and how the parser reads
  * `partial`: whether it's an option, and if so, whether it has a value
  * attached. Reads leniently, so a line that's wrong at the moment still has
- * an answer. Completion is built on this. The result is a promise only if a
- * command on the line had a load to wait for.
+ * an answer. Completion is built on this.
  */
-export function readNextOrWait(
-  spec: Spec,
-  before: readonly string[],
-  partial: string,
-): NextToken | Promise<NextToken> {
-  return readNextFrom(new Scanner(spec), before, 0, partial);
-}
-
-/** {@link readNextOrWait}, for a spec whose `loadSpec`s return no promises. */
-export function readNext(spec: Spec, before: readonly string[], partial: string): NextToken {
-  return unlessWaiting(readNextOrWait(spec, before, partial));
-}
-
-function readNextFrom(
-  s: Scanner,
-  before: readonly string[],
-  from: number,
-  partial: string,
-): NextToken | Promise<NextToken> {
-  for (let i = from; i < before.length; i++) {
+export async function readNext(spec: Spec, before: readonly string[], partial: string): Promise<NextToken> {
+  const s = new Scanner(spec);
+  for (let i = 0; i < before.length; i++) {
     s.read(before[i]);
-    const waited = s.afterLoad(() => readNextFrom(s, before, i + 1, partial));
-    if (waited) {
-      return waited;
+    if (s.pending) {
+      await s.pending;
     }
   }
   const next = s.next();
@@ -1080,10 +1022,10 @@ function readNextFrom(
  * leniently, like {@link readNext}. To read every token of a line, use
  * {@link tokenReader}, which this is built on.
  */
-export function readToken(spec: Spec, before: readonly string[], token: string): TokenReading {
+export async function readToken(spec: Spec, before: readonly string[], token: string): Promise<TokenReading> {
   const reader = tokenReader(spec);
   for (const earlier of before) {
-    reader.read(earlier);
+    await reader.read(earlier);
   }
   return reader.read(token);
 }
@@ -1094,61 +1036,29 @@ export function readToken(spec: Spec, before: readonly string[], token: string):
  * the parser doesn't read as a subcommand. That name is an error where the
  * parser reports it as an unknown or ambiguous command. Otherwise help ignores
  * it and the names after it, so `cli help completion zsh` prints the help of
- * `completion`. The result is a promise only if one of the commands had a
- * load to wait for.
+ * `completion`.
  */
-export function readHelpNamesOrWait(
-  path: CommandPath,
-  names: readonly string[],
-): HelpNames | Promise<HelpNames> {
+export function readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
   return new Scanner(path[0]).readHelpNames(path, names);
-}
-
-/** {@link readHelpNamesOrWait}, for a spec whose `loadSpec`s return no promises. */
-export function readHelpNames(path: CommandPath, names: readonly string[]): HelpNames {
-  return unlessWaiting(readHelpNamesOrWait(path, names));
 }
 
 /**
  * Parse the input tokens using the given CLI spec.
  *
- * This returns a `ParseResult`, which contains the array of
- * subcommands used, the provided options, the arguments, and the action to
- * run. It returns a promise of one only if a command on the line had a
- * `loadSpec` that returned a promise, or an argument's parser returned one.
- *
- * If parsing fails, this function throws, or the promise rejects. `s` and
- * `from` are for carrying on after a wait, with the scanner that read the
- * tokens before `from`.
+ * This resolves to a `ParseResult`, which contains the array of subcommands
+ * used, the provided options, the arguments, and the action to run. If
+ * parsing fails, the promise rejects.
  */
-export function parseOrWait(
-  input: readonly string[],
-  spec: Spec,
-  s = new Scanner(spec),
-  from = 0,
-): ParseResult | Promise<ParseResult> {
-  for (let i = from; i < input.length; i++) {
+export async function parse(input: readonly string[], spec: Spec): Promise<ParseResult> {
+  const s = new Scanner(spec);
+  for (let i = 0; i < input.length; i++) {
     s.read(input[i]);
-    if (s.problem || s.pending) {
-      return stop(s, input, spec, i + 1);
+    if (s.problem) {
+      throw s.problem();
+    }
+    if (s.pending) {
+      await s.pending;
     }
   }
   return s.finish();
-}
-
-/** {@link parseOrWait}, for a spec whose `loadSpec`s return no promises. */
-export function parse(input: readonly string[], spec: Spec): ParseResult {
-  return unlessWaiting(parseOrWait(input, spec));
-}
-
-/**
- * Throw the scanner's problem, or else wait for the command it's loading and
- * parse the rest of `input` from `next`. It's a function of its own so that a
- * cold parse that never stops doesn't compile it.
- */
-function stop(s: Scanner, input: readonly string[], spec: Spec, next: number): Promise<ParseResult> {
-  if (s.problem) {
-    throw s.problem();
-  }
-  return s.afterLoad(() => parseOrWait(input, spec, s, next))!;
 }

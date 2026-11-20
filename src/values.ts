@@ -67,10 +67,6 @@ interface Job {
   index: number;
 }
 
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof (value as PromiseLike<unknown> | null | undefined)?.then === "function";
-}
-
 function readResult(result: StandardResult<unknown>): unknown {
   if (result.issues) {
     const reasons: string[] = [];
@@ -87,14 +83,13 @@ function reject(thrown: unknown): Rejected {
 }
 
 /**
- * What `schema` gives for `raw`: the value, a `Rejected`, or a promise of
- * either. A schema reports a value it rejects as issues, so one that throws
- * has a bug, and its message is shown as the reason all the same.
+ * What `schema` gives for `raw`: the value, or a `Rejected`. A schema reports
+ * a value it rejects as issues, so one that throws has a bug, and its message
+ * is shown as the reason all the same.
  */
-export function apply(schema: StandardSchemaV1, raw: string): unknown {
+export async function apply(schema: StandardSchemaV1, raw: string): Promise<unknown> {
   try {
-    const result = schema["~standard"].validate(raw);
-    return isThenable(result) ? result.then(readResult, reject) : readResult(result);
+    return readResult(await schema["~standard"].validate(raw));
   } catch (thrown) {
     return reject(thrown);
   }
@@ -135,11 +130,11 @@ function addJobs(
 
 /**
  * Run each argument's parser for the values in `unparsed`, and replace each value in
- * `unparsed.options` with what it parsed to. Throws every problem together,
- * the ones the command-line parser found and each value its parser rejected.
- * Gives a promise only if one of those parsers did.
+ * `unparsed.options` with what it parsed to. Rejects with every problem
+ * together, the ones the command-line parser found and each value its parser
+ * rejected.
  */
-export function parseValues(unparsed: Unparsed): ParsedValues | Promise<ParsedValues> {
+export async function parseValues(unparsed: Unparsed): Promise<ParsedValues> {
   const jobs: Job[] = [];
   const args: unknown[] = unparsed.args.slice();
   addJobs(jobs, unparsed.argSpecs, unparsed.args, args, 0, unparsed.typedArgs, args.length, null);
@@ -180,42 +175,30 @@ export function parseValues(unparsed: Unparsed): ParsedValues | Promise<ParsedVa
     addJobs(jobs, optionArgs, raw, into, 0, 0, raw.length, asArray(option.name).join("/"));
   }
 
-  let waiting: PromiseLike<void>[] | null = null;
-  const rejected: (Rejected | undefined)[] = [];
+  const results = await Promise.all(jobs.map((job) => apply(job.schema, job.raw)));
+  let problems = unparsed.problems;
+  // Positional arguments first, then options in the order used, whichever
+  // parser settled first.
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
-    const settle = (value: unknown): void => {
-      if (value instanceof Rejected) {
-        rejected[i] = value;
-      } else {
-        job.into[job.index] = value;
-      }
-    };
-    const value = apply(job.schema, job.raw);
-    if (isThenable(value)) {
-      (waiting ??= []).push(value.then(settle));
+    const result = results[i];
+    if (result instanceof Rejected) {
+      (problems ??= []).push(
+        new InvalidValue(
+          job.raw,
+          job.target,
+          result.reason,
+          job.isDefault,
+          unparsed.context,
+          choicesOf(job.arg),
+        ),
+      );
     } else {
-      settle(value);
+      job.into[job.index] = result;
     }
   }
-
-  const finish = (): ParsedValues => {
-    let problems = unparsed.problems;
-    // Positional arguments first, then options in the order used, whichever
-    // parser settled first.
-    for (let i = 0; i < jobs.length; i++) {
-      const reason = rejected[i];
-      if (reason) {
-        const { arg, raw, target, isDefault } = jobs[i];
-        (problems ??= []).push(
-          new InvalidValue(raw, target, reason.reason, isDefault, unparsed.context, choicesOf(arg)),
-        );
-      }
-    }
-    if (problems) {
-      throw problemsError(problems);
-    }
-    return { args, defaults };
-  };
-  return waiting ? Promise.all(waiting).then(finish) : finish();
+  if (problems) {
+    throw problemsError(problems);
+  }
+  return { args, defaults };
 }

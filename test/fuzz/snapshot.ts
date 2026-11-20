@@ -7,15 +7,15 @@ import type { Action, Spec, Subcommand } from "../../src/types.js";
 /** Whether two commands are the same one, for specs that hold the same commands as different objects. */
 type SameCommand = (x: Spec | Subcommand, y: Spec | Subcommand) => boolean;
 
-type Parse = (input: readonly string[], spec: Spec) => ParseResult;
+type Parse = (input: readonly string[], spec: Spec) => Promise<ParseResult>;
 
 export type Outcome =
   | { ok: true; result: ParseResult }
   | { ok: false; error: Error & Record<string, unknown> };
 
-export function attempt(parse: Parse, input: readonly string[], spec: Spec): Outcome {
+export async function attempt(parse: Parse, input: readonly string[], spec: Spec): Promise<Outcome> {
   try {
-    return { ok: true, result: parse(input, spec) };
+    return { ok: true, result: await parse(input, spec) };
   } catch (error) {
     return { ok: false, error: error as Error & Record<string, unknown> };
   }

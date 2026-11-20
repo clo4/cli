@@ -6,16 +6,16 @@ import { parse } from "../src/parse.js";
 import type { Spec } from "../src/types.js";
 import { captureConsole, expectIncludes, map, run, runSpecCheck } from "./helpers.js";
 
-test("defaults: a missing positional argument gets its default", () => {
+test("defaults: a missing positional argument gets its default", async () => {
   const spec: Spec = {
     name: "serve",
     args: [{ name: "dir" }, { name: "port", isOptional: true, default: "8080" }],
   };
-  expect(parse(["site"], spec).args).toEqual(["site", "8080"]);
-  expect(parse(["site", "3000"], spec).args).toEqual(["site", "3000"]);
+  expect((await parse(["site"], spec)).args).toEqual(["site", "8080"]);
+  expect((await parse(["site", "3000"], spec)).args).toEqual(["site", "3000"]);
 });
 
-test("defaults: filling stops at the first missing argument without a default", () => {
+test("defaults: filling stops at the first missing argument without a default", async () => {
   const spec: Spec = {
     name: "test",
     args: [
@@ -24,37 +24,37 @@ test("defaults: filling stops at the first missing argument without a default", 
       { name: "c", isOptional: true, default: "C" },
     ],
   };
-  expect(parse([], spec).args).toEqual(["A"]);
-  expect(parse(["x"], spec).args).toEqual(["x"]);
-  expect(parse(["x", "y"], spec).args).toEqual(["x", "y", "C"]);
+  expect((await parse([], spec)).args).toEqual(["A"]);
+  expect((await parse(["x"], spec)).args).toEqual(["x"]);
+  expect((await parse(["x", "y"], spec)).args).toEqual(["x", "y", "C"]);
 });
 
-test("defaults: a variadic argument's default is one value", () => {
+test("defaults: a variadic argument's default is one value", async () => {
   const spec: Spec = {
     name: "test",
     args: { name: "files", isOptional: true, isVariadic: true, default: "." },
   };
-  expect(parse([], spec).args).toEqual(["."]);
-  expect(parse(["a", "b"], spec).args).toEqual(["a", "b"]);
+  expect((await parse([], spec)).args).toEqual(["."]);
+  expect((await parse(["a", "b"], spec)).args).toEqual(["a", "b"]);
 });
 
-test("defaults: an option action with a required argument missing doesn't get a default in its place", () => {
+test("defaults: an option action with a required argument missing doesn't get a default in its place", async () => {
   const spec: Spec = {
     name: "test",
     args: [{ name: "dir" }, { name: "port", isOptional: true, default: "8080" }],
     options: [{ name: "--version", action: () => {} }],
   };
-  expect(parse(["--version"], spec).args).toEqual([]);
+  expect((await parse(["--version"], spec)).args).toEqual([]);
 });
 
-test("defaults: a default is added after the `--` separator", () => {
+test("defaults: a default is added after the `--` separator", async () => {
   const spec: Spec = { name: "test", args: { name: "dir", isOptional: true, default: "." } };
-  const result = parse(["--"], spec);
+  const result = await parse(["--"], spec);
   expect(result.args).toEqual(["."]);
   expect(result.argSeparatorIndex).toBe(0);
 });
 
-test("defaults: a bare option gets the defaults of its optional arguments", () => {
+test("defaults: a bare option gets the defaults of its optional arguments", async () => {
   const spec: Spec = {
     name: "node",
     options: [
@@ -72,28 +72,30 @@ test("defaults: a bare option gets the defaults of its optional arguments", () =
       },
     ],
   };
-  expect(parse(["--inspect"], spec).options.options).toEqual(map({ "--inspect": ["9229"] }));
-  expect(parse(["--inspect=4000"], spec).options.options).toEqual(map({ "--inspect": ["4000"] }));
-  expect(parse(["--size", "100"], spec).options.options).toEqual(map({ "--size": ["100", "24"] }));
-  expect(parse(["--size", "100", "50"], spec).options.options).toEqual(map({ "--size": ["100", "50"] }));
+  expect((await parse(["--inspect"], spec)).options.options).toEqual(map({ "--inspect": ["9229"] }));
+  expect((await parse(["--inspect=4000"], spec)).options.options).toEqual(map({ "--inspect": ["4000"] }));
+  expect((await parse(["--size", "100"], spec)).options.options).toEqual(map({ "--size": ["100", "24"] }));
+  expect((await parse(["--size", "100", "50"], spec)).options.options).toEqual(
+    map({ "--size": ["100", "50"] }),
+  );
 });
 
-test("defaults: an option whose first argument is optional gets nothing when it's left out", () => {
+test("defaults: an option whose first argument is optional gets nothing when it's left out", async () => {
   const spec: Spec = {
     name: "node",
     options: [{ name: "--inspect", args: { name: "port", isOptional: true, default: "9229" } }],
   };
-  const absent = parse([], spec).options;
+  const absent = (await parse([], spec)).options;
   expect([absent.has("--inspect"), absent.get("--inspect"), absent.all("--inspect")]).toEqual([
     false,
     undefined,
     [],
   ]);
-  const bare = parse(["--inspect"], spec).options;
+  const bare = (await parse(["--inspect"], spec)).options;
   expect([bare.has("--inspect"), bare.get("--inspect"), bare.count("--inspect")]).toEqual([true, "9229", 1]);
 });
 
-test("defaults: a left-out option with a required argument gets its optional arguments' defaults too", () => {
+test("defaults: a left-out option with a required argument gets its optional arguments' defaults too", async () => {
   const spec: Spec = {
     name: "test",
     options: [
@@ -106,18 +108,20 @@ test("defaults: a left-out option with a required argument gets its optional arg
       },
     ],
   };
-  expect(parse([], spec).options.all("--size")).toEqual(["80", "24"]);
+  expect((await parse([], spec)).options.all("--size")).toEqual(["80", "24"]);
 });
 
-test("defaults: each use of a repeatable option gets the default", () => {
+test("defaults: each use of a repeatable option gets the default", async () => {
   const spec: Spec = {
     name: "test",
     options: [{ name: "-l", isRepeatable: true, args: { name: "level", isOptional: true, default: "1" } }],
   };
-  expect(parse(["-l", "-l", "3", "-l"], spec).options.options).toEqual(map({ "-l": ["1", "3", "1"] }));
+  expect((await parse(["-l", "-l", "3", "-l"], spec)).options.options).toEqual(
+    map({ "-l": ["1", "3", "1"] }),
+  );
 });
 
-test("defaults: an option that isn't used has its defaults looked up by name", () => {
+test("defaults: an option that isn't used has its defaults looked up by name", async () => {
   const spec: Spec = {
     name: "test",
     options: [
@@ -125,21 +129,21 @@ test("defaults: an option that isn't used has its defaults looked up by name", (
       { name: "--host", args: { name: "host" } },
     ],
   };
-  const { options } = parse([], spec);
+  const { options } = await parse([], spec);
   expect(options.options).toEqual(map({}));
   expect(options.all("-p")).toEqual(["8080"]);
   expect(options.all("--port")).toEqual(["8080"]);
   expect(options.all("--host")).toEqual([]);
   expect(options.all("--nope")).toEqual([]);
-  expect(parse(["--port", "1"], spec).options.all("-p")).toEqual(["1"]);
+  expect((await parse(["--port", "1"], spec)).options.all("-p")).toEqual(["1"]);
 });
 
-test("defaults: get and all fall back to defaults, has and count don't", () => {
+test("defaults: get and all fall back to defaults, has and count don't", async () => {
   const spec: Spec = {
     name: "test",
     options: [{ name: "--port", args: { name: "port", default: "8080" } }],
   };
-  const { options } = parse([], spec);
+  const { options } = await parse([], spec);
   expect(options.get("--port")).toBe("8080");
   expect(options.all("--port")).toEqual(["8080"]);
   expect(options.has("--port")).toBe(false);
@@ -156,13 +160,13 @@ test("defaults: a default doesn't satisfy or break option rules", async () => {
       { name: "--socket", exclusiveOn: ["--port"] },
     ],
   };
-  expect(() => parse(["--tls"], spec)).toThrow("--tls requires --port");
-  expect(() => parse(["--socket"], spec)).not.toThrow();
+  await expect(parse(["--tls"], spec)).rejects.toThrow("--tls requires --port");
+  await expect(parse(["--socket"], spec)).resolves.toBeDefined();
   const result = await captureConsole(() => run({ ...spec, action: () => {} }, ["--tls"]));
   expect(result.code).toBe(1);
 });
 
-test("defaults: help shows an option's defaults after its description", () => {
+test("defaults: help shows an option's defaults after its description", async () => {
   const spec: Spec = {
     name: "serve",
     args: { name: "dir", isOptional: true, default: "." },
@@ -183,7 +187,7 @@ test("defaults: help shows an option's defaults after its description", () => {
   expectIncludes(help, "--size <w> <h>  (default: 80 24)");
 });
 
-test("defaults: help puts the defaults on their own line when the last line is too long", () => {
+test("defaults: help puts the defaults on their own line when the last line is too long", async () => {
   const long = "Where the server writes its access log, rotated every night at 12";
   expect(long.length).toBe(65);
   const spec: Spec = {
@@ -202,7 +206,7 @@ test("defaults: help puts the defaults on their own line when the last line is t
   expectIncludes(help, "  --port <port>  Short line\n                 Port to listen on (default: 8080)\n");
 });
 
-test("help lists positional arguments when one has a description or default", () => {
+test("help lists positional arguments when one has a description or default", async () => {
   const spec: Spec = {
     name: "serve",
     args: [
@@ -227,7 +231,7 @@ test("help lists positional arguments when one has a description or default", ()
   );
 });
 
-test("help leaves out the Arguments section when there's nothing to add to usage", () => {
+test("help leaves out the Arguments section when there's nothing to add to usage", async () => {
   const plain: Spec = { name: "serve", args: [{ name: "dir" }, { name: "rest", isOptional: true }] };
   expect(getHelp([plain])).not.toContain("Arguments:");
   const grouping: Spec = {

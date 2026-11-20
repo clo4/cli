@@ -4,8 +4,7 @@ import { completeRuntime } from "../src/completion.js";
 import { getHelp } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
 import { help, helpCommand } from "../src/index.js";
-import { parse, parseOrWait, readNext, readNextOrWait, readToken } from "../src/parse.js";
-import type { ParseResult } from "../src/parse.js";
+import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import * as Testing from "../src/testing.js";
 import type { ActionInit, NonEmptyArray, Spec, Subcommand } from "../src/types.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
@@ -161,17 +160,15 @@ for (const [kind, wrap] of kinds) {
   });
 }
 
-test("loadSpec: a command returned directly keeps parse synchronous", () => {
-  const { spec } = lazyCli((command) => command);
-  const result = parseOrWait(["remote", "add", "x"], spec);
-  expect(result).not.toBeInstanceOf(Promise);
-  expect((result as ParseResult).args).toEqual(["x"]);
-});
-
-test("loadSpec: parse and readNext throw instead of waiting for a promise", () => {
+test("loadSpec: parse and readNext wait for a loadSpec that gives a promise", async () => {
   const { spec } = lazyCli((command) => Promise.resolve(command));
-  expect(() => parse(["remote", "list"], spec)).toThrow(/loadSpec or a parse returned a promise/);
-  expect(() => readNext(spec, ["config"], "")).toThrow(/loadSpec or a parse returned a promise/);
+  const parsed = await parse(["remote", "add", "x"], spec);
+  expect(parsed.path.map((command) => command.name)).toEqual(["forge", ["remote", "r"], "add"]);
+  expect(parsed.args).toEqual(["x"]);
+  const next = await readNext(spec, ["remote"], "");
+  expect(next.subcommands.map(({ command }) => command.name)).toEqual(
+    expect.arrayContaining(["add", "list"]),
+  );
 });
 
 test("loadSpec: a problem before the command means it's never loaded", async () => {
@@ -238,9 +235,9 @@ function lazy<C extends Spec | Subcommand>(
   return { ...command, subcommands, [origin]: command } as unknown as C;
 }
 
-async function attemptOrWait(input: readonly string[], spec: Spec): Promise<Outcome> {
+async function attemptParse(input: readonly string[], spec: Spec): Promise<Outcome> {
   try {
-    return { ok: true, result: await parseOrWait(input, spec) };
+    return { ok: true, result: await parse(input, spec) };
   } catch (error) {
     return { ok: false, error: error as Error & Record<string, unknown> };
   }
@@ -306,8 +303,8 @@ test("random specs read, complete, print help and check the same with every subc
     const partial = input.length > 0 && n % 2 === 0 ? input[input.length - 1] : "";
     const before = partial === "" ? input : input.slice(0, -1);
 
-    const eager = await attemptOrWait(input, spec);
-    const eagerNext = readNext(spec, before, partial);
+    const eager = await attemptParse(input, spec);
+    const eagerNext = await readNext(spec, before, partial);
     // The views that only text can compare: the help command following the
     // line as names, completion, and the first spec check that fails.
     const views = [helpCommandView, (s: Spec) => completionView(s, before, partial), specCheckView] as const;
@@ -332,13 +329,13 @@ test("random specs read, complete, print help and check the same with every subc
         }
       }
 
-      const lazyParse = await attemptOrWait(input, lazySpec);
+      const lazyParse = await attemptParse(input, lazySpec);
       const problem = difference(eager, lazyParse, Object.is, OPTION_NAMES, sameCommand);
       if (problem) {
         expect.fail(report(n, spec, input, `with loadSpec returning ${kind}, parse: ${problem}`));
       }
 
-      const lazyNext = await readNextOrWait(lazySpec, before, partial);
+      const lazyNext = await readNext(lazySpec, before, partial);
       const nextProblem = nextDifference(eagerNext, lazyNext, sameCommand);
       if (nextProblem) {
         expect.fail(report(n, spec, input, `with loadSpec returning ${kind}, readNext: ${nextProblem}`));
@@ -377,15 +374,17 @@ test("loadSpec: help for a path whose loadSpec gives a promise says it isn't loa
   expect(result.stderr).toContain("'sub' isn't loaded");
 });
 
-test("loadSpec: reading tokens one at a time refuses to read past a loadSpec that gives a promise", () => {
+test("loadSpec: reading tokens one at a time waits for a loadSpec that gives a promise", async () => {
   const spec: Spec = {
     name: "cli",
     subcommands: [
       { name: "sub", loadSpec: () => Promise.resolve({ name: "sub", options: [{ name: "--force" }] }) },
     ],
   };
-  expect(readToken(spec, [], "sub").kind).toBe("subcommand");
-  expect(() => readToken(spec, ["sub"], "--force")).toThrow(/can't be read synchronously/);
+  const reader = tokenReader(spec);
+  expect((await reader.read("sub")).kind).toBe("subcommand");
+  expect(await reader.read("--force")).toMatchObject({ kind: "options" });
+  expect((await readToken(spec, ["sub"], "--force")).kind).toBe("options");
 });
 
 test("loadSpec: the command on the path has what the parent read, over what loaded", async () => {

@@ -141,6 +141,11 @@ class SpecWalk {
     this.visits.forEach(fn);
   }
 
+  /** Each path, as {@link forEachPath} visits them, for a check that waits on the parser. */
+  get paths(): readonly CommandVisit[] {
+    return this.visits;
+  }
+
   /**
    * Run a function once for each command in the spec, at the path that
    * defines it, parents before their subcommands. A check of how a command
@@ -175,16 +180,23 @@ class SpecWalk {
    * option the way the parser does at each command.
    */
   forEachOption(fn: (use: OptionUse) => void): void {
-    this.forEachPath((visit) => {
+    for (const use of this.optionUses()) {
+      fn(use);
+    }
+  }
+
+  /** Each option use, as {@link forEachOption} visits them, for a check that waits on the parser. */
+  *optionUses(): Generator<OptionUse> {
+    for (const visit of this.visits) {
       const { path, scope } = visit;
       // A command can list an option that a command above it lists too. It's
       // one option there, so it's one use.
       for (const option of new Set([...scope.local, ...scope.persistent])) {
         const { definedIn, index } = visit.definition(option);
         const where = describeOption(definedIn, index, path);
-        fn({ option, visit, path, scope, isDefinedHere: visit.isDefinition && definedIn === path, where });
+        yield { option, visit, path, scope, isDefinedHere: visit.isDefinition && definedIn === path, where };
       }
-    });
+    }
   }
 }
 
@@ -331,9 +343,9 @@ function everyValue(option: Option, value: string): string[] {
  * Asserts that the parser reads each name of every option the way the name is
  * written. The names-read-back check runs this after it checks subcommands.
  */
-function assertOptionFormsReadBack(walk: SpecWalk) {
+async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
   const root = walk.spec as Spec;
-  walk.forEachOption(({ option, where, scope, path, visit }) => {
+  for (const { option, where, scope, path, visit } of walk.optionUses()) {
     const before = visit.tokens;
     const values = everyValue(option, placeholderValue(scope));
     // A name that another option shadows is that option's to check.
@@ -342,13 +354,13 @@ function assertOptionFormsReadBack(walk: SpecWalk) {
       const tokens = writeForm(form, values);
       const reader = tokenReader(root);
       for (const token of before) {
-        reader.read(token);
+        await reader.read(token);
       }
-      const first = reader.read(tokens[0]);
+      const first = await reader.read(tokens[0]);
       // A name joined to its value with nothing between isn't a token by itself.
       if (form.join !== "") {
         // Without a join, the first token is the name.
-        const reading = form.join === null ? first : readToken(root, before, form.name);
+        const reading = form.join === null ? first : await readToken(root, before, form.name);
         assert(
           readsAs(reading, option),
           `${where} has the name '${form.name}', but the parser reads it as ${describeReading(reading, path)}`,
@@ -369,14 +381,14 @@ function assertOptionFormsReadBack(walk: SpecWalk) {
         );
       }
       for (let index = 1; index < tokens.length; index++) {
-        const reading = reader.read(tokens[index]);
+        const reading = await reader.read(tokens[index]);
         assert(
           reading.kind === "value" && reading.option === option,
           `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeReading(reading, path)}`,
         );
       }
     }
-  });
+  }
 }
 
 /** What a command's parent reads before the command loads. */
@@ -903,13 +915,13 @@ const specChecks: readonly SpecCheck[] = [
      */
     sentence: "The parser reads every option and subcommand the way it's written",
     name: "assertNamesReadBack",
-    check(walk) {
+    async check(walk) {
       const root = walk.spec as Spec;
-      walk.forEachPath(({ path, scope, tokens: before }) => {
+      for (const { path, scope, tokens: before } of walk.paths) {
         // An inherited subcommand is checked by the names that still refer to it.
         for (const { command: subcommand, names } of scope.subcommands()) {
           for (const name of names) {
-            const reading = readToken(root, before, name);
+            const reading = await readToken(root, before, name);
             if (reading.kind === "subcommand" && reading.command === subcommand) {
               continue;
             }
@@ -919,8 +931,8 @@ const specChecks: readonly SpecCheck[] = [
             );
           }
         }
-      });
-      assertOptionFormsReadBack(walk);
+      }
+      await assertOptionFormsReadBack(walk);
     },
   },
   {

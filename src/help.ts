@@ -3,7 +3,7 @@ import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
 import type { LiveSubcommand, OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { readHelpNamesOrWait } from "./parse.js";
+import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
 import { constraintOf } from "./schemas.js";
 import { addDefaults, asArray, print, printError } from "./util.js";
@@ -65,11 +65,8 @@ export const helpCommand: Subcommand = {
     isOptional: true,
     isVariadic: true,
   },
-  action({ path, args, help }) {
-    const target = readHelpNamesOrWait(path, args);
-    return target instanceof Promise
-      ? target.then((loaded) => printHelpNames(loaded, help))
-      : printHelpNames(target, help);
+  async action({ path, args, help }) {
+    return printHelpNames(await readHelpNames(path, args), help);
   },
 };
 
@@ -80,15 +77,14 @@ export const helpCommand: Subcommand = {
  * command isn't a help command. A copy of {@link helpCommand}, like a
  * persistent one, is recognised by its action. Completion offers these.
  */
-export function nextHelpNames(
+export async function nextHelpNames(
   path: CommandPath,
   names: readonly string[],
-): readonly LiveSubcommand[] | Promise<readonly LiveSubcommand[]> {
+): Promise<readonly LiveSubcommand[]> {
   if (path[path.length - 1].action !== helpCommand.action) {
     return [];
   }
-  const target = readHelpNamesOrWait(path, names);
-  return target instanceof Promise ? target.then((loaded) => loaded.subcommands) : target.subcommands;
+  return (await readHelpNames(path, names)).subcommands;
 }
 
 /** Print the help of the command the help command's names led to, or the error they ended in. */

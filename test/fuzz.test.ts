@@ -86,11 +86,11 @@ function invalidPath(
 }
 
 /** The names of every option the lenient read uses, token by token. */
-function usedNames(spec: Spec, input: readonly string[]): Set<string> {
+async function usedNames(spec: Spec, input: readonly string[]): Promise<Set<string>> {
   const names = new Set<string>();
   const reader = tokenReader(spec);
   for (const token of input) {
-    const reading = reader.read(token);
+    const reading = await reader.read(token);
     if (reading.kind !== "options") {
       continue;
     }
@@ -104,10 +104,10 @@ function usedNames(spec: Spec, input: readonly string[]): Set<string> {
 }
 
 /** The first property that `readNext` or `parse` breaks for this spec and input, or null. */
-function violation(spec: Spec, input: string[]): string | null {
+async function violation(spec: Spec, input: string[]): Promise<string | null> {
   let next: NextToken;
   try {
-    next = readNext(spec, input, "");
+    next = await readNext(spec, input, "");
   } catch (error) {
     return `readNext threw ${String(error)}`;
   }
@@ -124,7 +124,7 @@ function violation(spec: Spec, input: string[]): string | null {
     return `directives are ${directives}, expected ${expected}`;
   }
 
-  const strict = attempt(parse, input, spec);
+  const strict = await attempt(parse, input, spec);
   if (strict.ok) {
     const result = strict.result;
     // Every argument is a whole input token, in order.
@@ -144,7 +144,7 @@ function violation(spec: Spec, input: string[]): string | null {
     if (result.path.length !== path.length || result.path.some((command, i) => command !== path[i])) {
       return "readNext and parse end at different commands";
     }
-    const seenNames = [...usedNames(spec, input)].sort();
+    const seenNames = [...(await usedNames(spec, input))].sort();
     const parsedNames = [...result.options.options.keys()].sort();
     if (JSON.stringify(seenNames) !== JSON.stringify(parsedNames)) {
       return `readNext saw options named ${JSON.stringify(seenNames)}, but parse has ${JSON.stringify(parsedNames)}`;
@@ -168,11 +168,11 @@ test("readNext and parse keep their invariants on random specs", async () => {
     const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
     const input = gen.input(spec);
-    if (violation(spec, input) === null) {
+    if ((await violation(spec, input)) === null) {
       continue;
     }
-    const small = await shrink(spec, input, (s, i) => violation(s, i) !== null);
-    expect.fail(report(n, small.spec, small.input, violation(small.spec, small.input) ?? ""));
+    const small = await shrink(spec, input, async (s, i) => (await violation(s, i)) !== null);
+    expect.fail(report(n, small.spec, small.input, (await violation(small.spec, small.input)) ?? ""));
   }
 });
 
@@ -229,9 +229,9 @@ function optionNamed(path: readonly (Spec | Subcommand)[], name: string): Option
  * and `all` only give defaults for options that weren't used and whose first
  * argument is required.
  */
-function defaultsViolation(spec: Spec, input: string[]): string | null {
-  const plain = attempt(parse, input, withoutDefaults(spec));
-  const withDefaults = attempt(parse, input, spec);
+async function defaultsViolation(spec: Spec, input: string[]): Promise<string | null> {
+  const plain = await attempt(parse, input, withoutDefaults(spec));
+  const withDefaults = await attempt(parse, input, spec);
   if (!plain.ok || !withDefaults.ok) {
     if (plain.ok !== withDefaults.ok) {
       return "defaults change whether the line parses";
@@ -350,11 +350,11 @@ test("defaults only add to what the user typed", async () => {
     const gen = generator(caseSeed(n), { ...shapes, defaults: true });
     const spec = gen.spec();
     const input = gen.input(spec);
-    if (defaultsViolation(spec, input) === null) {
+    if ((await defaultsViolation(spec, input)) === null) {
       continue;
     }
-    const small = await shrink(spec, input, (s, i) => defaultsViolation(s, i) !== null);
-    expect.fail(report(n, small.spec, small.input, defaultsViolation(small.spec, small.input) ?? ""));
+    const small = await shrink(spec, input, async (s, i) => (await defaultsViolation(s, i)) !== null);
+    expect.fail(report(n, small.spec, small.input, (await defaultsViolation(small.spec, small.input)) ?? ""));
   }
 });
 
@@ -386,13 +386,13 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
     return null;
   }
   const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));
-  const next = readNext(spec, before, "");
+  const next = await readNext(spec, before, "");
   for (const { command, names } of next.subcommands) {
     for (const name of names) {
       if (!offered.has(name)) {
         continue;
       }
-      const reading = readToken(spec, before, name);
+      const reading = await readToken(spec, before, name);
       if (reading.kind !== "subcommand" || reading.command !== command) {
         return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
       }
@@ -404,7 +404,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
       if (!offered.has(token)) {
         continue;
       }
-      const reading = readToken(spec, before, token);
+      const reading = await readToken(spec, before, token);
       if (reading.kind !== "options" || reading.options.length !== 1 || reading.options[0] !== option) {
         return `option ${JSON.stringify(token)} is offered, but isn't read as that option`;
       }
@@ -414,15 +414,15 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
 }
 
 /** A subcommand the parser enters by one of its names, where readNext doesn't list it by that name. */
-function enteredButNotListed(spec: Spec, input: readonly string[]): string | null {
+async function enteredButNotListed(spec: Spec, input: readonly string[]): Promise<string | null> {
   for (let i = 0; i < input.length; i++) {
     const before = input.slice(0, i);
     const token = input[i];
-    const reading = readToken(spec, before, token);
+    const reading = await readToken(spec, before, token);
     if (reading.kind !== "subcommand" || !asArray(reading.command.name).includes(token)) {
       continue;
     }
-    const listed = readNext(spec, before, "").subcommands.some(
+    const listed = (await readNext(spec, before, "")).subcommands.some(
       ({ command, names }) => command === reading.command && names.includes(token),
     );
     if (!listed) {
@@ -432,12 +432,12 @@ function enteredButNotListed(spec: Spec, input: readonly string[]): string | nul
   return null;
 }
 
-test("readNext lists every subcommand the parser enters by name", () => {
+test("readNext lists every subcommand the parser enters by name", async () => {
   for (const n of caseNumbers()) {
     const gen = generator(caseSeed(n), shapes);
     const spec = gen.spec();
     const input = gen.input(spec);
-    const violation = enteredButNotListed(spec, input);
+    const violation = await enteredButNotListed(spec, input);
     if (violation !== null) {
       expect.fail(report(n, spec, input, violation));
     }

@@ -62,7 +62,7 @@ test("run: the action gets the options parse returns", async () => {
     action: ({ options }) => void (received = options),
   };
   await expect(run(spec, ["-vv"])).resolves.toBe(0);
-  const parsed = parse(["-vv"], spec).options;
+  const parsed = (await parse(["-vv"], spec)).options;
   expect(Object.keys(received!)).toEqual(["options", "has", "get", "all", "count"]);
   expect(received!.options).toEqual(parsed.options);
   for (const name of ["--port", "-v"]) {

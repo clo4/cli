@@ -308,8 +308,12 @@ test("runtime: an inherited subcommand is offered by the names nothing nearer ta
     ],
   };
   expect(values(await resolve(spec, ["a"], ""))).toEqual(["x", "y"]);
-  expect(parse(["a", "x"], spec).path.map((command) => command.name)).toEqual(["app", "a", "x"]);
-  expect(parse(["a", "y"], spec).path.map((command) => command.name)).toEqual(["app", "a", ["x", "y"]]);
+  expect((await parse(["a", "x"], spec)).path.map((command) => command.name)).toEqual(["app", "a", "x"]);
+  expect((await parse(["a", "y"], spec)).path.map((command) => command.name)).toEqual([
+    "app",
+    "a",
+    ["x", "y"],
+  ]);
 });
 
 test("runtime: requiresSeparator options are offered in their attached form", async () => {
@@ -461,7 +465,7 @@ test("runtime: gateOptions offers values for a dashed word the parser reads as o
     args: { name: "x", suggestions: ["-", "a"] },
     options: [{ name: "--o" }],
   };
-  expect(parse(["-"], spec).args).toEqual(["-"]);
+  expect((await parse(["-"], spec)).args).toEqual(["-"]);
   const v = values(await resolve(spec, [], "-", true));
   expect(v).toContain("-");
   expect(v).toContain("--o");
@@ -497,7 +501,7 @@ test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate o
 // The shim and the `completion` / `complete` subcommands
 // ---------------------------------------------------------------------------
 
-test("getCompletion emits the shim", () => {
+test("getCompletion emits the shim", async () => {
   const bash = getCompletion(fixture, "bash");
   expectIncludes(bash, "completion complete --");
   expectIncludes(bash, 'command -v "$bin"'); // guarded
@@ -508,7 +512,7 @@ test("getCompletion emits the shim", () => {
   expectIncludes(fish, 'command -q -- $bin; or test -x "$bin"');
 });
 
-test("getCompletion emits the PowerShell shim", () => {
+test("getCompletion emits the PowerShell shim", async () => {
   const powershell = getCompletion(fixture, "powershell");
   expectIncludes(powershell, "Register-ArgumentCompleter -Native -CommandName 'forge'");
   expectIncludes(powershell, "Get-Command $bin"); // guarded
@@ -521,7 +525,7 @@ test("getCompletion emits the PowerShell shim", () => {
   expectIncludes(powershell, "& $bin @arguments");
 });
 
-test("the PowerShell shim makes a CompletionResult from each line's fields", () => {
+test("the PowerShell shim makes a CompletionResult from each line's fields", async () => {
   const powershell = getCompletion(fixture, "powershell");
   // `foreach` runs no times when the CLI prints nothing.
   expectIncludes(powershell, "foreach ($line in $lines) {");
@@ -529,26 +533,26 @@ test("the PowerShell shim makes a CompletionResult from each line's fields", () 
   expectIncludes(powershell, "CompletionResult]::new($text, $value, 'ParameterValue', $tooltip)");
 });
 
-test("the PowerShell shim passes an empty word as --empty-word", () => {
+test("the PowerShell shim passes an empty word as --empty-word", async () => {
   // Windows PowerShell drops an empty argument to a native command.
   const powershell = getCompletion(fixture, "powershell");
   expectIncludes(powershell, "if ($partial -eq '') { $arguments += '--empty-word' }");
   expectIncludes(powershell, "if ($partial -ne '') { $arguments += $partial }");
 });
 
-test("the PowerShell shim runs a quoted command path without its quotes", () => {
+test("the PowerShell shim runs a quoted command path without its quotes", async () => {
   const powershell = getCompletion(fixture, "powershell");
   expectIncludes(powershell, "StringConstantExpressionAst]) { $first.Value } else { $first.Extent.Text }");
 });
 
-test("the PowerShell shim passes a quoted word without its opening quote", () => {
+test("the PowerShell shim passes a quoted word without its opening quote", async () => {
   const powershell = getCompletion(fixture, "powershell");
   expectIncludes(powershell, `if ($partial.StartsWith("'")) { $partial = $partial.Substring(1)`);
   expectIncludes(powershell, `elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1)`);
   expectNotIncludes(powershell, "$arguments += $wordToComplete");
 });
 
-test("getCompletion emits the Nushell shim", () => {
+test("getCompletion emits the Nushell shim", async () => {
   const nushell = getCompletion(fixture, "nushell");
   expectIncludes(nushell, "let __forge_previous_completer = $env.config.completions.external.completer?");
   // A command on Windows can be typed with its extension.
@@ -560,7 +564,7 @@ test("getCompletion emits the Nushell shim", () => {
   expectIncludes(nushell, "if (which $command | is-empty) { return }"); // guarded
 });
 
-test("the Nushell shim passes words without their quotes", () => {
+test("the Nushell shim passes words without their quotes", async () => {
   const nushell = getCompletion(fixture, "nushell");
   expectIncludes(nushell, `if $quote in ["'", '"', '\`'] {`);
   expectIncludes(
@@ -656,13 +660,13 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
   }
 });
 
-test("shims quote a name with a quote in it", () => {
+test("shims quote a name with a quote in it", async () => {
   const spec: Spec = { name: "it's", subcommands: [completion] };
   expectIncludes(getCompletion(spec, "powershell"), "-CommandName 'it''s'");
   expectIncludes(getCompletion(spec, "nushell"), `not-in ["it's" "it's.exe"`);
 });
 
-test("runtime shims gate options for every shell but zsh", () => {
+test("runtime shims gate options for every shell but zsh", async () => {
   for (const shell of ["bash", "fish", "powershell", "nushell"] as const) {
     expectIncludes(getCompletion(fixture, shell), "--gate-options");
   }
@@ -950,7 +954,7 @@ test("runtime: a help command with a copied action still completes names", async
 // The environment variable the shims set
 // ---------------------------------------------------------------------------
 
-test("every shim sets SHELL_COMPLETION_GENERATOR to the shell's name for the CLI", () => {
+test("every shim sets SHELL_COMPLETION_GENERATOR to the shell's name for the CLI", async () => {
   expectIncludes(
     getCompletion(fixture, "bash"),
     `SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete`,
@@ -1051,7 +1055,7 @@ const awkward = [
   { value: "" },
 ];
 
-test("formatCandidates quotes values for bash and drops descriptions", () => {
+test("formatCandidates quotes values for bash and drops descriptions", async () => {
   // Each ends with the space that follows a finished value.
   expect(formatCandidates(awkward, "bash", "")).toEqual([
     "plain ",
@@ -1065,7 +1069,7 @@ test("formatCandidates quotes values for bash and drops descriptions", () => {
   ]);
 });
 
-test("formatCandidates escapes every character bash treats specially", () => {
+test("formatCandidates escapes every character bash treats specially", async () => {
   const values = ["~home", "#tag", "!bang", "a*b?", "[x]", "{a,b}", "a;b|c&d", "<in>", '"q"', "`x`", "end "];
   expect(
     formatCandidates(
@@ -1088,7 +1092,7 @@ test("formatCandidates escapes every character bash treats specially", () => {
   ]);
 });
 
-test("formatCandidates keeps the bash values whose quoted form starts with the word", () => {
+test("formatCandidates keeps the bash values whose quoted form starts with the word", async () => {
   // Bash replaces the word as typed with the reply, so the CLI matches the
   // word against the quoted value, case and all.
   expect(formatCandidates(awkward, "bash", "my")).toEqual(["my\\ file.txt "]);
@@ -1099,7 +1103,7 @@ test("formatCandidates keeps the bash values whose quoted form starts with the w
   expect(formatCandidates(awkward, "bash", "it'")).toEqual([]);
 });
 
-test("formatCandidates writes _describe lines for zsh with the value's colons escaped", () => {
+test("formatCandidates writes _describe lines for zsh with the value's colons escaped", async () => {
   expect(formatCandidates(awkward, "zsh", "")).toEqual([
     "plain",
     "http\\://example.com:A URL: with colon",
@@ -1112,13 +1116,13 @@ test("formatCandidates writes _describe lines for zsh with the value's colons es
   ]);
 });
 
-test("formatCandidates leaves filtering to zsh and fish", () => {
+test("formatCandidates leaves filtering to zsh and fish", async () => {
   for (const shell of ["zsh", "fish"] as const) {
     expect(formatCandidates(awkward, shell, "zzz")).toEqual(formatCandidates(awkward, shell, ""));
   }
 });
 
-test("formatCandidates writes fish lines with the value as it is", () => {
+test("formatCandidates writes fish lines with the value as it is", async () => {
   expect(formatCandidates(awkward, "fish", "")).toEqual([
     "plain",
     "http://example.com\tA URL: with colon",
@@ -1131,7 +1135,7 @@ test("formatCandidates writes fish lines with the value as it is", () => {
   ]);
 });
 
-test("formatCandidates writes the CompletionResult fields for PowerShell", () => {
+test("formatCandidates writes the CompletionResult fields for PowerShell", async () => {
   expect(formatCandidates(awkward, "powershell", "")).toEqual([
     "plain\tplain\tplain",
     "http://example.com\thttp://example.com\tA URL: with colon",
@@ -1144,7 +1148,7 @@ test("formatCandidates writes the CompletionResult fields for PowerShell", () =>
   ]);
 });
 
-test("formatCandidates quotes the characters PowerShell reads as quotes", () => {
+test("formatCandidates quotes the characters PowerShell reads as quotes", async () => {
   const values = ["it\u2019s", "\u201cq\u201d", "a,b", "@x", "a{b}"];
   const texts = formatCandidates(
     values.map((value) => ({ value })),
@@ -1154,7 +1158,7 @@ test("formatCandidates quotes the characters PowerShell reads as quotes", () => 
   expect(texts).toEqual(["'it\u2019\u2019s'", "'\u201cq\u201d'", "'a,b'", "'@x'", "'a{b}'"]);
 });
 
-test("formatCandidates writes Nushell lines with quoted values", () => {
+test("formatCandidates writes Nushell lines with quoted values", async () => {
   expect(formatCandidates(awkward, "nushell", "")).toEqual([
     "plain",
     "http://example.com\tA URL: with colon",
@@ -1169,7 +1173,7 @@ test("formatCandidates writes Nushell lines with quoted values", () => {
   expect(formatCandidates(quotes, "nushell", "")).toEqual([`"a'b\\"c"`, `"a'\\\\b"`, "'[x]'"]);
 });
 
-test("formatCandidates keeps PowerShell and Nushell values that start with the word, ignoring case", () => {
+test("formatCandidates keeps PowerShell and Nushell values that start with the word, ignoring case", async () => {
   for (const shell of ["powershell", "nushell"] as const) {
     // The value is PowerShell's second field and Nushell's first.
     const values = (word: string) =>
@@ -1182,7 +1186,7 @@ test("formatCandidates keeps PowerShell and Nushell values that start with the w
   }
 });
 
-test("formatCandidates prints nothing for no candidates", () => {
+test("formatCandidates prints nothing for no candidates", async () => {
   for (const shell of ["bash", "zsh", "fish", "powershell", "nushell"] as const) {
     expect(formatCandidates([], shell, "")).toEqual([]);
   }
@@ -1263,7 +1267,7 @@ test("complete subcommand rejects an unknown shell", async () => {
   );
 });
 
-test("every shim asks for its own shell's lines", () => {
+test("every shim asks for its own shell's lines", async () => {
   expectIncludes(getCompletion(fixture, "bash"), "completion complete --shell bash --gate-options --");
   expectIncludes(getCompletion(fixture, "zsh"), "completion complete --shell zsh --");
   expectIncludes(getCompletion(fixture, "fish"), "completion complete --shell fish --gate-options --");
@@ -1379,14 +1383,14 @@ test.skipIf(!hasShell("bash") || process.platform === "win32")(
   },
 );
 
-test("formatCandidates leaves the space off an open value for bash, and marks it for zsh", () => {
+test("formatCandidates leaves the space off an open value for bash, and marks it for zsh", async () => {
   const candidates = [{ value: "12:", open: true }, { value: "12:am" }];
   expect(formatCandidates(candidates, "bash", "12")).toEqual(["12:", "12:am "]);
   expect(formatCandidates(candidates, "zsh", "12")).toEqual(["12\\:\t", "12\\:am"]);
   expect(formatCandidates(candidates, "fish", "12")).toEqual(["12:", "12:am"]);
 });
 
-test("formatCandidates gives fish a second value after an open one that would be the only one", () => {
+test("formatCandidates gives fish a second value after an open one that would be the only one", async () => {
   const amount = { value: "amount", open: true };
   // Fish adds a space after the only value that starts with the word.
   expect(formatCandidates([amount, { value: "--help" }], "fish", "")).toEqual(["amount", "--help"]);

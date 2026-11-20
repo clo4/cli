@@ -1027,7 +1027,7 @@ test("testing: test rejects an option name the parser splits at a separator", as
     action: () => {},
     options: [{ name: "--a=b", description: "An option." }],
   };
-  expect(() => parse(["--a=b"], spec)).toThrow();
+  await expect(parse(["--a=b"], spec)).rejects.toThrow();
   await expect(Testing.test(spec)()).rejects.toThrow("has the name '--a=b'");
 });
 
@@ -1179,8 +1179,8 @@ test("testing: the spec checks follow a persistent subcommand into the commands 
       { name: "a", parserDirectives: { optionArgSeparators: ":" } },
     ],
   };
-  expect(() => parse(["p", "--x=1"], spec)).not.toThrow();
-  expect(() => parse(["a", "p", "--x=1"], spec)).toThrow();
+  await expect(parse(["p", "--x=1"], spec)).resolves.toBeDefined();
+  await expect(parse(["a", "p", "--x=1"], spec)).rejects.toThrow();
   await expect(runSpecCheck("assertNamesReadBack", spec)).rejects.toThrow(
     /^Option `cli a p --x` \(index 0\) is written '--x=<v>', but '=' isn't one of the option arg separators there \(':'\)/,
   );

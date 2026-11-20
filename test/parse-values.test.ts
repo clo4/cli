@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import * as CLI from "../src/index.js";
 import { InvalidValue, MissingRequiredOption, SeveralProblems, TooFewArguments } from "../src/errors.js";
-import { parse, parseOrWait } from "../src/parse.js";
+import { parse } from "../src/parse.js";
 import { captureConsole, run, runSpecCheck } from "./helpers.js";
 
 /** Fails to compile unless `Actual` is exactly `Expected`. */
@@ -306,7 +306,7 @@ test("a default goes through its argument's parser", async () => {
 });
 
 test("a rejected value is a usage error that says what the schema said", async () => {
-  expect(() => parse(["http", "--token", "abc"], serve)).toThrow(InvalidValue);
+  await expect(parse(["http", "--token", "abc"], serve)).rejects.toThrow(InvalidValue);
   const { code, stderr, init } = await received(serve, ["http", "--token", "abc"]);
   expect(code).toBe(1);
   expect(init).toBeUndefined();
@@ -344,7 +344,7 @@ test("every problem with a readable command line is reported together", async ()
   const argv = ["http", "-t", "maybe", "--retry", "0", "--retry", "3", "--mode", "fast"];
   let thrown: unknown;
   try {
-    parse(argv, serve);
+    await parse(argv, serve);
   } catch (error) {
     thrown = error;
   }
@@ -373,7 +373,7 @@ test("every problem with a readable command line is reported together", async ()
 
   // A missing argument is one more of them.
   try {
-    parse(["-t", "maybe"], serve);
+    await parse(["-t", "maybe"], serve);
     expect.unreachable();
   } catch (error) {
     expect((error as SeveralProblems).problems.map((problem) => problem.constructor)).toEqual([
@@ -384,10 +384,10 @@ test("every problem with a readable command line is reported together", async ()
   }
 });
 
-test("a token the parser can't read is still reported alone", () => {
+test("a token the parser can't read is still reported alone", async () => {
   let thrown: unknown;
   try {
-    parse(["http", "--nope", "-t", "maybe"], serve);
+    await parse(["http", "--nope", "-t", "maybe"], serve);
   } catch (error) {
     thrown = error;
   }
@@ -395,12 +395,12 @@ test("a token the parser can't read is still reported alone", () => {
   expect(thrown).not.toBeInstanceOf(SeveralProblems);
 });
 
-test("an invalid default says it's the default", () => {
+test("an invalid default says it's the default", async () => {
   const spec = CLI.spec({
     name: "demo",
     options: [{ name: "--listen", description: "x", args: { name: "port", default: "http", parse: port } }],
   });
-  expect(() => parse([], spec)).toThrow(
+  await expect(parse([], spec)).rejects.toThrow(
     'The default "http" for --listen is invalid: expected an integer from 1 to 65535',
   );
 });
@@ -447,22 +447,17 @@ test("a schema can be async, and then the parse waits for it", async () => {
       { name: "bad", isOptional: true, parse: schema(() => Promise.reject(new Error("never valid"))) },
     ],
   });
-  const result = parseOrWait(["abc", "x"], spec);
-  expect(result).toBeInstanceOf(Promise);
-  expect((await result).args).toEqual([3, "x!"]);
+  expect((await parse(["abc", "x"], spec)).args).toEqual([3, "x!"]);
   // The schemas ran together.
   expect(order).toEqual(["fast", "slow"]);
-  expect(() => parse(["abc", "x"], spec)).toThrow(/loadSpec or a parse returned a promise/);
 
-  await expect(parseOrWait(["abc", "x", "y"], spec)).rejects.toThrow(
-    'Invalid value "y" for <bad>: never valid',
-  );
+  await expect(parse(["abc", "x", "y"], spec)).rejects.toThrow('Invalid value "y" for <bad>: never valid');
   const { code, stderr } = await captureConsole(() => run(spec, ["abc", "x", "y"]));
   expect(code).toBe(1);
   expect(stderr).toContain('Invalid value "y" for <bad>: never valid');
 });
 
-test("a schema that throws still says what's wrong with the value", () => {
+test("a schema that throws still says what's wrong with the value", async () => {
   const broken: CLI.StandardSchemaV1<string, string> = {
     "~standard": {
       version: 1,
@@ -473,7 +468,7 @@ test("a schema that throws still says what's wrong with the value", () => {
     },
   };
   const spec = CLI.spec({ name: "demo", args: { parse: broken } });
-  expect(() => parse(["x"], spec)).toThrow('Invalid value "x" for <argument>: the schema has a bug');
+  await expect(parse(["x"], spec)).rejects.toThrow('Invalid value "x" for <argument>: the schema has a bug');
 });
 
 test("each value is parsed once, and only for the command that runs", async () => {
@@ -566,7 +561,7 @@ function read(schema: CLI.StandardSchemaV1<string, unknown>, value: string): unk
   return result.issues ? result.issues[0].message : result.value;
 }
 
-test("number: reads decimal digits and nothing else", () => {
+test("number: reads decimal digits and nothing else", async () => {
   const any = CLI.number();
   expect(read(any, "42")).toBe(42);
   expect(read(any, "-1.5")).toBe(-1.5);
@@ -591,7 +586,7 @@ test("number: reads decimal digits and nothing else", () => {
   }
 });
 
-test("number: rejects digits that read as infinity", () => {
+test("number: rejects digits that read as infinity", async () => {
   const huge = "9".repeat(400);
   expect(Number(huge)).toBe(Infinity);
   expect(read(CLI.number(), huge)).toBe("too large to be a number");
@@ -604,7 +599,7 @@ test("number: rejects digits that read as infinity", () => {
   expect(read(CLI.number(), "1" + "0".repeat(308))).toBe(1e308);
 });
 
-test("number: int accepts whole numbers only", () => {
+test("number: int accepts whole numbers only", async () => {
   const whole = CLI.number({ int: true });
   expect(read(whole, "-12")).toBe(-12);
   expect(read(whole, "1.0")).toBe("expected an integer");
@@ -616,7 +611,7 @@ test("number: int accepts whole numbers only", () => {
   expect(read(port, "9007199254740993")).toBe("expected an integer from 1 to 65535");
 });
 
-test("number: min and max are included, and the message says the range", () => {
+test("number: min and max are included, and the message says the range", async () => {
   expect(read(port, "1")).toBe(1);
   expect(read(port, "65535")).toBe(65535);
   expect(read(port, "0")).toBe("expected an integer from 1 to 65535");
@@ -626,7 +621,7 @@ test("number: min and max are included, and the message says the range", () => {
   expect(read(CLI.number({ min: 0, max: 1 }), "0.5")).toBe(0.5);
 });
 
-test("choice: accepts one of its values, as written", () => {
+test("choice: accepts one of its values, as written", async () => {
   const mode = CLI.choice("debug", "release", "very loud", "a|b", "");
   expect(read(mode, "release")).toBe("release");
   expect(read(mode, "very loud")).toBe("very loud");
@@ -761,7 +756,7 @@ test("help says which bounds a range leaves out", async () => {
   expect(stdout).toContain("--d <n>     D (int, at most 5)\n");
 });
 
-test("a rejected value of an option with several arguments says which argument", () => {
+test("a rejected value of an option with several arguments says which argument", async () => {
   const spec = CLI.spec({
     name: "demo",
     options: [
@@ -772,10 +767,10 @@ test("a rejected value of an option with several arguments says which argument",
       },
     ],
   });
-  expect(() => parse(["--size", "3", "x"], spec)).toThrow(
+  await expect(parse(["--size", "3", "x"], spec)).rejects.toThrow(
     'Invalid value "x" for --size <argument 2>: expected an integer from 1 to 65535',
   );
-  expect(() => parse(["--size", "x", "3"], spec)).toThrow(
+  await expect(parse(["--size", "x", "3"], spec)).rejects.toThrow(
     'Invalid value "x" for --size <w>: expected an integer from 1 to 65535',
   );
 });

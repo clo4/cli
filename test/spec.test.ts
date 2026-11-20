@@ -16,7 +16,7 @@ function is<Expected>() {
 const described: string = ["Described", "at", "runtime."].join(" ");
 const listTargets = (tokens: string[]): Promise<string[]> => Promise.resolve(tokens);
 
-test("spec and command return the object they're given", () => {
+test("spec and command return the object they're given", async () => {
   const root = { name: "demo" };
   const sub = { name: "build" };
   expect(CLI.spec(root)).toBe(root);
@@ -210,7 +210,10 @@ const demo = CLI.spec({
 });
 
 test("a spec made with spec parses and passes the spec checks", async () => {
-  expect(parse(["build", "--out", "x"], demo).path.map((command) => command.name)).toEqual(["demo", "build"]);
+  expect((await parse(["build", "--out", "x"], demo)).path.map((command) => command.name)).toEqual([
+    "demo",
+    "build",
+  ]);
   await testSpec(demo, { allowLongDescriptionLines: true })();
 });
 

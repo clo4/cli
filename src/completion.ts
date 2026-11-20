@@ -4,7 +4,7 @@
  * The `completion` subcommand prints a short script for a supported shell. On
  * every Tab, that script runs the CLI's hidden `completion complete` command
  * with the command line typed so far. The CLI then works out the candidates
- * with the parser's own `readNextOrWait`, so completion always matches what the parser
+ * with the parser's own `readNext`, so completion always matches what the parser
  * accepts at that position: subcommands, options with their
  * relationship rules, and argument values from `template`, `suggestions` and
  * `generators`.
@@ -16,7 +16,7 @@ import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { accepts, choice, choicesOf, completionsOf, isParser } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
 import { nextHelpNames } from "./help.js";
-import { readNextOrWait } from "./parse.js";
+import { readNext } from "./parse.js";
 import { formStart } from "./scope.js";
 import type { NextToken } from "./parse.js";
 
@@ -196,11 +196,11 @@ export interface CompletionRequest {
 
 /**
  * Resolve completion candidates for a partial command line. The parser works
- * out what the word can be with {@link readNextOrWait}, and this offers candidates
+ * out what the word can be with {@link readNext}, and this offers candidates
  * for each of those.
  */
 export async function completeRuntime(req: CompletionRequest): Promise<Candidate[]> {
-  const next = await readNextOrWait(req.spec, req.before, req.partial);
+  const next = await readNext(req.spec, req.before, req.partial);
   const tokens = [...req.before];
 
   // The word is an option with a value attached, like `--mode=fa`.
