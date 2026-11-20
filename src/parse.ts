@@ -781,11 +781,11 @@ class Scanner {
     const used = usedKeys(this.seenOptions);
     const { local, persistent } = this.scope.live(this.subcommandMatching);
     const usable: UsableOption[] = [];
-    for (const { option, names } of [...local, ...persistent]) {
+    for (const { option, forms } of [...local, ...persistent]) {
       if (this.conflicts(option, used)) {
         continue;
       }
-      usable.push({ option, forms: this.scope.forms(option, names), used: used.has(optionKey(option)) });
+      usable.push({ option, forms, used: used.has(optionKey(option)) });
     }
     return usable;
   }

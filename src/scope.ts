@@ -38,8 +38,14 @@ export interface OptionUse {
   name: string;
 }
 
-/** An option that can be used here, and the names that still refer to it. */
-export interface VisibleOption {
+/** An option that can be used here, and how each name that still refers to it is written. */
+export interface LiveOption {
+  option: Option;
+  forms: OptionForm[];
+}
+
+/** An option, and the names that still refer to it. */
+interface NamedOption {
   option: Option;
   names: string[];
 }
@@ -437,24 +443,34 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * The options that can be used here, in definition order, each with only
-   * its live names: the names that still refer to it. Options with every name
-   * shadowed are left out. Where the next token can name a subcommand, as
-   * `subcommands` says, a name that one matches is that subcommand's.
+   * The options that can be used here, in definition order, each with the
+   * forms of its live names: the names that still refer to it. Options with
+   * every name shadowed are left out. Where the next token can name a
+   * subcommand, as `subcommands` says, a name that one matches is that
+   * subcommand's.
    */
-  live(subcommands: SubcommandMatching | null = null): {
-    local: VisibleOption[];
-    persistent: VisibleOption[];
-  } {
-    return this.liveOptions(subcommands, true);
+  live(subcommands: SubcommandMatching | null = null): { local: LiveOption[]; persistent: LiveOption[] } {
+    return this.withForms(this.liveOptions(subcommands, true));
   }
 
   /**
    * The options a user can see at the start of the current command: the
    * {@link live} ones that aren't hidden, without the names a subcommand takes.
    */
-  visible(): { local: VisibleOption[]; persistent: VisibleOption[] } {
-    return this.liveOptions(this.hasSubcommands ? anyName : null, false);
+  visible(): { local: LiveOption[]; persistent: LiveOption[] } {
+    return this.withForms(this.liveOptions(this.hasSubcommands ? anyName : null, false));
+  }
+
+  /** Each of `options`, with how each of its names is written here. */
+  private withForms({ local, persistent }: { local: NamedOption[]; persistent: NamedOption[] }): {
+    local: LiveOption[];
+    persistent: LiveOption[];
+  } {
+    const write = ({ option, names }: NamedOption): LiveOption => ({
+      option,
+      forms: this.forms(option, names),
+    });
+    return { local: local.map(write), persistent: persistent.map(write) };
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */
@@ -479,7 +495,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   private liveOptions(
     subcommands: SubcommandMatching | null,
     hidden: boolean,
-  ): { local: VisibleOption[]; persistent: VisibleOption[] } {
+  ): { local: NamedOption[]; persistent: NamedOption[] } {
     const { local, persistent } = this;
     if (local.length === 0 && persistent.length === 0) {
       return { local: [], persistent: [] };
@@ -506,8 +522,8 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     owner: ReadonlyMap<string, Option>,
     subcommands: SubcommandMatching | null,
     hidden: boolean,
-  ): VisibleOption[] {
-    const picked: VisibleOption[] = [];
+  ): NamedOption[] {
+    const picked: NamedOption[] = [];
     for (let i = 0; i < options.length; i++) {
       const option = options[i];
       if (option.hidden && !hidden) {
@@ -545,7 +561,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * through the parser. {@link formStart} and {@link writeForm} turn a form
    * into tokens.
    */
-  forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
+  private forms(option: Option, names: readonly string[]): OptionForm[] {
     const takesArgs = maxArgs(option.args) !== 0;
     const forms: OptionForm[] = [];
     for (let i = 0; i < names.length; i++) {

@@ -11,6 +11,7 @@ import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { argName, maxArgs, minArgs } from "./args.js";
 import { assert, makeArray } from "./util.js";
 import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.js";
+import type { OptionForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
@@ -191,12 +192,22 @@ class SpecWalk {
   *optionUses(): Generator<OptionUse> {
     for (const visit of this.visits) {
       const { path, scope } = visit;
+      const { local, persistent } = scope.live();
+      const forms = new Map([...local, ...persistent].map((live) => [live.option, live.forms]));
       // A command can list an option that a command above it lists too. It's
       // one option there, so it's one use.
       for (const option of new Set([...scope.local, ...scope.persistent])) {
         const { definedIn, index } = visit.definition(option);
         const where = describeOption(definedIn, index, path);
-        yield { option, visit, path, scope, isDefinedHere: visit.isDefinition && definedIn === path, where };
+        yield {
+          option,
+          visit,
+          path,
+          scope,
+          forms: forms.get(option) ?? [],
+          isDefinedHere: visit.isDefinition && definedIn === path,
+          where,
+        };
       }
     }
   }
@@ -276,6 +287,11 @@ interface OptionUse {
   /** The options and directives in effect there. */
   scope: CommandScope;
   /**
+   * How each of its names is written there. A name that another option
+   * shadows is that option's, so it isn't one of these.
+   */
+  forms: readonly OptionForm[];
+  /**
    * Whether this use is the option's definition: the command it's used in
    * defines it, at the path that defines the command.
    */
@@ -347,12 +363,10 @@ function everyValue(option: Option, value: string): string[] {
  */
 async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
   const root = walk.spec as Spec;
-  for (const { option, where, scope, path, visit } of walk.optionUses()) {
+  for (const { option, where, scope, forms, path, visit } of walk.optionUses()) {
     const before = visit.tokens;
     const values = everyValue(option, placeholderValue(scope));
-    // A name that another option shadows is that option's to check.
-    const names = makeArray(option.name).filter((name) => scope.resolve(name) === option);
-    for (const form of scope.forms(option, names)) {
+    for (const form of forms) {
       const tokens = writeForm(form, values);
       const reader = tokenReader(root);
       for (const token of before) {

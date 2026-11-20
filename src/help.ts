@@ -1,7 +1,7 @@
 import type { ActionInit, Arg, CommandPath, Option, NonEmptyArray, Subcommand } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
-import type { LiveSubcommand, OptionForm, VisibleOption } from "./scope.js";
+import type { LiveOption, LiveSubcommand, OptionForm } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
@@ -146,8 +146,8 @@ function helpText(
       local = inDefinitionOrder(command.options ?? [], local, persistent);
       persistent = [];
     }
-    const localNames = optionNames(scope, local);
-    const persistentNames = optionNames(scope, persistent);
+    const localNames = optionNames(local);
+    const persistentNames = optionNames(persistent);
     let width = 0;
     for (let i = 0; i < localNames.length; i++) {
       width = Math.max(width, localNames[i].length);
@@ -253,17 +253,17 @@ function subcommandRows(subcommands: readonly Subcommand[]): string {
  */
 function inDefinitionOrder(
   options: readonly Option[],
-  local: readonly VisibleOption[],
-  persistent: readonly VisibleOption[],
-): VisibleOption[] {
-  const byOption = new Map<Option, VisibleOption>();
+  local: readonly LiveOption[],
+  persistent: readonly LiveOption[],
+): LiveOption[] {
+  const byOption = new Map<Option, LiveOption>();
   for (let i = 0; i < local.length; i++) {
     byOption.set(local[i].option, local[i]);
   }
   for (let i = 0; i < persistent.length; i++) {
     byOption.set(persistent[i].option, persistent[i]);
   }
-  const ordered: VisibleOption[] = [];
+  const ordered: LiveOption[] = [];
   for (let i = 0; i < options.length; i++) {
     const visible = byOption.get(options[i]);
     if (visible) {
@@ -274,11 +274,10 @@ function inDefinitionOrder(
 }
 
 /** How help writes each option: its live names, each with its arguments. */
-function optionNames(scope: CommandScope, options: readonly VisibleOption[]): string[] {
+function optionNames(options: readonly LiveOption[]): string[] {
   const names: string[] = [];
   for (let i = 0; i < options.length; i++) {
-    const { option, names: live } = options[i];
-    names.push(optionToString(option, scope.forms(option, live)));
+    names.push(optionToString(options[i].option, options[i].forms));
   }
   return names;
 }
@@ -288,7 +287,7 @@ function optionNames(scope: CommandScope, options: readonly VisibleOption[]): st
  * defaults the parser uses. What the value can be is only shown for an
  * option with one argument, where it's clear which value is meant.
  */
-function optionDescriptions(options: readonly VisibleOption[]): string[] {
+function optionDescriptions(options: readonly LiveOption[]): string[] {
   const descriptions: string[] = [];
   for (let i = 0; i < options.length; i++) {
     const option = options[i].option;
@@ -305,7 +304,7 @@ function optionDescriptions(options: readonly VisibleOption[]): string[] {
 }
 
 /** The required options for the usage line, each after a space. */
-function requiredOptions(options: readonly VisibleOption[], names: readonly string[]): string {
+function requiredOptions(options: readonly LiveOption[], names: readonly string[]): string {
   let text = "";
   for (let i = 0; i < options.length; i++) {
     if (options[i].option.isRequired) {
