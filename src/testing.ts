@@ -9,7 +9,7 @@
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
 import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
-import { CommandScope, loadAll, optionKey, writeForm } from "./scope.js";
+import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
@@ -34,7 +34,7 @@ class CommandVisit {
 
   constructor(
     /** The commands from the root to this one. */
-    readonly path: Subcommand[],
+    readonly path: [Subcommand, ...Subcommand[]],
     /** The tokens that enter the path: a name the parser reads as each command after the root. */
     readonly tokens: string[],
     /**
@@ -391,9 +391,6 @@ async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
   }
 }
 
-/** What a command's parent reads before the command loads. */
-const readBeforeLoading = ["name", "description", "hidden", "isPersistent"] as const;
-
 /**
  * What's wrong with the command at the end of `path`, which has a `loadSpec`,
  * and with `loaded`, the command that gave. The parser carries on with
@@ -404,13 +401,9 @@ function loadProblems(path: Subcommand[], loaded: Subcommand): string[] {
   const where = describeCommand(path);
   const problems: string[] = [];
   for (const [key, value] of Object.entries(command)) {
-    if (
-      value !== undefined &&
-      key !== "loadSpec" &&
-      !(readBeforeLoading as readonly string[]).includes(key)
-    ) {
+    if (value !== undefined && key !== "loadSpec" && !(stubKeys as readonly string[]).includes(key)) {
       problems.push(
-        `${where} has a \`loadSpec\` and sets \`${key}\`. Beside a \`loadSpec\`, a command only sets ${readBeforeLoading.map((name) => `\`${name}\``).join(", ")}. Move \`${key}\` to the command it loads.`,
+        `${where} has a \`loadSpec\` and sets \`${key}\`. Beside a \`loadSpec\`, a command only sets ${stubKeys.map((name) => `\`${name}\``).join(", ")}. Move \`${key}\` to the command it loads.`,
       );
     }
   }

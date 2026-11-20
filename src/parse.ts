@@ -338,7 +338,6 @@ export interface TokenReader {
  * keeps the first problem it finds for {@link parse} to throw.
  */
 class Scanner {
-  private readonly path: [Spec, ...Subcommand[]];
   // The last option action used.
   private optionAction: Action | undefined = undefined;
   private readonly args: string[] = [];
@@ -347,8 +346,8 @@ class Scanner {
   private readonly seenOptions: Option[] = [];
   private argSeparatorIndex = -1;
 
-  // What the current command allows.
-  private readonly scope: CommandScope;
+  // What the current command allows, and the commands from the root to it.
+  private readonly scope: CommandScope<Spec>;
   private readonly directives: Directives;
 
   private hasFoundArg = false;
@@ -373,25 +372,15 @@ class Scanner {
   private valuesMax = 0;
   private valueArgs: Option["args"] = undefined;
 
-  /**
-   * Makes the error for the first token that can't be read the way it's
-   * written, like an unknown option or a value an option doesn't take.
-   * {@link parse} stops there.
-   */
-  problem: (() => ParseError) | null = null;
+  // Makes the error for the first token that can't be read the way it's
+  // written, like an unknown option or a value an option doesn't take.
+  // `parse` stops there.
+  private problem: (() => ParseError) | null = null;
 
-  /**
-   * The load of the command just entered, if its `loadSpec` returned a
-   * promise. Nothing can be read until it settles, so whoever reads the next
-   * token waits for it first. It's null again once it settles.
-   */
-  pending: Promise<void> | null = null;
-
-  /**
-   * Whether entering a command loads it. {@link readNext} turns it off
-   * to read the word being completed, which nothing follows.
-   */
-  loads = true;
+  // The load of the command just entered, if its `loadSpec` returned a
+  // promise. Nothing can be read until it settles, so `settle` waits for it
+  // before the next token.
+  private pending: Promise<void> | null = null;
 
   // The first argument past the command's limit, or a subcommand that didn't
   // match. It's only an error once the whole line is read, because an option
@@ -408,21 +397,40 @@ class Scanner {
   private repeatedUses: Map<string, RepeatedUses> | null = null;
 
   constructor(spec: Spec) {
-    this.path = [spec];
     this.scope = new CommandScope(spec);
     this.directives = this.scope.directives;
   }
 
+  /** The commands from the root to the current one. */
+  private get path(): CommandPath {
+    return this.scope.path;
+  }
+
   /**
-   * Put the command the scope is at on the path once `loading` settles, in
-   * place of the command whose `loadSpec` is loading it. It's a method of its
-   * own so that a cold parse that waits for nothing doesn't compile it.
+   * Read each of `tokens` in turn, waiting after each one for the command it
+   * entered to load. If `strict`, throw the first problem as soon as it's found.
    */
-  private placeLoaded(loading: Promise<void>): Promise<void> {
-    return loading.then(() => {
-      this.path[this.path.length - 1] = this.scope.command as Subcommand;
-      this.pending = null;
-    });
+  async readAll(tokens: readonly string[], strict: boolean): Promise<void> {
+    for (let i = 0; i < tokens.length; i++) {
+      this.read(tokens[i]);
+      if (strict && this.problem) {
+        throw this.problem();
+      }
+      if (this.pending) {
+        await this.settle();
+      }
+    }
+  }
+
+  /**
+   * Wait for the command the last token entered to load, so the next token
+   * can be read. It's a method of its own so that a cold parse that waits for
+   * nothing doesn't compile it.
+   */
+  async settle(): Promise<void> {
+    const pending = this.pending;
+    this.pending = null;
+    await pending;
   }
 
   // A copy of the path, since reading carries on after a problem and can
@@ -820,7 +828,11 @@ class Scanner {
     };
   }
 
-  read(token: string): TokenReading {
+  /**
+   * Read `token`, and say what it was read as. A subcommand it names is
+   * loaded unless `load` is false; {@link settle} before the next token.
+   */
+  read(token: string, load = true): TokenReading {
     // Every token after `--` is an argument.
     if (this.argSeparatorIndex !== -1) {
       return this.addArg(token);
@@ -836,14 +848,7 @@ class Scanner {
     if (meaning?.kind === "subcommand") {
       this.endOption();
       this.open = noOpenOption;
-      this.path.push(meaning.command);
-      const loading = this.scope.enter(meaning.command, this.loads);
-      // The path has the command the scope is at, which for a command with a
-      // `loadSpec` is the one that loaded in its place.
-      this.pending = loading && this.placeLoaded(loading);
-      if (!loading) {
-        this.path[this.path.length - 1] = this.scope.command as Subcommand;
-      }
+      this.pending = this.scope.enter(meaning.command, load);
       return meaning;
     }
 
@@ -916,11 +921,11 @@ class Scanner {
    * `path`.
    */
   async readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
-    const help = path[path.length - 1];
-    for (let i = 1; i < path.length - 1; i++) {
+    const [, ...below] = path;
+    const help = below[below.length - 1];
+    for (let i = 0; i < below.length - 1; i++) {
       // The parser entered these on the way to help, so they're loaded.
-      this.scope.enterNow(path[i]);
-      this.path.push(this.scope.command as Subcommand);
+      this.scope.enterNow(below[i]);
     }
     // The parser read the names as arguments of help, so none is an option.
     this.optionsAllowed = false;
@@ -936,11 +941,11 @@ class Scanner {
       }
       // With a persistent help command, `cli help a help` is `cli a help`.
       if (reading.command === help && !own?.includes(help)) {
-        this.path.pop();
-        return { path: this.path, error: null, subcommands: [] };
+        const [root, ...entered] = this.path;
+        return { path: [root, ...entered.slice(0, -1)], error: null, subcommands: [] };
       }
       if (this.pending) {
-        await this.pending;
+        await this.settle();
       }
     }
     const subcommands = this.scope.subcommands();
@@ -966,9 +971,7 @@ export function tokenReader(spec: Spec): TokenReader {
   const s = new Scanner(spec);
   return {
     async read(token) {
-      if (s.pending) {
-        await s.pending;
-      }
+      await s.settle();
       return s.read(token);
     },
   };
@@ -982,19 +985,13 @@ export function tokenReader(spec: Spec): TokenReader {
  */
 export async function readNext(spec: Spec, before: readonly string[], partial: string): Promise<NextToken> {
   const s = new Scanner(spec);
-  for (let i = 0; i < before.length; i++) {
-    s.read(before[i]);
-    if (s.pending) {
-      await s.pending;
-    }
-  }
+  await s.readAll(before, false);
   const next = s.next();
   let attached: NextToken["attached"] = null;
   let partialIsOption = false;
   if (partial !== "" && next.optionsAllowed) {
     // Nothing follows the partial token, so a command it names isn't loaded.
-    s.loads = false;
-    const reading = s.read(partial);
+    const reading = s.read(partial, false);
     partialIsOption =
       reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
     const found = reading.kind === "options" ? reading.attached : null;
@@ -1045,14 +1042,6 @@ export function readHelpNames(path: CommandPath, names: readonly string[]): Prom
  */
 export async function parse(input: readonly string[], spec: Spec): Promise<ParseResult> {
   const s = new Scanner(spec);
-  for (let i = 0; i < input.length; i++) {
-    s.read(input[i]);
-    if (s.problem) {
-      throw s.problem();
-    }
-    if (s.pending) {
-      await s.pending;
-    }
-  }
+  await s.readAll(input, true);
   return s.finish();
 }

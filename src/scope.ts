@@ -64,7 +64,9 @@ export interface OptionForm {
 
 /**
  * What a name means at one command on a path: the options, subcommands,
- * directives and argument limits in effect there.
+ * directives and argument limits in effect there. It keeps the path, and
+ * moves along it one subcommand at a time, loading each that has a
+ * `loadSpec`.
  *
  * Moving to a subcommand replaces the local options and adds its persistent
  * options to the inherited ones. A name refers to one option: a local option
@@ -73,7 +75,9 @@ export interface OptionForm {
  * name a subcommand. The parser, help, completion and the spec checker all
  * ask this module what a name refers to, so they can't disagree.
  */
-export class CommandScope {
+export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
+  /** See {@link path}. */
+  private readonly commands: [Root, ...Subcommand[]];
   /** Non-persistent options of the current command, in definition order. */
   readonly local: Option[] = [];
   /** Persistent options from every command on the path, in definition order. */
@@ -85,8 +89,6 @@ export class CommandScope {
   readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
   readonly directives: Directives = defaultDirectives();
-  /** The current command. For one that has a `loadSpec`, it's the command that loaded in its place. */
-  command: Spec | Subcommand;
   /** Whether the current command has subcommands of its own or inherits any. */
   hasSubcommands = false;
   /**
@@ -111,8 +113,8 @@ export class CommandScope {
   argsLimit = 0;
 
   /** The scope at `root`. */
-  constructor(root: Spec | Subcommand) {
-    this.command = root;
+  constructor(root: Root) {
+    this.commands = [root];
     this.select(root);
   }
 
@@ -121,7 +123,7 @@ export class CommandScope {
    * loaded is loaded first. Throws if its `loadSpec` gives a promise, since
    * the scope can't say what's in effect until it settles.
    */
-  static at(path: readonly (Spec | Subcommand)[]): CommandScope {
+  static at<Root extends Spec | Subcommand>(path: readonly [Root, ...Subcommand[]]): CommandScope<Root> {
     const scope = new CommandScope(path[0]);
     for (let i = 1; i < path.length; i++) {
       scope.enterNow(path[i]);
@@ -130,10 +132,23 @@ export class CommandScope {
   }
 
   /**
+   * The commands from the root to the current one. A command that has a
+   * `loadSpec` is on it as the command that loaded in its place.
+   */
+  get path(): readonly [Root, ...Subcommand[]] {
+    return this.commands;
+  }
+
+  /** The current command, the last one on {@link path}. */
+  get command(): Root | Subcommand {
+    return this.commands[this.commands.length - 1];
+  }
+
+  /**
    * {@link enter} for a caller that can't wait: throws if the `loadSpec` of
    * `command` gives a promise.
    */
-  enterNow(command: Spec | Subcommand): void {
+  enterNow(command: Subcommand): void {
     const loading = this.enter(command);
     if (loading) {
       throw notLoaded(loading, command);
@@ -143,11 +158,24 @@ export class CommandScope {
   /**
    * Move to `command`, a subcommand of the current one. A command with a
    * `loadSpec` is loaded first, unless `load` is false, and the scope moves
-   * to the command that stands in its place, which is then {@link command}.
-   * If the `loadSpec` gives a promise, so does this, and the scope can't be
-   * asked anything until it settles.
+   * to the command that stands in its place. If the `loadSpec` gives a
+   * promise, so does this, and the scope stays at the current command until
+   * it settles.
    */
-  enter(command: Spec | Subcommand, load = true): Promise<void> | null {
+  enter(command: Subcommand, load = true): Promise<void> | null {
+    if (command.loadSpec !== undefined && load) {
+      const loaded = loadCommand(command);
+      if (typeof (loaded as Promise<Subcommand>).then === "function") {
+        return (loaded as Promise<Subcommand>).then((whole) => this.move(whole));
+      }
+      command = loaded as Subcommand;
+    }
+    this.move(command);
+    return null;
+  }
+
+  /** Make `command`, a subcommand of the current one, the current command. */
+  private move(command: Subcommand): void {
     const parentSubcommands = this.command.subcommands;
     if (parentSubcommands) {
       // Nearest first, so these go in front of the ones inherited from above.
@@ -158,17 +186,8 @@ export class CommandScope {
         }
       }
     }
-    if ((command as Subcommand).loadSpec !== undefined && load) {
-      const loaded = loadCommand(command as Subcommand);
-      if (typeof (loaded as Promise<Subcommand>).then === "function") {
-        this.command = command;
-        return (loaded as Promise<Subcommand>).then((whole) => this.select((this.command = whole)));
-      }
-      command = loaded as Subcommand;
-    }
-    this.command = command;
+    this.commands.push(command);
     this.select(command);
-    return null;
   }
 
   /** Take the argument limits, options and directives of `command`, the new current command. */
@@ -585,20 +604,32 @@ function loadCommand(stub: Subcommand): Subcommand | Promise<Subcommand> {
 }
 
 /**
+ * What a command with a `loadSpec` sets: what its parent reads before the
+ * command loads. A parent's help and completion have shown these, so they're
+ * the ones used.
+ */
+export const stubKeys = ["name", "description", "hidden", "isPersistent"] as const;
+
+/**
  * The command that stands in place of `stub` once its `loadSpec` has given
- * `loaded`: everything `loaded` has, under everything `stub` sets. A parent's
- * help and completion have shown the stub's name and description, so those
- * are the ones used. Neither object is changed.
+ * `loaded`: everything `loaded` has, under each of the {@link stubKeys} that
+ * `stub` sets. Neither object is changed.
  */
 function inPlaceOf(stub: Subcommand, loaded: Subcommand): Subcommand {
-  return { ...loaded, ...stub, loadSpec: undefined };
+  const whole: Subcommand = { ...loaded, loadSpec: undefined };
+  for (const key of stubKeys) {
+    if (stub[key] !== undefined) {
+      Object.assign(whole, { [key]: stub[key] });
+    }
+  }
+  return whole;
 }
 
 /**
  * The error for reading `command` while it's still `loading`. It's a
  * function of its own so that a run that never does doesn't compile it.
  */
-function notLoaded(loading: Promise<void>, command: Spec | Subcommand): Error {
+function notLoaded(loading: Promise<void>, command: Subcommand): Error {
   // Nobody waits for the load, so it mustn't become an unhandled rejection.
   loading.catch(() => {});
   const name = asArray(command.name)[0];

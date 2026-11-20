@@ -227,7 +227,9 @@ function lazy<C extends Spec | Subcommand>(
       stub = { name, [origin]: subcommand } as Subcommand;
       Object.assign(stub, JSON.parse(JSON.stringify({ description, hidden, isPersistent })));
       made.set(subcommand, stub);
-      const whole = lazy(subcommand, wrap, made);
+      // The command in the stub's place keeps only what the stub sets of what a
+      // parent reads, so the loaded command says where it came from too.
+      const whole = { ...lazy(subcommand, wrap, made), [origin]: subcommand };
       stub.loadSpec = () => wrap(whole);
     }
     return stub;
