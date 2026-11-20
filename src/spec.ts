@@ -520,7 +520,11 @@ type ParseAt<V> = V extends { readonly "~standard": { readonly types?: infer T }
 type Tree<X, Inherited, S> = {
   [I in keyof X]: I extends "parse"
     ? X[I] & ParseAt<X[I]>
-    : Whole<X, X[I], S> & Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
+    : // A function's own properties, like a mock's, aren't fields of the spec.
+      [X[I]] extends [(...args: never[]) => unknown]
+      ? X[I]
+      : Whole<X, X[I], S> &
+          Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
 } & (X extends readonly unknown[] | Primitive ? unknown : Checked<X, Inherited, S>);
 
 // }}}

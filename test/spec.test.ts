@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import * as CLI from "../src/index.js";
 import { parse } from "../src/parse.js";
@@ -459,4 +459,12 @@ CLI.spec({
   args: { name: "f", isOptional: true },
   // @ts-expect-error An action that asks for more than its command gives.
   action: (init: { args: [string] }) => void init,
+});
+
+test("spec: a function with properties is a value, not a schema to check", () => {
+  CLI.spec({
+    name: "demo",
+    action: vi.fn(),
+    subcommands: [{ name: "sub", loadSpec: vi.fn(() => ({ name: "sub" })) }],
+  });
 });
