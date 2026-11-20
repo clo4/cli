@@ -34,6 +34,8 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Argument's parser**: What an argument's `parse` property holds. It turns the string the user typed into the value the action receives, or rejects it. It's a built-in parser or a Standard Schema from another library. Written as "the argument's parser" or "its parser". _Avoid_: `parse` as a noun, validator, coercion
 
+**Parser description**: What an argument's parser says about the values it takes: the strings it lists, the range of numbers it takes, what help shows, and what completion offers. A built-in parser describes itself, and another Standard Schema is described by the JSON Schema it gives.
+
 **Built-in parser**: A `Parser` object, which is what `number`, `choice`, `seq` and the other parser functions return.
 
 **Command-line parser**: The part of the library that reads the command line against the spec. "The parser" on its own means this one. Where a sentence mentions an argument's parser too, it's written out in full.

@@ -1,6 +1,5 @@
 /**
- * `number` and `choice`, the {@link Parser} class they return, and what
- * help, completion and error messages read from an argument's parser.
+ * `number` and `choice`, and the {@link Parser} class they return.
  *
  * A {@link Parser} holds an {@link Atom} and what the atom reads. Help shows
  * it as a pattern, and completion offers the text that can come next.
@@ -9,7 +8,7 @@
  * @module
  */
 
-import type { Arg, StandardResult } from "./types.js";
+import type { StandardResult } from "./types.js";
 
 /**
  * One reading of a value. An atom leaves the value it read in `out`. `want`
@@ -38,6 +37,8 @@ export interface Atom {
   schema?(self: Parser<any>): Record<string, unknown> | undefined;
   /** Each value the parser accepts, for a parser that help shows as a list of them. */
   list?(self: Parser<any>): string[] | undefined;
+  /** The strings the parser lists among its values, as the user types them. */
+  choices?(self: Parser<any>): string[] | undefined;
   /** Whether the value can leave the part out. Help shows its label in brackets, like `[<to>]`. */
   optional?: boolean;
 }
@@ -70,7 +71,7 @@ export function fail(state: State, at: number, what: unknown): -1 {
  * comma, a bracket or a `|` is in quotes, and a list of them separated by
  * ` | ` can only be read one way.
  */
-function describeChoice(value: unknown): string {
+export function describeChoice(value: unknown): string {
   const text = String(value);
   return text === "" || /[\s|,()"']/.test(text) ? JSON.stringify(text) : text;
 }
@@ -243,6 +244,7 @@ export const mapAtom: Atom = {
   words: (self) => self.of.atom.words?.(self.of),
   schema: (self) => self.of.atom.schema?.(self.of),
   list: (self) => listOf(self.of),
+  choices: (self) => self.of.atom.choices?.(self.of),
 };
 
 /** The least and greatest numbers a schema accepts, and whether each is itself left out. */
@@ -414,10 +416,14 @@ const choiceAtom: Atom = {
       : undefined,
   list: (self) =>
     self.of.map((value: Part) => (typeof value === "string" ? describeChoice(value) : patternOf(value))),
+  choices: (self) =>
+    self.of.flatMap((value: Part) =>
+      typeof value === "string" ? [value] : (value.atom.choices?.(value) ?? []),
+    ),
 };
 
 /** Each value `parser` accepts as help lists them, unless it has a label or isn't shown as a list. */
-function listOf(parser: Parser<unknown>): string[] | undefined {
+export function listOf(parser: Parser<unknown>): string[] | undefined {
   return parser.label === undefined ? parser.atom.list?.(parser) : undefined;
 }
 
@@ -461,64 +467,6 @@ export const number = (options?: { min?: number; max?: number; int?: boolean }):
 export const choice = <const T extends readonly [Part, ...Part[]]>(
   ...values: T
 ): Parser<ValueOf<T[number]>> => new Parser(choiceAtom, values);
-
-/**
- * What the parser of `arg` says it takes, as JSON Schema. Undefined if the
- * argument has no parser, or its schema can't describe itself.
- */
-export function describedBy(arg: Arg): Record<string, unknown> | undefined {
-  try {
-    return arg.parse?.["~standard"].jsonSchema?.input({ target: "draft-2020-12" });
-  } catch {
-    // A schema with a part that JSON Schema has no words for.
-    return undefined;
-  }
-}
-
-/** The values the parser of `arg` accepts, if its schema lists them. A rejected value is compared with these. */
-export function choicesOf(arg: Arg): string[] | undefined {
-  const values = describedBy(arg)?.enum;
-  return Array.isArray(values) ? values.map(String) : undefined;
-}
-
-/** The range a JSON Schema for a number gives. */
-export function boundsOf(schema: Record<string, unknown>): Bounds {
-  const { minimum, maximum, exclusiveMinimum, exclusiveMaximum } = schema;
-  const min = typeof exclusiveMinimum === "number" ? exclusiveMinimum : minimum;
-  const max = typeof exclusiveMaximum === "number" ? exclusiveMaximum : maximum;
-  return {
-    min: typeof min === "number" ? min : undefined,
-    max: typeof max === "number" ? max : undefined,
-    minExclusive: typeof exclusiveMinimum === "number",
-    maxExclusive: typeof exclusiveMaximum === "number",
-  };
-}
-
-/**
- * What the parser of `arg` accepts, for help: each of its values if it
- * lists them, or else its type and range if it's a number, or else its
- * pattern if it's a {@link Parser}, as the one element. Undefined if the
- * parser says none of those. Help joins the elements with ` | `, and starts
- * a new line between two when it has to.
- */
-export function constraintOf(arg: Arg): string[] | undefined {
-  const schema = describedBy(arg);
-  if (schema) {
-    if (Array.isArray(schema.enum)) {
-      return schema.enum.map(describeChoice);
-    }
-    const { type } = schema;
-    if (type === "integer" || type === "number") {
-      // Help says `int`, the name the parser has in a spec.
-      return [describeRange(type === "integer" ? "int" : type, boundsOf(schema))];
-    }
-  }
-  if (!isParser(arg.parse)) {
-    return undefined;
-  }
-  // A choice with a parser among its values lists each one, like `auto | <int>`.
-  return listOf(arg.parse) ?? [patternOf(arg.parse)];
-}
 
 /** Add to `found` what `typed` could become that starts with `partial`. */
 function addCompletions(found: string[], parser: Parser<unknown>, typed: string, partial: string): void {

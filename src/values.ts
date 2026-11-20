@@ -9,7 +9,7 @@
 
 import type { Arg, Option, StandardResult, StandardSchemaV1 } from "./types.js";
 import { InvalidValue, problemsError } from "./errors.js";
-import { choicesOf } from "./schemas.js";
+import { describeParser } from "./description.js";
 import type { ErrorContext, ParseError } from "./errors.js";
 import { argAt, argName, unusedDefaults } from "./args.js";
 import type { ArgList } from "./args.js";
@@ -155,7 +155,7 @@ export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unkno
           result.reason,
           job.isDefault,
           unparsed.context,
-          choicesOf(job.arg),
+          describeParser(job.arg)?.choices,
         ),
       );
     } else {

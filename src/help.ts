@@ -5,7 +5,7 @@ import type { LiveSubcommand, OptionForm, VisibleOption } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
-import { constraintOf } from "./schemas.js";
+import { describeParser } from "./description.js";
 import { argName, leadingDefaults } from "./args.js";
 import { asArray, print, printError } from "./util.js";
 
@@ -293,13 +293,8 @@ function optionDescriptions(options: readonly VisibleOption[]): string[] {
   for (let i = 0; i < options.length; i++) {
     const option = options[i].option;
     const defaults = leadingDefaults(option.args);
-    let constraint: string[] | undefined;
-    if (option.args !== undefined) {
-      const args = asArray(option.args);
-      if (args.length === 1 && args[0].parse !== undefined) {
-        constraint = constraintOf(args[0]);
-      }
-    }
+    const args = asArray(option.args);
+    const constraint = args.length === 1 ? describeParser(args[0])?.constraint : undefined;
     descriptions.push(
       defaults.length === 0 && constraint === undefined
         ? (option.description ?? defaultDesc)
@@ -353,7 +348,7 @@ function argumentRows(args: readonly Arg[]): string {
     const name = argName(arg) + (arg.isVariadic ? "..." : "");
     names.push(name);
     width = Math.max(width, name.length);
-    const constraint = arg.parse === undefined ? undefined : constraintOf(arg);
+    const constraint = describeParser(arg)?.constraint;
     descriptions.push(
       arg.default === undefined && constraint === undefined
         ? (arg.description ?? "")

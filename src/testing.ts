@@ -14,7 +14,8 @@ import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.j
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
-import { boundsOf, describedBy, describeRange } from "./schemas.js";
+import { describeParser } from "./description.js";
+import { describeRange } from "./schemas.js";
 import { apply, Rejected } from "./values.js";
 
 const repr = JSON.stringify;
@@ -617,26 +618,25 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertRangesAreNotEmpty",
     check(walk) {
       const check = (arg: Arg, where: string) => {
-        const schema = arg.parse === undefined ? undefined : describedBy(arg);
-        if (!schema || (schema.type !== "integer" && schema.type !== "number")) {
+        const range = describeParser(arg)?.range;
+        if (!range) {
           return;
         }
-        const bounds = boundsOf(schema);
+        const { type, bounds } = range;
         const { min, max } = bounds;
         if (min === undefined || max === undefined) {
           return;
         }
         // The least and greatest numbers the range has, for a range of integers.
-        const least =
-          schema.type === "integer" ? (bounds.minExclusive ? Math.floor(min) + 1 : Math.ceil(min)) : min;
+        const least = type === "integer" ? (bounds.minExclusive ? Math.floor(min) + 1 : Math.ceil(min)) : min;
         const greatest =
-          schema.type === "integer" ? (bounds.maxExclusive ? Math.ceil(max) - 1 : Math.floor(max)) : max;
+          type === "integer" ? (bounds.maxExclusive ? Math.ceil(max) - 1 : Math.floor(max)) : max;
         const hasNone =
           least > greatest ||
-          (schema.type === "number" && least === greatest && (bounds.minExclusive || bounds.maxExclusive));
+          (type === "number" && least === greatest && (bounds.minExclusive || bounds.maxExclusive));
         assert(
           !hasNone,
-          `${where} has a parser that rejects every value, since it asks for ${schema.type === "integer" ? "an" : "a"} ${describeRange(schema.type, bounds)}`,
+          `${where} has a parser that rejects every value, since it asks for ${type === "integer" ? "an" : "a"} ${describeRange(type, bounds)}`,
         );
       };
       walk.forEachCommand(({ command, path }) => {

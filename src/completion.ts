@@ -13,7 +13,8 @@
  */
 
 import type { Arg, Spec, Subcommand, Template } from "./types.js";
-import { accepts, choice, choicesOf, completionsOf, isParser } from "./schemas.js";
+import { describeParser } from "./description.js";
+import { choice } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
 import { nextHelpNames } from "./help.js";
 import { readNext } from "./parse.js";
@@ -142,22 +143,8 @@ async function argValues(arg: Arg, tokens: string[], partial: string): Promise<C
   // An argument that says nothing about completion offers what its parser
   // accepts. A built-in parser gives what the word could become, and
   // another schema gives the values it lists.
-  if (
-    arg.parse !== undefined &&
-    arg.suggestions === undefined &&
-    arg.generators === undefined &&
-    arg.template === undefined
-  ) {
-    const parser = arg.parse;
-    if (isParser(parser)) {
-      for (const value of completionsOf(parser, partial)) {
-        candidates.push(accepts(parser, value) ? { value } : { value, open: true });
-      }
-    } else {
-      for (const value of choicesOf(arg) ?? []) {
-        candidates.push({ value });
-      }
-    }
+  if (arg.suggestions === undefined && arg.generators === undefined && arg.template === undefined) {
+    candidates.push(...(describeParser(arg)?.complete(partial) ?? []));
   }
 
   return candidates;
