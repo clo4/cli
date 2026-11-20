@@ -1,5 +1,14 @@
 import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
-import { addDefaults, argAt, asArray, getMaxArgs, getMinArgs, hasParse, print } from "./util.js";
+import {
+  addDefaults,
+  argAt,
+  asArray,
+  getMaxArgs,
+  getMinArgs,
+  hasParse,
+  print,
+  unusedDefaults,
+} from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -15,7 +24,7 @@ import type { Directives } from "./directives.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
 import type { LiveSubcommand, OptionForm, SubcommandMatching } from "./scope.js";
 import { parseValues } from "./values.js";
-import type { ParsedUse, ParsedValues } from "./values.js";
+import type { ParsedUse } from "./values.js";
 
 export interface ParseResult {
   /** The positional arguments: each one a string, or what its parser gave. */
@@ -270,8 +279,8 @@ function optionArgs(
     options,
     has: (name) => options.has(name),
     // The spec's types, or the caller, say what each value is. See `OptionArgs`.
-    get: <Read>(name: string) => (options.get(name) ?? unusedDefaults(scope, name, defaults))?.[0] as Read,
-    all: <Read>(name: string) => (options.get(name) ?? unusedDefaults(scope, name, defaults) ?? []) as Read[],
+    get: <Read>(name: string) => (options.get(name) ?? unusedValues(scope, name, defaults))?.[0] as Read,
+    all: <Read>(name: string) => (options.get(name) ?? unusedValues(scope, name, defaults) ?? []) as Read[],
     // A repeatable option without arguments stores an empty string for each
     // use, so its values count the uses.
     count: (name) => options.get(name)?.length ?? 0,
@@ -279,31 +288,17 @@ function optionArgs(
 }
 
 /**
- * The defaults of the arguments of the option `name` refers to at the command
- * `scope` is for, by name or by ref, when no option of that name was used.
- * They're what `parsed` has for the option, or else the strings from the
- * spec. Undefined if its first argument is optional or has no default.
+ * The defaults of the option `name` refers to at the command `scope` is for,
+ * by name or by ref, when no option of that name was used: what `parsed` has
+ * for it, or else its defaults as written. See {@link unusedDefaults}.
  */
-function unusedDefaults(
+function unusedValues(
   scope: CommandScope,
   name: string,
   parsed: Map<Option, unknown[]> | null,
 ): unknown[] | undefined {
   const option = scope.resolve(name) ?? scope.withRef(name);
-  const args = asArray(option?.args);
-  // An option whose first argument is optional, like `--inspect[=port]`,
-  // means something different when it's left out than when it's bare, so
-  // its defaults are only for the bare option.
-  if (args.length === 0 || args[0].isOptional) {
-    return undefined;
-  }
-  const known = parsed?.get(option!);
-  if (known) {
-    return known;
-  }
-  const values: string[] = [];
-  addDefaults(values, args);
-  return values.length > 0 ? values : undefined;
+  return (option && parsed?.get(option)) ?? unusedDefaults(option);
 }
 
 /** The action of a command that has none of its own: print the command's help. */
@@ -721,7 +716,7 @@ class Scanner {
     if (problems) {
       throw problemsError(problems);
     }
-    return this.result(this.args, null);
+    return this.result(null);
   }
 
   /**
@@ -742,24 +737,23 @@ class Scanner {
         }
       }
     }
-    const values = await parseValues({
+    const defaults = await parseValues({
       context: this.ctx(),
       problems,
       args: this.args,
       typedArgs,
       argSpecs: asArray(this.scope.command.args),
-      options: this.options,
       uses: this.uses,
       unused,
     });
-    return this.result(values.args, values.defaults);
+    return this.result(defaults);
   }
 
-  private result(args: unknown[], defaults: ParsedValues["defaults"]): ParseResult {
+  private result(defaults: Map<Option, unknown[]> | null): ParseResult {
     return {
       path: this.path,
       action: this.optionAction ?? this.scope.command.action ?? usage,
-      args,
+      args: this.args,
       argSeparatorIndex: this.argSeparatorIndex,
       options: optionArgs(this.options, this.scope, defaults),
     };

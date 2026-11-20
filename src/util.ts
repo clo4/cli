@@ -1,4 +1,4 @@
-import type { Arg } from "./types.js";
+import type { Arg, Option } from "./types.js";
 
 /**
  * `Array.isArray`, typed to narrow read-only arrays. `asArray`, `getMinArgs`,
@@ -173,6 +173,23 @@ export function describeThrown(value: unknown): string {
     }
   }
   return String(value);
+}
+
+/**
+ * The defaults an action reads for `option` when it isn't used: the defaults
+ * of its arguments, up to the first argument without one. An option whose
+ * first argument is optional, like `--inspect[=port]`, means something
+ * different when it's left out than when it's bare, so its defaults are only
+ * for the bare option. Undefined if it has none.
+ */
+export function unusedDefaults(option: Option | null): string[] | undefined {
+  const args = asArray(option?.args);
+  if (args.length === 0 || args[0].isOptional) {
+    return undefined;
+  }
+  const values: string[] = [];
+  addDefaults(values, args);
+  return values.length > 0 ? values : undefined;
 }
 
 /**

@@ -868,3 +868,30 @@ test("spec check: every default passes its argument's parser", async () => {
     ),
   ).rejects.toThrow('In `demo`, argument word has the default "no", which its parser rejects: say yes');
 });
+
+test("each value is parsed once, and every name of its option reads the result", async () => {
+  const seen: string[] = [];
+  const box = schema((value) => {
+    seen.push(value);
+    return { value };
+  });
+  const spec = CLI.spec({
+    name: "demo",
+    options: [
+      { name: ["-c", "--config"], description: "x", args: { name: "c", parse: box } },
+      {
+        name: ["-t", "--tag"],
+        description: "x",
+        isRepeatable: true,
+        isPersistent: true,
+        args: { name: "t", parse: box },
+      },
+    ],
+    subcommands: [{ name: "sub", action: () => {} }],
+  });
+  const { options } = await parse(["-c", "a", "-t", "b", "sub", "--tag", "c"], spec);
+  expect(options.get("-c")).toBe(options.get("--config"));
+  expect(options.all("-t")).toBe(options.all("--tag"));
+  expect(options.all("--tag")).toEqual([{ value: "b" }, { value: "c" }]);
+  expect(seen).toEqual(["a", "b", "c"]);
+});
