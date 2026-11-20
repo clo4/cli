@@ -30,6 +30,8 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Form**: How one name of an option is written with its value at one command: as a separate token, after a separator, or glued on.
 
+**Argument list**: What a command's or an option's `args` holds: one argument, a list of them, or none. It says how many values the command or option takes, and which defaults fill in for the arguments a use leaves out, once every required one is given.
+
 **Argument's parser**: What an argument's `parse` property holds. It turns the string the user typed into the value the action receives, or rejects it. It's a built-in parser or a Standard Schema from another library. Written as "the argument's parser" or "its parser". _Avoid_: `parse` as a noun, validator, coercion
 
 **Built-in parser**: A `Parser` object, which is what `number`, `choice`, `seq` and the other parser functions return.

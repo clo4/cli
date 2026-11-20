@@ -10,34 +10,8 @@ import {
   UnknownOption,
 } from "../src/errors.js";
 import { parse, usage } from "../src/parse.js";
-import { getMaxArgs, getMinArgs } from "../src/util.js";
 import type { Action, Option, OptionArgs, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
-
-test("getMinArgs", async () => {
-  expect(getMinArgs([])).toBe(0);
-  expect(getMinArgs([{}])).toBe(1);
-  expect(getMinArgs([{}, {}])).toBe(2);
-  expect(getMinArgs([{}, { isOptional: true }])).toBe(1);
-  expect(getMinArgs([{ isOptional: true }])).toBe(0);
-  expect(getMinArgs([{ isOptional: true }, {}])).toBe(0);
-  // Accepts the raw spec value (scalar / undefined) without an array copy.
-  expect(getMinArgs(undefined)).toBe(0);
-  expect(getMinArgs({})).toBe(1);
-  expect(getMinArgs({ isOptional: true })).toBe(0);
-});
-
-test("getMaxArgs", async () => {
-  expect(getMaxArgs([])).toBe(0);
-  expect(getMaxArgs([{}])).toBe(1);
-  expect(getMaxArgs([{}, {}])).toBe(2);
-  expect(getMaxArgs([{}, { isVariadic: true }])).toBe(Infinity);
-  expect(getMaxArgs([{ isVariadic: true }])).toBe(Infinity);
-  expect(getMaxArgs([{ isVariadic: true }, {}])).toBe(Infinity);
-  expect(getMaxArgs(undefined)).toBe(0);
-  expect(getMaxArgs({})).toBe(1);
-  expect(getMaxArgs({ isVariadic: true })).toBe(Infinity);
-});
 
 test("parse: no args and no values executes action", async () => {
   const result = await parse([], { name: "test" });

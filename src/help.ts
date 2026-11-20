@@ -6,7 +6,8 @@ import type { DidYouMean } from "./errors.js";
 import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
 import { constraintOf } from "./schemas.js";
-import { addDefaults, asArray, print, printError } from "./util.js";
+import { argName, leadingDefaults } from "./args.js";
+import { asArray, print, printError } from "./util.js";
 
 // Help uses plain loops instead of array callbacks. V8 compiles each function
 // the first time it's called, and a CLI prints help at most once a run, so
@@ -291,10 +292,9 @@ function optionDescriptions(options: readonly VisibleOption[]): string[] {
   const descriptions: string[] = [];
   for (let i = 0; i < options.length; i++) {
     const option = options[i].option;
-    const defaults: string[] = [];
+    const defaults = leadingDefaults(option.args);
     let constraint: string[] | undefined;
     if (option.args !== undefined) {
-      addDefaults(defaults, option.args);
       const args = asArray(option.args);
       if (args.length === 1 && args[0].parse !== undefined) {
         constraint = constraintOf(args[0]);
@@ -350,7 +350,7 @@ function argumentRows(args: readonly Arg[]): string {
   let width = 0;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    const name = (arg.name || "argument") + (arg.isVariadic ? "..." : "");
+    const name = argName(arg) + (arg.isVariadic ? "..." : "");
     names.push(name);
     width = Math.max(width, name.length);
     const constraint = arg.parse === undefined ? undefined : constraintOf(arg);
@@ -554,7 +554,7 @@ function argumentsAfterName(args: readonly Arg[], join: string | null): string {
     return ` ${summarizeArguments(args)}`;
   }
   const first = args[0];
-  const name = first.name || "argument";
+  const name = argName(first);
   const joined =
     (first.isOptional ? `[${join}${name}]` : `${join}<${name}>`) + (first.isVariadic ? "..." : "");
   return args.length > 1 ? `${joined} ${summarizeArguments(args.slice(1))}` : joined;
@@ -569,6 +569,6 @@ function summarizeArguments(args: readonly Arg[]): string {
 }
 
 function argToString(arg: Arg): string {
-  const name = arg.name || "argument";
+  const name = argName(arg);
   return (arg.isOptional ? `[${name}]` : `<${name}>`) + (arg.isVariadic ? "..." : "");
 }

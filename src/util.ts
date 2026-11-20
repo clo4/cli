@@ -1,8 +1,6 @@
-import type { Arg, Option } from "./types.js";
-
 /**
- * `Array.isArray`, typed to narrow read-only arrays. `asArray`, `getMinArgs`,
- * `getMaxArgs` and `addDefaults` run on every parse, so they call
+ * `Array.isArray`, typed to narrow read-only arrays. `asArray` and the
+ * functions of the args module run on every parse, so they call
  * `Array.isArray` and cast instead, which saves a cold start compiling this
  * function.
  */
@@ -107,56 +105,6 @@ export function printError(...strings: unknown[]): void {
 // }}}
 
 /**
- * Add the defaults of the arguments from index `from` on to `values`, stopping
- * at the first argument without one. The parser and help both use this, so
- * help only shows the defaults the parser uses.
- */
-export function addDefaults(values: string[], args: Arg | readonly Arg[] | undefined, from = 0): void {
-  if (args === undefined) {
-    return;
-  }
-  if (!Array.isArray(args)) {
-    const value = (args as Arg).default;
-    if (from === 0 && value !== undefined) {
-      values.push(value);
-    }
-    return;
-  }
-  for (let i = from; i < args.length; i++) {
-    const value = args[i].default;
-    if (value === undefined) {
-      return;
-    }
-    values.push(value);
-  }
-}
-
-/** Whether one of the arguments has a parser. */
-export function hasParse(args: Arg | readonly Arg[] | undefined): boolean {
-  if (args === undefined) {
-    return false;
-  }
-  if (!Array.isArray(args)) {
-    return (args as Arg).parse !== undefined;
-  }
-  for (let i = 0; i < args.length; i++) {
-    if (args[i].parse !== undefined) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** The argument at `index`, reusing a final variadic argument. */
-export function argAt(args: readonly Arg[], index: number): Arg | undefined {
-  if (index < args.length) {
-    return args[index];
-  }
-  const last = args[args.length - 1];
-  return last?.isVariadic ? last : undefined;
-}
-
-/**
  * The message for a value that an action, a `loadSpec` or an argument's parser threw. A
  * value that isn't an Error is shown as JSON where it can be, since `String`
  * turns an object into "[object Object]".
@@ -173,68 +121,4 @@ export function describeThrown(value: unknown): string {
     }
   }
   return String(value);
-}
-
-/**
- * The defaults an action reads for `option` when it isn't used: the defaults
- * of its arguments, up to the first argument without one. An option whose
- * first argument is optional, like `--inspect[=port]`, means something
- * different when it's left out than when it's bare, so its defaults are only
- * for the bare option. Undefined if it has none.
- */
-export function unusedDefaults(option: Option | null): string[] | undefined {
-  const args = asArray(option?.args);
-  if (args.length === 0 || args[0].isOptional) {
-    return undefined;
-  }
-  const values: string[] = [];
-  addDefaults(values, args);
-  return values.length > 0 ? values : undefined;
-}
-
-/**
- * Returns the minimum number of arguments that satisfies the args.
- *
- * Accepts the raw spec value (a single arg, an array, or `undefined`) so the
- * hot path doesn't have to copy it into an array first.
- */
-export function getMinArgs(
-  args: { isOptional?: boolean } | readonly { isOptional?: boolean }[] | undefined,
-): number {
-  if (args === undefined) {
-    return 0;
-  }
-  if (!Array.isArray(args)) {
-    return (args as { isOptional?: boolean }).isOptional ? 0 : 1;
-  }
-  let count = 0;
-  for (let i = 0; i < args.length; i++) {
-    if (args[i].isOptional) {
-      break;
-    }
-    count++;
-  }
-  return count;
-}
-
-/** Returns the maximum number of arguments that satisfies the args. */
-export function getMaxArgs(
-  args: { isVariadic?: boolean } | readonly { isVariadic?: boolean }[] | undefined,
-): number {
-  if (args === undefined) {
-    return 0;
-  }
-  if (!Array.isArray(args)) {
-    return (args as { isVariadic?: boolean }).isVariadic ? Infinity : 1;
-  }
-  // Loop over the array backwards because variadic arguments are
-  // more likely to be at the end of the array. They don't _need_
-  // to be, but it's more idiomatic.
-  for (let i = 0; i < args.length; i++) {
-    if (args[args.length - 1 - i].isVariadic) {
-      return Infinity;
-    }
-  }
-  // None of the arguments are variadic, max is the number of args
-  return args.length;
 }

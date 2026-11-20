@@ -1,14 +1,6 @@
 import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
-import {
-  addDefaults,
-  argAt,
-  asArray,
-  getMaxArgs,
-  getMinArgs,
-  hasParse,
-  print,
-  unusedDefaults,
-} from "./util.js";
+import { addDefaults, argAt, hasParse, maxArgs, minArgs, unusedDefaults } from "./args.js";
+import { asArray, print } from "./util.js";
 import {
   InvalidOptionArg,
   MissingRequiredOption,
@@ -298,7 +290,7 @@ function unusedValues(
   parsed: Map<Option, unknown[]> | null,
 ): unknown[] | undefined {
   const option = scope.resolve(name) ?? scope.withRef(name);
-  return (option && parsed?.get(option)) ?? unusedDefaults(option);
+  return option ? (parsed?.get(option) ?? unusedDefaults(option)) : undefined;
 }
 
 /** The action of a command that has none of its own: print the command's help. */
@@ -476,8 +468,7 @@ class Scanner {
       const given = typedEnd - this.valuesStart;
       if (given < this.valuesMin) {
         this.failTooFewValues();
-      } else if (given < this.valuesMax) {
-        // Only an argument that wasn't given can have a default to add.
+      } else {
         addDefaults(values, this.valueArgs, given);
       }
       if (hasParse(this.valueArgs)) {
@@ -517,8 +508,8 @@ class Scanner {
 
   private useOption(option: Option, name: string): void {
     this.endOption();
-    const valuesMin = getMinArgs(option.args);
-    const valuesMax = getMaxArgs(option.args);
+    const valuesMin = minArgs(option.args);
+    const valuesMax = maxArgs(option.args);
     // Options that require a separator only take attached values.
     const separateMax = option.requiresSeparator ? 0 : valuesMax;
     this.open = { option, name, count: 0, min: valuesMin, separateMax };
@@ -709,12 +700,9 @@ class Scanner {
         problems = checkRequiredOptions(this.options, this.scope, this.path, problems);
       }
     }
-    // Defaults are added after the checks, so they never count as typed. An
-    // option action can run with required arguments missing, and then the
-    // first default would fill a required argument's place. Only an argument
-    // that wasn't given can have a default to add.
+    // Defaults are added after the checks, so they never count as typed.
     const given = this.args.length;
-    if (!command.requiresSubcommand && given >= this.scope.argsMin && given < this.scope.argsMax) {
+    if (!command.requiresSubcommand) {
       addDefaults(this.args, command.args, given);
     }
     // No argument's parser runs for an option action, which reads what was typed.
@@ -750,7 +738,7 @@ class Scanner {
       problems,
       args: this.args,
       typedArgs,
-      argSpecs: asArray(this.scope.command.args),
+      argSpecs: this.scope.command.args,
       uses: this.uses,
       unused,
     });
@@ -820,10 +808,10 @@ class Scanner {
       options: this.optionsAllowed ? this.usableOptions() : [],
       value: open && {
         option: open,
-        arg: argAt(asArray(open.args), count),
+        arg: argAt(open.args, count),
         required: count < min,
       },
-      arg: open ? undefined : argAt(asArray(command.args), this.args.length),
+      arg: open ? undefined : argAt(command.args, this.args.length),
       args: [...this.args],
     };
   }
@@ -995,7 +983,7 @@ export async function readNext(spec: Spec, before: readonly string[], partial: s
     partialIsOption =
       reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
     const found = reading.kind === "options" ? reading.attached : null;
-    const arg = found && asArray(found.option.args)[0];
+    const arg = found && argAt(found.option.args, 0);
     if (found && arg) {
       attached = {
         option: found.option,

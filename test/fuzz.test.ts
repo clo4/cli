@@ -14,7 +14,8 @@ import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import { formStart } from "../src/scope.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
-import { asArray, getMinArgs } from "../src/util.js";
+import { minArgs } from "../src/args.js";
+import { asArray } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import type { GenerateOptions } from "./fuzz/generate.js";
@@ -280,7 +281,7 @@ async function defaultsViolation(spec: Spec, input: string[]): Promise<string | 
 
   const path = result.path as readonly (Spec | Subcommand)[];
   const command = path[path.length - 1];
-  const fills = !command.requiresSubcommand && typed.args.length >= getMinArgs(command.args);
+  const fills = !command.requiresSubcommand && typed.args.length >= minArgs(command.args);
   const expected = [...typed.args, ...(fills ? leadingDefaults(command.args, typed.args.length) : [])];
   if (JSON.stringify(result.args) !== JSON.stringify(expected)) {
     return `args are ${JSON.stringify(result.args)}, expected ${JSON.stringify(expected)}`;

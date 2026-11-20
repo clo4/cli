@@ -11,7 +11,9 @@ import type { Arg, Option, StandardResult, StandardSchemaV1 } from "./types.js";
 import { InvalidValue, problemsError } from "./errors.js";
 import { choicesOf } from "./schemas.js";
 import type { ErrorContext, ParseError } from "./errors.js";
-import { argAt, asArray, describeThrown, unusedDefaults } from "./util.js";
+import { argAt, argName, unusedDefaults } from "./args.js";
+import type { ArgList } from "./args.js";
+import { asArray, describeThrown } from "./util.js";
 
 /** The values one use of an option took, for an option with a parser. */
 export interface ParsedUse {
@@ -39,7 +41,7 @@ export interface Unparsed {
   args: unknown[];
   typedArgs: number;
   /** The arguments of the selected command. */
-  argSpecs: readonly Arg[];
+  argSpecs: ArgList;
   uses: readonly ParsedUse[] | null;
   /** The options that weren't used, whose defaults an action can still read. */
   unused: readonly Option[];
@@ -88,7 +90,7 @@ export async function apply(schema: StandardSchemaV1, raw: string): Promise<unkn
 /** The jobs for the values from `start` to `end` of `values`, which are the arguments `args` in order. */
 function addJobs(
   jobs: Job[],
-  args: readonly Arg[],
+  args: ArgList,
   values: unknown[],
   start: number,
   typedEnd: number,
@@ -104,9 +106,9 @@ function addJobs(
         // An option with several arguments says which one the value is for.
         target:
           target === null
-            ? `<${arg.name ?? "argument"}>`
-            : args.length > 1
-              ? `${target} <${arg.name ?? `argument ${i - start + 1}`}>`
+            ? `<${argName(arg)}>`
+            : Array.isArray(args) && args.length > 1
+              ? `${target} <${argName(arg, `argument ${i - start + 1}`)}>`
               : target,
         isDefault: i >= typedEnd,
         values,
@@ -127,14 +129,14 @@ export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unkno
   const { args } = unparsed;
   addJobs(jobs, unparsed.argSpecs, args, 0, unparsed.typedArgs, args.length, null);
   for (const use of unparsed.uses ?? []) {
-    addJobs(jobs, asArray(use.option.args), use.values, use.start, use.typedEnd, use.end, use.name);
+    addJobs(jobs, use.option.args, use.values, use.start, use.typedEnd, use.end, use.name);
   }
   let defaults: Map<Option, unknown[]> | null = null;
   for (const option of unparsed.unused) {
     const values = unusedDefaults(option);
     if (values) {
       (defaults ??= new Map()).set(option, values);
-      addJobs(jobs, asArray(option.args), values, 0, 0, values.length, asArray(option.name).join("/"));
+      addJobs(jobs, option.args, values, 0, 0, values.length, asArray(option.name).join("/"));
     }
   }
 

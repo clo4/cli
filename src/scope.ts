@@ -2,7 +2,8 @@ import type { Option, Spec, Subcommand } from "./types.js";
 import { applyDirectives, defaultDirectives } from "./directives.js";
 import type { Directives } from "./directives.js";
 import type { DidYouMean } from "./errors.js";
-import { asArray, getMaxArgs, getMinArgs, hasParse } from "./util.js";
+import { hasParse, maxArgs, minArgs } from "./args.js";
+import { asArray } from "./util.js";
 
 /**
  * How the next token can match a subcommand: by any name the command's
@@ -193,8 +194,8 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   /** Take the argument limits, options and directives of `command`, the new current command. */
   private select(command: Spec | Subcommand): void {
     this.hasSubcommands = command.subcommands !== undefined || this.inheritedSubcommands.length > 0;
-    this.argsMin = getMinArgs(command.args);
-    this.argsMax = getMaxArgs(command.args);
+    this.argsMin = minArgs(command.args);
+    this.argsMax = maxArgs(command.args);
     this.argsLimit = command.requiresSubcommand === true ? 0 : this.argsMax;
     this.local.length = 0;
     const options = command.options;
@@ -204,7 +205,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
         if (options[i].isRequired) {
           this.hasRequiredOption = true;
         }
-        if (options[i].args !== undefined && hasParse(options[i].args)) {
+        if (hasParse(options[i].args)) {
           this.hasParse = true;
         }
       }
@@ -545,7 +546,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * into tokens.
    */
   forms(option: Option, names: readonly string[] = asArray(option.name)): OptionForm[] {
-    const takesArgs = getMaxArgs(option.args) !== 0;
+    const takesArgs = maxArgs(option.args) !== 0;
     const forms: OptionForm[] = [];
     for (let i = 0; i < names.length; i++) {
       const name = names[i];

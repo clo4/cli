@@ -8,7 +8,8 @@
  */
 
 import type { Arg, Option, SingleOrArray, Spec, Subcommand } from "./types.js";
-import { assert, getMaxArgs, getMinArgs, makeArray } from "./util.js";
+import { argName, maxArgs, minArgs } from "./args.js";
+import { assert, makeArray } from "./util.js";
 import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.js";
 import { optionToString } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
@@ -334,8 +335,8 @@ function placeholderValue(scope: CommandScope): string {
  * minimum if it takes any number.
  */
 function everyValue(option: Option, value: string): string[] {
-  const max = getMaxArgs(option.args);
-  const count = Number.isFinite(max) ? max : getMinArgs(option.args) + 1;
+  const max = maxArgs(option.args);
+  const count = Number.isFinite(max) ? max : minArgs(option.args) + 1;
   return Array.from({ length: count }, () => value);
 }
 
@@ -516,7 +517,7 @@ const specChecks: readonly SpecCheck[] = [
           if (remainingMustBeOptional) {
             assert(
               arg.isOptional,
-              `In ${namedArrayToString(...path)}, argument ${arg.name || index} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
+              `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
             );
           } else if (arg.isOptional) {
             remainingMustBeOptional = true;
@@ -539,7 +540,7 @@ const specChecks: readonly SpecCheck[] = [
         for (const [index, arg] of makeArray(command.args).entries()) {
           assert(
             arg.default === undefined || arg.isOptional,
-            `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a default, but it's required, so the default is never used`,
+            `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} has a default, but it's required, so the default is never used`,
           );
         }
       });
@@ -556,7 +557,7 @@ const specChecks: readonly SpecCheck[] = [
           if (arg.isOptional) {
             continue;
           }
-          const name = `${where}, argument ${arg.name || index} has a default, but`;
+          const name = `${where}, argument ${argName(arg, String(index))} has a default, but`;
           assert(!option.isRequired, `${name} the option is required, so the default is never used`);
           assert(
             firstWithout === null,
@@ -578,7 +579,10 @@ const specChecks: readonly SpecCheck[] = [
       const defaults: { arg: Arg; where: string }[] = [];
       walk.forEachCommand(({ command, path }) => {
         for (const [index, arg] of makeArray(command.args).entries()) {
-          defaults.push({ arg, where: `In ${namedArrayToString(...path)}, argument ${arg.name || index}` });
+          defaults.push({
+            arg,
+            where: `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))}`,
+          });
         }
       });
       walk.forEachOption(({ option, isDefinedHere, where }) => {
@@ -586,7 +590,7 @@ const specChecks: readonly SpecCheck[] = [
           return;
         }
         for (const [index, arg] of makeArray(option.args).entries()) {
-          defaults.push({ arg, where: `${where}, argument ${arg.name || index}` });
+          defaults.push({ arg, where: `${where}, argument ${argName(arg, String(index))}` });
         }
       });
       for (const { arg, where } of defaults) {
@@ -637,7 +641,7 @@ const specChecks: readonly SpecCheck[] = [
       };
       walk.forEachCommand(({ command, path }) => {
         for (const [index, arg] of makeArray(command.args).entries()) {
-          check(arg, `In ${namedArrayToString(...path)}, argument ${arg.name || index}`);
+          check(arg, `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))}`);
         }
       });
       walk.forEachOption(({ option, isDefinedHere, where }) => {
@@ -645,7 +649,7 @@ const specChecks: readonly SpecCheck[] = [
           return;
         }
         for (const [index, arg] of makeArray(option.args).entries()) {
-          check(arg, `${where}, argument ${arg.name || index}`);
+          check(arg, `${where}, argument ${argName(arg, String(index))}`);
         }
       });
     },
@@ -1021,7 +1025,7 @@ const specChecks: readonly SpecCheck[] = [
         for (const [index, arg] of makeArray(command.args).entries()) {
           assert(
             !arg.description || arg.description.split("\n").every((line) => line.length <= 68),
-            `In ${namedArrayToString(...path)}, argument ${arg.name || index} has a description line over 68 characters`,
+            `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} has a description line over 68 characters`,
           );
         }
       });
