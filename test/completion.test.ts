@@ -56,6 +56,18 @@ const values = (cands: { value: string }[]) => cands.map((c) => c.value);
 const resolve = (spec: Spec, before: readonly string[], partial: string, gateOptions?: boolean) =>
   completeRuntime({ spec, before, partial, gateOptions });
 
+test("runtime: a description after a leading newline is offered by its first line", async () => {
+  const spec: Spec = {
+    name: "cli",
+    options: [{ name: "--force", description: "\n      Overwrite.\n      Even if newer.\n    " }],
+    subcommands: [{ name: "sync", description: "\n      Sync files.\n    " }],
+  };
+  expect(await resolve(spec, [], "")).toEqual([
+    { value: "sync", description: "Sync files." },
+    { value: "--force", description: "Overwrite." },
+  ]);
+});
+
 test("runtime: top level offers subcommands and persistent options", async () => {
   const v = values(await resolve(fixture, [], ""));
   expect(v).toContain("build");

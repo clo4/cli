@@ -227,6 +227,20 @@ test("help: a description's common indentation is removed", () => {
   expect(getHelp([spec]).startsWith("First line.\n  Indented line.\n\nUsage:")).toBe(true);
 });
 
+test("help: every description after a leading newline is shown without its indentation", () => {
+  const block = (text: string) => `\n      ${text.split("\n").join("\n      ")}\n    `;
+  const spec: Spec = {
+    name: "cli",
+    options: [{ name: "--force", description: block("Overwrite.\nEven if newer.") }],
+    args: { name: "file", description: block("What to copy.") },
+    subcommands: [{ name: "sync", description: block("Sync files.\nBoth ways.\n\nMore detail.") }],
+  };
+  const help = getHelp([spec]);
+  expectIncludes(help, "  sync  Sync files.\n        Both ways.\n");
+  expectIncludes(help, "  --force  Overwrite.\n           Even if newer.\n");
+  expectIncludes(help, "  file  What to copy.\n");
+});
+
 test("help: a description after a leading newline loses only its indentation", () => {
   const shown = (description: string) => getHelp([{ name: "cli", description }]).split("\n\nUsage:")[0];
   // The least indented line sets the margin, so no line loses text.

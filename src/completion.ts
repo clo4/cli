@@ -16,7 +16,7 @@ import type { Arg, Spec, Subcommand, Template } from "./types.js";
 import { describeParser } from "./description.js";
 import { choice } from "./schemas.js";
 import { makeArray, output, print } from "./util.js";
-import { nextHelpNames } from "./help.js";
+import { nextHelpNames, shownDescription } from "./help.js";
 import { readNext } from "./parse.js";
 import { formStart } from "./scope.js";
 import type { NextToken } from "./parse.js";
@@ -29,8 +29,11 @@ export type Shell = (typeof SHELLS)[number];
 /** Accepts a supported shell. Help lists the shells and completion offers them. */
 const shellSchema = choice(...SHELLS);
 
-const firstLine = (description: string | undefined): string =>
-  description ? description.split("\n", 1)[0].trim() : "";
+/** The first line of a description as help shows it. */
+function firstLine(description: string | undefined): string {
+  const shown = shownDescription(description);
+  return shown ? shown.split("\n", 1)[0].trim() : "";
+}
 
 /** Turn an arbitrary name into a safe shell identifier fragment. */
 const sanitize = (value: string): string => value.replace(/[^A-Za-z0-9]+/g, "_");

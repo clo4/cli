@@ -12,7 +12,7 @@ import { argName, maxArgs, minArgs } from "./args.js";
 import { assert, makeArray } from "./util.js";
 import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.js";
 import type { OptionForm } from "./scope.js";
-import { optionToString } from "./help.js";
+import { optionToString, shownDescription } from "./help.js";
 import { readToken, tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
 import { describeParser } from "./description.js";
@@ -978,33 +978,24 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertDescriptionLineLengthUnder69",
     skippedBy: "allowLongDescriptionLines",
     check(walk) {
-      const spec = walk.spec;
-      if (spec.description) {
-        assert(
-          spec.description.split("\n").every((line) => line.length <= 68),
-          `Spec has a description line over 68 characters`,
-        );
-      }
+      // Each line as help shows it, which for an indented block is without the indentation.
+      const fits = (description: string | undefined) =>
+        (shownDescription(description) ?? "").split("\n").every((line) => line.length <= 68);
+      assert(fits(walk.spec.description), `Spec has a description line over 68 characters`);
       for (const { option, isDefinedHere, where } of walk.optionUses()) {
-        if (!isDefinedHere || !option.description) {
-          continue;
+        if (isDefinedHere) {
+          assert(fits(option.description), `${where} has a description line over 68 characters`);
         }
-        assert(
-          option.description.split("\n").every((line) => line.length <= 68),
-          `${where} has a description line over 68 characters`,
-        );
       }
       for (const { command, path } of walk.commands) {
-        if (command.description) {
-          assert(
-            command.description.split("\n").every((line) => line.length <= 68),
-            `${describeCommand(path)} has a description line over 68 characters`,
-          );
-        }
+        assert(
+          fits(command.description),
+          `${describeCommand(path)} has a description line over 68 characters`,
+        );
         // Help lists positional arguments with their descriptions.
         for (const [index, arg] of makeArray(command.args).entries()) {
           assert(
-            !arg.description || arg.description.split("\n").every((line) => line.length <= 68),
+            fits(arg.description),
             `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} has a description line over 68 characters`,
           );
         }

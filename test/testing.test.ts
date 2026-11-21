@@ -516,6 +516,11 @@ test("testing: assertDescriptionLineLengthUnder69", async () => {
     name: "test",
     description: "a".repeat(68),
   });
+  // Help shows an indented block without its indentation, so that isn't counted.
+  await runSpecCheck("assertDescriptionLineLengthUnder69", {
+    name: "test",
+    description: `\n        ${"a".repeat(68)}\n      `,
+  });
   await expect(
     runSpecCheck("assertDescriptionLineLengthUnder69", {
       name: "test",

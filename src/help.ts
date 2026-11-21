@@ -14,11 +14,19 @@ import { asArray, print, printError } from "./util.js";
 // each callback would be compiled for one use.
 
 /**
- * A description written as an indented block after a leading newline, like a
- * template literal in a spec, without the block's indentation: the leading
- * newline, a last line of only whitespace, and the indentation of the least
- * indented line are removed, and a line of only whitespace is left empty.
+ * A description as help and completion show it. One written as an indented
+ * block after a leading newline, like a template literal in a spec, is shown
+ * without the block's indentation: the leading newline, a last line of only
+ * whitespace, and the indentation of the least indented line are removed,
+ * and a line of only whitespace is left empty. Any other is shown as written.
  */
+export function shownDescription(description: string | undefined): string | undefined {
+  // Checked here so that help for a description without a leading newline
+  // doesn't compile `dedent`.
+  return description?.[0] === "\n" ? dedent(description) : description;
+}
+
+/** See {@link shownDescription}. */
 function dedent(text: string): string {
   const lines = text.split("\n").slice(1);
   // A last line of only whitespace is the indentation of the closing backtick.
@@ -225,9 +233,7 @@ function helpText(
       parts.push(`    Did you mean '${suggestion}'?`);
     }
   }
-  // Checked here so that help for a description without a leading newline
-  // doesn't compile `dedent`.
-  const description = command.description?.[0] === "\n" ? dedent(command.description) : command.description;
+  const description = shownDescription(command.description);
   if (showDescription && description) {
     parts.push(description);
   }
@@ -262,7 +268,7 @@ function subcommandRows(subcommands: readonly Subcommand[]): string {
     if (!subcommand.hidden) {
       const name = subcommand.name;
       names.push(typeof name === "string" ? name : byLength(name).join(", "));
-      descriptions.push(subcommand.description ?? defaultDesc);
+      descriptions.push(shownDescription(subcommand.description) ?? defaultDesc);
     }
   }
   return names.length > 0 ? rows("Commands:", names, descriptions, true) : "";
@@ -315,10 +321,11 @@ function optionDescriptions(options: readonly LiveOption[]): string[] {
     const defaults = leadingDefaults(option.args);
     const args = asArray(option.args);
     const constraint = args.length === 1 ? describeParser(args[0])?.constraint : undefined;
+    const description = shownDescription(option.description);
     descriptions.push(
       defaults.length === 0 && constraint === undefined
-        ? (option.description ?? defaultDesc)
-        : withDetails(option.description, constraint, defaults, defaultDesc),
+        ? (description ?? defaultDesc)
+        : withDetails(description, constraint, defaults, defaultDesc),
     );
   }
   return descriptions;
@@ -369,10 +376,11 @@ function argumentRows(args: readonly Arg[]): string {
     names.push(name);
     width = Math.max(width, name.length);
     const constraint = describeParser(arg)?.constraint;
+    const description = shownDescription(arg.description);
     descriptions.push(
       arg.default === undefined && constraint === undefined
-        ? (arg.description ?? "")
-        : withDetails(arg.description, constraint, arg.default === undefined ? [] : [arg.default], ""),
+        ? (description ?? "")
+        : withDetails(description, constraint, arg.default === undefined ? [] : [arg.default], ""),
     );
   }
   return rows("Arguments:", names, descriptions, false, width);
