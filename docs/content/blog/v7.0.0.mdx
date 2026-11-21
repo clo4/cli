@@ -1,19 +1,15 @@
 ---
-title: "Version 7.0.0: parser combinators"
-description: "A minimal API for parsing and transforming text, integrated with help and shell completion and built for a CLI's first run."
-date: 2026-11-18T00:00:00Z
+title: "Version 7.0.0: introducing parser combinators"
+description: "A minimal API for parsing and transforming text, integrated with help and shell completion."
+date: 2026-11-21T00:00:00Z
 draft: true
 ---
 
-Version 7 introduces a minimal parser combinator API for text transformations. Combining parsers gives you a parser. Transforming its output with `.map` gives you a parser too.
+Version 7 of `@clo4/cli` is out, introducing a minimal parser combinator API for defining how your CLI reads and transforms values.
 
-The result fits the existing `parse` field. It also retains the structure of its input, which help, errors and completion can all use.
+Consider an interface like `--wait 30s`. This format is so simple it should be intuitive for literally anyone. Just a number followed by a unit.
 
-Consider `--timeout 30s`. Your action wants milliseconds. Help needs to explain the unit suffixes, and completion needs to know what can follow `30`. Those are three uses of the same format, so they can all come from one definition.
-
-## Parsing a duration
-
-A parser reads text and returns a value. A parser combinator is a function that builds a parser from smaller ones. For a duration, those pieces are a number and a unit:
+Here's how you define that format with the new API:
 
 ```ts
 import { choice, seq, uint } from "@clo4/cli";
@@ -21,34 +17,128 @@ import { choice, seq, uint } from "@clo4/cli";
 const duration = seq(uint, choice("ms", "s", "m", "h"));
 ```
 
-`uint` reads a whole number without a sign. `choice` reads one of the unit strings. `seq` runs them in sequence and returns their results as a tuple. For `30s`, that is `[30, "s"]`, with the inferred type `[number, "ms" | "s" | "m" | "h"]`.
+That's all! Three small building blocks are all we need to describe the format. For `30s`, this parser returns `[30, "s"]`, with the inferred TypeScript type `[number, "ms" | "s" | "m" | "h"]`.
 
-Use `.map` to turn that result into milliseconds:
+But the interesting part isn't just how little code we had to write. By defining the format this way, we've _also_ given the library enough information to:
+
+- Generate help text describing the expected input.
+- Tell users exactly where their input didn't match.
+- Offer shell completions based on what's expected at the cursor.
+- Infer the result's TypeScript type, without annotations or assertions.
+
+For example, pressing Tab after `--wait 30` can offer `30ms`, `30s`, `30m`, and `30h`. Entering `30x` produces an error identifying the expected units.
+
+And all of this comes from the same parser. There's no separate grammar to maintain for help, errors, or completion.
+
+Let's look at how it works.
+
+## Parser combinators
+
+In a more general library, a parser operates on an input stream, eats some of it, returns an output, and leaves the rest of the input stream to be processed by additional parsing logic. This library only has to care about strings, so a parser reads part of a string and produces _some value_. Combinators are the composable units, the parsers building and built from other parsers. At the base level, _something_ has to operate on the text itself, and we call that an _atom_.
+
+To actually build a parser for a duration, you can think of it in plain language. It's a sequence: an unsigned integer (a non-negative whole number), followed by your choice of one of four possible units.
+
+```ts
+const duration = seq(uint, choice("ms", "s", "m", "h"));
+```
+
+It really is that simple. That's why I love this pattern so much.
+
+`uint` reads a whole number without a sign, and outputs a number. `choice` reads one of the unit strings. `seq` runs them in sequence, returning their results as a tuple.
+
+Of course, there's nothing particularly difficult about parsing `30s` with a regular expression. But as the saying goes, _"Some people, when confronted with a problem, think 'I know, I'll use regular expressions.' Now they have two problems."_
+
+Let's take a look at the regex solution:
+
+```ts
+type TimeUnit = "ms" | "s" | "m" | "h";
+
+function parseDuration(input: string): [number, TimeUnit] {
+  const match = input.match(/^(\d+)(ms|s|m|h)$/);
+
+  if (!match) {
+    throw new Error("input didn't match duration format");
+  }
+
+  const amount = parseInt(match[1], 10);
+  const unit = match[2] as TimeUnit;
+  return [amount, unit];
+}
+```
+
+_Yuck!_ The regex isn't particularly complicated, but look at all the ceremony surrounding it. We've had to write an entire function to recognise a number followed by a unit, handle failures, extract the values, and tell TypeScript what we know about the result.
+
+And that's only parsing out the values from your capture groups. You still:
+
+- Need to document this format in your help, and your documentation can get out of sync with your regex.
+- Need to provide good error messages when inputs don't match your expected format.
+- _Should_ provide a good suggestion experience for this, but that requires reimplementing the same logic in your `generators`. (Let's be real, if even **I** can't be bothered to, you're _definitely_ not going to)
+
+With combinators, we describe the format directly, and let the library handle the glue.
+
+### Transforming the result
+
+The power of combinators is in combining them and transforming (mapping) their outputs. Every parser has a `.map` method, which returns a _new parser_ that can itself be part of _another_ parser, just as `uint` was part of `duration`.
+
+Let's use `.map` to turn our duration into milliseconds:
 
 ```ts
 const millisecondsPerUnit = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 };
+
 const milliseconds = duration.map(([amount, unit]) => amount * millisecondsPerUnit[unit]);
 ```
 
-Now `30s` gives `30000`, and `2m` gives `120000`. The result of `.map` is another parser, with `number` as its output type. It can be part of another parser just as `uint` was part of `duration`.
+Now `30s` returns `30000`, and `2m` returns `120000`.
 
-The same operations can produce objects and arrays:
+Crucially, mapping doesn't throw away the grammar. The new parser still understands how the input is structured, even though its output is now a number.
+
+That means we can transform values as much as we like without sacrificing the help, errors, or completion that come from the original parser.
+
+### Parsing dimensions
+
+Let's look at another example: `--size 1920x1080`. Again, intuitively, we can see this as width x height. The `x` is a constant separator, so we can ignore that, and in fact that's exactly how `seq`'s map works.
+
+In combinator-land, using what you already know, you could build this:
 
 ```ts
-import { sepBy } from "@clo4/cli";
+const size = seq(uint, "x", uint).map(([width, height]) => ({ width, height }));
 
-const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
-// "1920x1080" → { width: 1920, height: 1080 }
-
-const scopes = sepBy(choice("read", "write", "admin"), ",");
-// "read,write" → ["read", "write"]
+// "1920x1080" -> { width: 1920, height: 1080 }
 ```
 
-Strings in `seq`, such as `"x"`, match literal text and stay out of the result. `.as` labels a parser, and `.asObject()` returns each labelled value of a `seq` under its label, with the inferred type `{ width: number; height: number }`. Help shows the same labels, as `<width>x<height>`. `sepBy` builds a list parser from an existing parser and a separator. There are also functions for optional parts, repetition and text between separators.
+And that would work exactly how you think it would.
 
-## Help and completion use the parser
+But we can do better: by using `.as()` to set a help-label on a parser, you also give it a name that `seq` can use with its `asObject` method for the object's key. This is how you can easily turn data that's ordered in your input into an unordered structure.
 
-Put `milliseconds` in an argument's `parse` field:
+```ts
+const size = seq(uint.as("width"), "x", uint.as("height")).asObject();
+
+// "1920x1080" -> { width: 1920, height: 1080 }
+```
+
+Help will show the labels as `<width>x<height>`, and the inferred output type of the parser is `{ width: number; height: number; }`.
+
+### More than sequences
+
+We've only used `seq` and `choice` so far, but there are more building blocks available. `sepBy` parses lists of values separated by a delimiter, while `optional` lets part of an input be omitted.
+
+```ts
+const numbers = sepBy(choice("a", "b", "c"), ",");
+// "a,a,b" -> ["a", "a", "b"]
+
+const maybeHexadecimal = seq(optional("0x"), uint);
+// Accepts "0x40" or "40"
+```
+
+And because they're combinators, you can use them alongside everything we've already covered. A separated list can contain sequences, a sequence can contain optional parts, and the resulting parser can be mapped into whatever value you need.
+
+The same rules still apply: the grammar provides help, error reporting, and shell completion.
+
+### Help and completion
+
+Let's look at how the parser can be used in more ways than mapping an input to an output.
+
+Take this option, using the `milliseconds` parser we defined above:
 
 ```ts
 {
@@ -62,50 +152,114 @@ Put `milliseconds` in an argument's `parse` field:
 }
 ```
 
-With this option in a spec, `--timeout 2m` gives the action `120000`. TypeScript infers `number` for `options.get("--timeout")`. The default goes through the same parser, so omitting the option gives `30000`.
+With this option in a spec, `--timeout 2m` gives the action `120000`. TypeScript infers `number` for `options.get("--timeout")`.
+
+The default goes through the same parser, so omitting the option gives `30000`.
 
 The transformation changes what the action receives while preserving how the input is read. Help follows the parser's parts, so it still shows the number and unit suffixes:
 
-```console
+```plaintext
   --timeout <duration>  Time to wait for a response (<int>(ms|s|m|h), default: 30s)
 ```
 
-If the user enters `30x`, the error identifies the part that did not match:
+If the user enters `30x`, the error explains where the input did not match:
 
 ```console
 Error: Invalid value "30x" for --timeout: expected ms | s | m | h after "30"
 ```
 
-With shell completion installed, Tab after `--timeout 30` offers `30ms`, `30s`, `30m` and `30h`. Completion reads as far as it can into the value, then uses the strings expected at that position. For the `scopes` parser above, `read,w` completes to `read,write`.
+With the shell completions installed, pressing tab after `--timeout 30` offers `30ms`, `30s`, `30m`, and `30h`. Completion reads as far as it can into the value, then uses the strings expected at that position.
 
-`choice` already knows which units it accepts, and `seq` already knows where they belong. Help uses those parts as a pattern. Errors and completion use what the parser expects at the position it reaches. `.map` wraps that structure, so each system can still use it after the result becomes a number.
+Help can also display these patterns as flattened strings.
 
-An argument still has one `parse` field, and the action still receives its result. The structure from composition feeds the existing help and completion systems. Adding a unit to `choice` updates the accepted syntax, help, errors and completion together.
+This is what makes the integration so useful. Parsing, help, errors, and completion aren't four separate implementations of the same rules. They're different ways of using the same grammar.
 
-## Built for a CLI's first run
+### Why does this belong in a CLI framework?
 
-A CLI often starts, constructs its spec, parses a few values and exits. Shell completion starts it again on Tab. Parser construction and the first parse are part of the normal workload, so the implementation needs to keep those costs small.
+When I was first designing this library, I firmly believed that value parsing was a user-land concern. I was so wrong!
 
-The combinators construct small objects that hold their parts. Parsing uses shared functions for each kind of part and walks the input by position. `uint` accumulates ordinary integers digit by digit. Help patterns and error messages are formatted on the paths that need them, and commands without argument parsers skip the value conversion path.
+The library provides a parser, and the spec you provide it gives it the missing pieces to let the library define the _grammar_ of a CLI. In that framing, why should parsing be _two steps_? Why is it something you need to think about at all?
 
-I measured matching minified builds of 6.1.2 and v7 on an Apple M3 Pro with Node 26.3.0:
+The biggest shift in framing came when I realised the grammar of your arguments is part of your _interface_, not your _application_. There is no reason you should ever have to reimplement any logic to enable a completer if it already knows the structure of a valid value.
 
-| Work                                                    | Median  |
-| ------------------------------------------------------- | ------- |
-| Import 6.1.2                                            | 0.90 ms |
-| Import v7                                               | 1.01 ms |
-| Construct the duration parser and its command spec      | 0.02 ms |
-| Run that command for the first time, after construction | 0.54 ms |
+An inspectable grammar solves that problem. The library knows what the parser expects, where it expects it, and what it produces.
 
-Each row has 200 samples. Every sample runs in a fresh Node process, with Node's compile cache disabled. The last two rows use the duration-to-milliseconds parser above in a command with one `--timeout` option and an action that reads its value. Times exclude Node's own startup and output.
+Value parsing is the same problem as CLI parsing.
 
-The minified library grows from 39.0 kB to 46.4 kB. Importing it costs about 0.11 ms more in this measurement, including for a CLI that does not use the new parsers.
+## Performance
 
-The [parser guide](https://clo4.net/cli/next/parsers) walks through a complete command and the rest of the API. Schemas from Zod, ArkType and Valibot still work in `parse` as they did in 6.1.
+Version 7 makes every run about 0.15 ms **slower**. The minified library grows from 39.0 kB to 46.5 kB, and importing it takes 0.14 ms longer. Help and completion take about 0.2 ms longer. In the performance comparison you're about to see, that additional import speed penalty is almost solely responsible for the drop in performance.
+
+That cost is, in my opinion, always worth it for the ergonomics and UX. Most commands will end up needing some kind of parsing, so the benefit of making it easy outweighs the cost. However, I since performance is so important to me, I'm still trying to find ways to make it faster and smaller. One such way, included in this update, is making the parsers tree-shakeable: if you don't use them, your bundle doesn't have to include them.
+
+I measured matching minified builds of 6.1.2 and v7 on an AMD Ryzen 9 9950X3D with Node 26.13.1. These times **don't include Node's own startup**. Every sample is a fresh Node process, but the clock only starts once Node has finished starting, so each row is the library's share of a run, not how long the whole command takes. On the same machine, Node takes about 10 ms to start and run an empty script.
+
+| Command line                                  | 6.1.2   | 7.0     |
+| --------------------------------------------- | ------- | ------- |
+| `wait --timeout 2m`, with no parsers          | 1.25 ms | 1.40 ms |
+| `wait --retries 5`, with `CLI.number`         | 1.48 ms | 1.57 ms |
+| `wait --timeout 2m`, with the duration parser |         | 1.61 ms |
+| `wait --help`                                 | 1.57 ms | 1.79 ms |
+| Tab after `wait --`                           | 1.92 ms | 2.10 ms |
+| Tab after `wait --timeout 30`                 |         | 2.04 ms |
+
+Each time is the median of 200 runs, alternating between versions. A run is timed from the first line of the CLI's script until `CLI.run` finishes, so it counts importing the library, building the spec, reading the command line, parsing, and finally running the action.
+
+## Also new in 7.0
+
+### Suggesters replace suggestion generators
+
+One of the things I've tried hard to do with this library is to continue using the patterns and interfaces created at Fig because, in general, the "spec" was designed really well. The constraints of having to make so many specs, support so many different formats, and do it all _quickly_ lead to (in my opinion) the most ergonomic structure for defining a command-line interface. That's why this library implements that.
+
+However, coupling those same constraints with Fig's different execution environment and focus resulted in a suggestion generator interface that is suboptimal for this library's use-case.
+
+To start with, if you know modern JavaScript, you probably have an idea in your head of what a "generator" is. Fig's generators are specifically *suggestion* generators. Generator are objects that contain declarative definitions that simply don't apply to us:
+
+- Either a script + postprocessor or a custom function with access to raw tokens, a function to run arbitrary commands, and a bag of context
+  - In our case, we only want only custom functions, and raw tokens are not powerful enough
+- Information about when to trigger the completion generator
+  - In our case, the user controls this by pressing tab whenever they want
+- Information about how to compute the values more lazily or cache them
+  - In our case, we can't display suggestions from a cache
+
+On top of that, the raw tokens are limiting, because you have to reimplement a parser on top of the parser, so if you ever need information _about_ those tokens, good luck to you!
+
+So, new solution: an argument's `generators` is now `suggest`. Instead of the raw tokens, a suggester gets what the action would get from the line typed so far, as strings, along with `word`, the value being typed:
+
+```ts
+{
+  name: "--target",
+  args: {
+    name: "target",
+    suggest: async ({ word }) => listTargets(word),
+  },
+}
+```
+
+A suggester that depends on another option reads it with `options.get`, the same way the action does. An argument can have several suggesters, as in `suggest: [targets, recentTargets]`. They run at the same time, and their values are offered in order. The [suggester guide](https://clo4.net/cli/next/suggest-values) shows how to test one without a shell.
+
+### Completion implemented in terms of primitives
+
+Previously, "magic with no magic" was a little bit broken because completion was actually using parser internals.
+
+Now, `CLI.complete` is the core of the completion logic. This is how it should have always been factored.
+
+```ts
+const completions = await CLI.complete(spec, ["deploy", "--target"], "pro");
+// [{ value: "production" }]
+```
+
+### Smaller changes
+
+- `eval "$(demo completion zsh)"` now installs completion in zsh, like `source <(demo completion bash)` does in Bash. The same script still works as a completion file on your `fpath`, and the `functions[_demo]` lines from 6.1 keep working.
+- `CLI.print` is the stdout twin of `CLI.printError`. Both write to the file descriptor directly. The stream Node builds for the first `console.log` of a process usually costs 1 to 3 ms.
+- Dedenting is now implemented properly.
+- Parsers and completions are now marked as pure, so bundlers that play nice can shake them.
+- A function with properties of its own, like a test mock used as an action, type-checks in a spec.
 
 ## Upgrading from 6.1
 
-`choice` now takes separate arguments so it can accept parsers as well as strings. Update calls that pass an array:
+`choice` now takes separate arguments. I'm only, like, 60% sure this is better.
 
 ```ts
 CLI.choice(["debug", "release"]); // 6.1
@@ -116,9 +270,11 @@ CLI.choice(...regions); // Spread an existing array.
 
 `number()` now requires a digit after a decimal point. It rejects `3.`, but still accepts `.5` and `3.0`. This lets `seq(number(), "..", number())` read a range such as `1..5`.
 
-If your tests compare help, errors or completion output, these changes can also affect them:
+Replace each generator with a suggester. The value being typed is `word`, instead of the last token:
 
-- Integer constraints in help use `int` instead of `integer`.
-- An integer outside JavaScript's safe range reports the limit, such as `too large, the limit is 9007199254740991`, instead of `expected an integer`.
-- Completion for `choice` only offers values that start with the text already typed.
-- Messages from `assertDefaultsPassTheirParse` and `assertRangesAreNotEmpty` use `parser` instead of `parse`.
+```ts
+generators: { custom: async (tokens) => listTargets(tokens.at(-1) ?? "") }, // 6.1
+suggest: async ({ word }) => listTargets(word), // 7.0
+```
+
+The `Generator` type is gone. A suggester's types are `Suggester` and `SuggestInit`.
