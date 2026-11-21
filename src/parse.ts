@@ -355,10 +355,11 @@ export interface TokenReader {
 /**
  * The state of reading one command line, one token at a time. The scope says
  * what each token means at the current command, and this is the only code
- * that decides what the token is read as and keeps what that changes. It
- * never throws: it skips whatever is invalid and keeps going, so
- * {@link readNext} can still read a line that's wrong at the moment, and it
- * keeps the first problem it finds for {@link parse} to throw.
+ * that decides what the token is read as and keeps what that changes. A
+ * read never throws: it skips whatever is invalid and keeps going, so
+ * {@link readNext} can still read a line that's wrong at the moment. A
+ * scanner that reports keeps the first problem it finds for {@link parse} to
+ * throw.
  */
 class Scanner {
   // The last option action used.
@@ -420,19 +421,27 @@ class Scanner {
   // subset, has uses of its own.
   private repeatedUses: Map<string, RepeatedUses> | null = null;
 
-  constructor(spec: Spec) {
+  /**
+   * Whether the scanner keeps the line's problems, to report them. A read that
+   * only asks what each token is, like completion's, doesn't describe them.
+   */
+  private readonly reports: boolean;
+
+  constructor(spec: Spec, reports: boolean) {
     this.scope = new CommandScope(spec);
     this.directives = this.scope.directives;
+    this.reports = reports;
   }
 
   /**
    * Read each of `tokens` in turn, waiting after each one for the command it
-   * entered to load. If `strict`, throw the first problem as soon as it's found.
+   * entered to load. A scanner that reports throws the first problem as soon
+   * as it's found.
    */
-  async readAll(tokens: readonly string[], strict: boolean): Promise<void> {
+  async readAll(tokens: readonly string[]): Promise<void> {
     for (let i = 0; i < tokens.length; i++) {
       this.read(tokens[i]);
-      if (strict && this.problem) {
+      if (this.problem) {
         throw this.problem;
       }
       if (this.pending) {
@@ -458,18 +467,24 @@ class Scanner {
     return contextAt(this.scope.path);
   }
 
-  /** Keep the problem `message` describes if it's the first. */
+  /** Keep the problem `message` describes if it's the first and the scanner reports. */
   private fail(message: string): void {
-    this.problem ??= new ParseError(this.ctx(), message);
+    if (this.reports) {
+      this.problem ??= new ParseError(this.ctx(), message);
+    }
   }
 
   /** Keep the first argument the command has no room for, like {@link fail}. */
   private failArgs(message: string): void {
-    this.tooManyArgs ??= new ParseError(this.ctx(), message);
+    if (this.reports) {
+      this.tooManyArgs ??= new ParseError(this.ctx(), message);
+    }
   }
 
   private unknownOption(option: string): void {
-    this.problem ??= unknownOption(option, this.scope.suggestionNames(), this.ctx());
+    if (this.reports) {
+      this.problem ??= unknownOption(option, this.scope.suggestionNames(), this.ctx());
+    }
   }
 
   // Every token except an option's value, or an unknown option, ends the
@@ -962,12 +977,13 @@ class Scanner {
   }
 
   /**
-   * Keep why `token` names no subcommand, if it's the first and the current
-   * command has subcommands of its own or requires one.
+   * Keep why `token` names no subcommand, if it's the first, the scanner
+   * reports, and the current command has subcommands of its own or requires
+   * one.
    */
   private failUnmatched(token: string, exactOnly: boolean): void {
     const command = this.scope.command;
-    if (!this.unmatched && (command.subcommands?.length || command.requiresSubcommand)) {
+    if (this.reports && !this.unmatched && (command.subcommands?.length || command.requiresSubcommand)) {
       const { message, didYouMean } = this.scope.unmatched(token, exactOnly);
       this.unmatched = new ParseError(this.ctx(), message, didYouMean);
     }
@@ -1024,7 +1040,7 @@ class Scanner {
  * in turn. Reads leniently, like {@link readNext}.
  */
 export function tokenReader(spec: Spec): TokenReader {
-  const s = new Scanner(spec);
+  const s = new Scanner(spec, false);
   return {
     async read(token) {
       await s.settle();
@@ -1044,8 +1060,8 @@ export function tokenReader(spec: Spec): TokenReader {
  * an answer. Completion is built on this.
  */
 export async function readNext(spec: Spec, before: readonly string[], partial: string): Promise<NextToken> {
-  const s = new Scanner(spec);
-  await s.readAll(before, false);
+  const s = new Scanner(spec, false);
+  await s.readAll(before);
   return s.next(partial);
 }
 
@@ -1055,8 +1071,8 @@ export async function readNext(spec: Spec, before: readonly string[], partial: s
  * {@link readNext}. To read every token of a line, use {@link tokenReader}.
  */
 export async function readToken(spec: Spec, before: readonly string[], token: string): Promise<TokenReading> {
-  const s = new Scanner(spec);
-  await s.readAll(before, false);
+  const s = new Scanner(spec, false);
+  await s.readAll(before);
   return s.peek(token);
 }
 
@@ -1069,7 +1085,7 @@ export async function readToken(spec: Spec, before: readonly string[], token: st
  * `completion`.
  */
 export function readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
-  return new Scanner(path[0]).readHelpNames(path, names);
+  return new Scanner(path[0], true).readHelpNames(path, names);
 }
 
 /**
@@ -1080,7 +1096,7 @@ export function readHelpNames(path: CommandPath, names: readonly string[]): Prom
  * parsing fails, the promise rejects.
  */
 export async function parse(input: readonly string[], spec: Spec): Promise<ParseResult> {
-  const s = new Scanner(spec);
-  await s.readAll(input, true);
+  const s = new Scanner(spec, true);
+  await s.readAll(input);
   return s.finish();
 }
