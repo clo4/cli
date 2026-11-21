@@ -388,7 +388,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   }
   const offered = new Set((await complete(spec, before, "")).map((c) => c.value));
   const next = await readNext(spec, before, "");
-  for (const { command, names } of next.subcommands) {
+  for (const { command, names } of next.subcommands()) {
     for (const name of names) {
       if (!offered.has(name)) {
         continue;
@@ -399,7 +399,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
       }
     }
   }
-  for (const { option, forms } of next.options) {
+  for (const { option, forms } of next.options()) {
     for (const form of forms) {
       const token = formStart(form);
       if (!offered.has(token)) {
@@ -423,9 +423,9 @@ async function enteredButNotListed(spec: Spec, input: readonly string[]): Promis
     if (reading.kind !== "subcommand" || !asArray(reading.command.name).includes(token)) {
       continue;
     }
-    const listed = (await readNext(spec, before, "")).subcommands.some(
-      ({ command, names }) => command === reading.command && names.includes(token),
-    );
+    const listed = (await readNext(spec, before, ""))
+      .subcommands()
+      .some(({ command, names }) => command === reading.command && names.includes(token));
     if (!listed) {
       return `token ${i}, ${JSON.stringify(token)}, enters a subcommand that readNext doesn't list by that name`;
     }

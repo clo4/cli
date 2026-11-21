@@ -97,9 +97,11 @@ export function nextDifference(
   if (x.optionsAllowed !== y.optionsAllowed) {
     return "optionsAllowed differs";
   }
-  const sameSubcommand = (a: NextToken["subcommands"][number], b: NextToken["subcommands"][number]) =>
-    sameCommand(a.command, b.command) && sameItems(a.names, b.names);
-  if (!sameItems(x.subcommands, y.subcommands, sameSubcommand)) {
+  const sameSubcommand = (
+    a: ReturnType<NextToken["subcommands"]>[number],
+    b: ReturnType<NextToken["subcommands"]>[number],
+  ) => sameCommand(a.command, b.command) && sameItems(a.names, b.names);
+  if (!sameItems(x.subcommands(), y.subcommands(), sameSubcommand)) {
     return "subcommands differ";
   }
   if (x.arg !== y.arg) {
@@ -122,11 +124,12 @@ export function nextDifference(
   if (x.partialIsOption !== y.partialIsOption) {
     return "partialIsOption differs";
   }
-  if (x.options.length !== y.options.length) {
+  const [optionsA, optionsB] = [x.options(), y.options()];
+  if (optionsA.length !== optionsB.length) {
     return "options differ";
   }
-  for (let i = 0; i < x.options.length; i++) {
-    const [a, b] = [x.options[i], y.options[i]];
+  for (let i = 0; i < optionsA.length; i++) {
+    const [a, b] = [optionsA[i], optionsB[i]];
     const sameForms = sameItems(a.forms, b.forms, (f, g) => f.name === g.name && f.join === g.join);
     if (a.option !== b.option || a.used !== b.used || !sameForms) {
       return `options differ at ${i}`;

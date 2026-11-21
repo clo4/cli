@@ -126,7 +126,7 @@ function wanted(next: NextToken, word: string, optionsNeedDash: boolean) {
   const values = !next.partialIsOption;
   return {
     values,
-    options: next.options.some(({ forms }) => forms.some(({ name }) => starts(name))),
+    options: word !== "" && next.options().some(({ forms }) => forms.some(({ name }) => starts(name))),
     // A subcommand named like an option is offered once the word starts its name.
     subcommand: (name: string) => values || starts(name),
   };
@@ -168,7 +168,7 @@ export async function complete(
     if (want.values && arg) {
       // The parser reads a subcommand's name as the subcommand, so it can't be a value.
       const taken = new Set<string>();
-      for (const { names } of next.subcommands) {
+      for (const { names } of next.subcommands()) {
         for (const name of names) {
           taken.add(name);
         }
@@ -179,7 +179,7 @@ export async function complete(
         }
       }
     }
-    for (const { command, names } of next.subcommands) {
+    for (const { command, names } of next.subcommands()) {
       if (!command.hidden) {
         const description = firstLine(command.description);
         for (const name of names) {
@@ -200,7 +200,7 @@ export async function complete(
 function optionCompletions(next: NextToken): Completion[] {
   const required: Completion[] = [];
   const optional: Completion[] = [];
-  for (const { option, forms, used } of next.options) {
+  for (const { option, forms, used } of next.options()) {
     // The parser lets a later use of an option override an earlier one, but
     // that's rarely what someone wants, so an option that isn't repeatable is
     // offered once.

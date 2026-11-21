@@ -14,7 +14,7 @@ import {
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
-import type { LiveSubcommand, OptionForm, SubcommandMatching } from "./scope.js";
+import type { LiveSubcommand, OptionForm, SubcommandMatching, TokenMeaning } from "./scope.js";
 import { parseValues } from "./values.js";
 import type { ParsedUse } from "./values.js";
 
@@ -32,12 +32,13 @@ export interface ParseResult {
   action: Action;
 }
 
-/** What the token after a command line can be, as the parser would read it. */
+/**
+ * What the token after a command line can be, as the parser would read it.
+ * The lists are functions, worked out the first time they're called, so a
+ * completion that doesn't need one doesn't pay for it.
+ */
 export interface NextToken {
-  /**
-   * What the line before the token gives a suggester. It's a copy, so reading
-   * the token doesn't change it.
-   */
+  /** What the line before the token gives a suggester. */
   line: Omit<SuggestInit, "word">;
   /** The directives in effect. */
   directives: Readonly<Directives>;
@@ -48,12 +49,12 @@ export interface NextToken {
    * names that still refer to it. While the open option can still take a
    * value, only an exact name matches.
    */
-  subcommands: readonly LiveSubcommand[];
+  subcommands(): readonly LiveSubcommand[];
   /**
    * The options the token can use, hidden ones included, local options first.
    * Empty when the token can't be an option.
    */
-  options: readonly UsableOption[];
+  options(): readonly UsableOption[];
   /** The open option, if the token can be its value, and whether it must be. */
   value: { option: Option; arg: Arg | undefined; required: boolean } | null;
   /** The argument the token fills if it isn't an option, subcommand or value. */
@@ -107,9 +108,36 @@ export type TokenReading =
   | { kind: "unknown" };
 
 // The readings that carry nothing else, made once and shared.
-const separatorReading: TokenReading = Object.freeze({ kind: "separator" });
-const argumentReading: TokenReading = Object.freeze({ kind: "argument" });
+const separatorReading = Object.freeze({ kind: "separator" as const });
+const argumentReading = Object.freeze({ kind: "argument" as const });
 const unknownReading: TokenReading = Object.freeze({ kind: "unknown" });
+
+/** What {@link Scanner.classify} says a token is that's a value of the open option. */
+const valueMark = Object.freeze({ kind: "value" as const });
+
+/** What a token is that {@link CommandScope.meaning} doesn't decide. */
+type Classified = typeof separatorReading | typeof argumentReading | typeof valueMark;
+
+/**
+ * Where the value attached to the token `meaning` reads as options starts, if
+ * the last option it uses accepts a value attached after that separator. The
+ * value is only ever attached to a known option. An option accepts one if it
+ * takes values, the same as {@link Scanner} keeping `values` for it, and the
+ * separator is one it can be written with.
+ */
+function attachedAt(
+  meaning: Extract<TokenMeaning, { kind: "options" }>,
+  scope: CommandScope,
+): { option: Option; start: number } | null {
+  const value = meaning.attached;
+  if (value === null) {
+    return null;
+  }
+  const { option, name } = meaning.uses[meaning.uses.length - 1];
+  return maxArgs(option!.args) > 0 && scope.separatorProblem(option!, name, value.separator) === null
+    ? { option: option!, start: value.start }
+    : null;
+}
 
 /** The values a repeatable option has collected, and how many times it's been used. */
 interface RepeatedUses {
@@ -577,29 +605,22 @@ class Scanner {
   /**
    * Add the value attached to the open option's token after `separator`,
    * starting at `start`. It's the option's only value, so no later token can
-   * be one. Returns where the value starts, or null if the option doesn't
-   * accept it.
+   * be one. See {@link attachedAt} for whether the option accepts it.
    */
-  private addAttachedValue(
-    token: string,
-    start: number,
-    separator: string,
-  ): { option: Option; start: number } | null {
+  private addAttachedValue(token: string, start: number, separator: string): void {
     const open = this.open;
-    const option = open.option!;
     const name = open.name;
     open.count += 1;
     open.min = open.separateMax = 0;
     if (!this.values) {
       this.fail(takesNoArguments(name));
-      return null;
+      return;
     }
-    const problem = this.scope.separatorProblem(option, name, separator);
+    const problem = this.scope.separatorProblem(open.option!, name, separator);
     if (problem) {
       this.fail(problem);
     }
     this.values.push(token.slice(start));
-    return problem === null ? { option, start } : null;
   }
 
   private addArg(value: string): TokenReading {
@@ -774,41 +795,105 @@ class Scanner {
   }
 
   /**
-   * What the next token can be. See {@link readNext}. Reading more tokens
-   * doesn't change what this returns.
+   * What the next token can be, where `partial` is that token as typed so
+   * far. See {@link readNext}. It reads nothing, so the lists it gives are
+   * worked out from the line as it stands when they're asked for.
    */
-  next(): Omit<NextToken, "attached" | "partialIsOption"> {
+  next(partial: string): NextToken {
     const { count, min, separateMax } = this.open;
     const open = count < separateMax ? this.open.option : null;
     const command = this.scope.command;
-    // Every token after `--` is an argument.
-    const afterSeparator = this.argSeparatorIndex !== -1;
-    // The token is read on this scanner after this, which can add a value to
-    // an option's values and move the scope into a subcommand.
-    const options = new Map<string, unknown[]>();
-    for (const [name, values] of this.options) {
-      options.set(name, [...values]);
+    let attached: NextToken["attached"] = null;
+    let partialIsOption = false;
+    if (partial !== "" && this.optionsAllowed) {
+      const reading = this.peek(partial);
+      partialIsOption =
+        reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
+      const found = reading.kind === "options" ? reading.attached : null;
+      const arg = found && argAt(found.option.args, 0);
+      if (found && arg) {
+        attached = {
+          option: found.option,
+          arg,
+          prefix: partial.slice(0, found.start),
+          value: partial.slice(found.start),
+        };
+      }
     }
-    const path: CommandPath = [...this.scope.path];
+    let subcommands: readonly LiveSubcommand[] | undefined;
+    let options: readonly UsableOption[] | undefined;
     return {
       line: {
-        path,
-        args: [...this.args],
+        path: this.scope.path,
+        args: this.args,
         argSeparatorIndex: this.argSeparatorIndex,
         // The spec's types say what each value is. Here every value is a string.
-        options: optionArgs(options, CommandScope.at(path), null) as OptionArgs,
+        options: optionArgs(this.options, this.scope, null) as OptionArgs,
       },
-      directives: { ...this.directives },
+      directives: this.directives,
       optionsAllowed: this.optionsAllowed,
-      subcommands: !afterSeparator && this.subcommandMatching ? this.scope.subcommands() : [],
-      options: this.optionsAllowed ? this.usableOptions() : [],
+      // Every token after `--` is an argument.
+      subcommands: () =>
+        (subcommands ??=
+          this.argSeparatorIndex === -1 && this.subcommandMatching ? this.scope.subcommands() : []),
+      options: () => (options ??= this.optionsAllowed ? this.usableOptions() : []),
       value: open && {
         option: open,
         arg: argAt(open.args, count),
         required: count < min,
       },
       arg: open ? undefined : argAt(command.args, this.args.length),
+      attached,
+      partialIsOption,
     };
+  }
+
+  /**
+   * What `token` is, read next: `--`, a subcommand, options, a value of the
+   * open option, or an argument. It changes nothing, so {@link read} and
+   * {@link peek} decide the same way.
+   */
+  private classify(token: string): TokenMeaning | Classified {
+    // Every token after `--` is an argument.
+    if (this.argSeparatorIndex !== -1) {
+      return argumentReading;
+    }
+    // "--" disables option & subcommand parsing, so it's checked first.
+    // Once options must stop, it's an argument like any other token.
+    if (token === "--" && this.optionsAllowed) {
+      return separatorReading;
+    }
+    const meaning = this.scope.meaning(token, this.subcommandMatching, this.optionsAllowed);
+    // Whether the open option can take this token as a value.
+    const open = this.open;
+    const hasRoom = open.count < open.separateMax;
+    // A token written like an option is one, unless its first name refers to
+    // no option and the open option has room. Then it's a value, like `-5`.
+    if (meaning && (meaning.kind === "subcommand" || meaning.uses[0].option || !hasRoom)) {
+      return meaning;
+    }
+    // The token isn't `--`, a subcommand or an option. It's a value of the
+    // open option if that has room. Only an option that takes separate tokens
+    // has room, so the value needs no separator check.
+    return hasRoom ? valueMark : argumentReading;
+  }
+
+  /** What {@link read} would say `token` is read as, without reading it. */
+  peek(token: string): TokenReading {
+    const meaning = this.classify(token);
+    if (meaning.kind === "options") {
+      const used: Option[] = [];
+      const uses = meaning.uses;
+      for (let i = 0; i < uses.length; i++) {
+        if (uses[i].option) {
+          used.push(uses[i].option!);
+        }
+      }
+      return used.length === 0
+        ? unknownReading
+        : { kind: "options", options: used, attached: attachedAt(meaning, this.scope) };
+    }
+    return meaning.kind === "value" ? { kind: "value", option: this.open.option! } : meaning;
   }
 
   /**
@@ -816,32 +901,21 @@ class Scanner {
    * loaded unless `load` is false; {@link settle} before the next token.
    */
   read(token: string, load = true): TokenReading {
-    // Every token after `--` is an argument.
-    if (this.argSeparatorIndex !== -1) {
-      return this.addArg(token);
+    const meaning = this.classify(token);
+    const kind = meaning.kind;
+    if (kind === "value") {
+      const open = this.open;
+      open.count += 1;
+      this.values!.push(token);
+      return { kind: "value", option: open.option! };
     }
-    // "--" disables option & subcommand parsing, so it's checked first.
-    // Once options must stop, it's an argument like any other token.
-    if (token === "--" && this.optionsAllowed) {
-      return this.argSeparator();
-    }
-
-    const subcommands = this.subcommandMatching;
-    const meaning = this.scope.meaning(token, subcommands, this.optionsAllowed);
-    if (meaning?.kind === "subcommand") {
+    if (kind === "subcommand") {
       this.endOption();
       this.open = noOpenOption;
       this.pending = this.scope.enter(meaning.command, load);
       return meaning;
     }
-
-    // Whether the open option can take this token as a value.
-    const open = this.open;
-    const hasRoom = open.count < open.separateMax;
-
-    // A token written like an option is one, unless its first name refers to
-    // no option and the open option has room. Then it's a value, like `-5`.
-    if (meaning && (meaning.uses[0].option || !hasRoom)) {
+    if (kind === "options") {
       const used: Option[] = [];
       const uses = meaning.uses;
       for (let i = 0; i < uses.length; i++) {
@@ -857,22 +931,23 @@ class Scanner {
         return unknownReading;
       }
       const value = meaning.attached;
-      const attached = value && this.addAttachedValue(token, value.start, value.separator);
+      if (value === null) {
+        return { kind: "options", options: used, attached: null };
+      }
+      const attached = attachedAt(meaning, this.scope);
+      this.addAttachedValue(token, value.start, value.separator);
       return { kind: "options", options: used, attached };
     }
-
-    // The token isn't `--`, a subcommand or an option. It's a value of the
-    // open option if that has room. Only an option that takes separate tokens
-    // has room, so the value needs no separator check.
-    if (hasRoom) {
-      open.count += 1;
-      this.values!.push(token);
-      return { kind: "value", option: open.option! };
+    if (kind === "separator") {
+      return this.argSeparator();
     }
-
-    // Otherwise it's an argument, which stops later tokens from being
-    // subcommands. Where a subcommand could be, a token the command has no
-    // room for is a subcommand that didn't match.
+    if (this.argSeparatorIndex !== -1) {
+      return this.addArg(token);
+    }
+    // An argument before `--` stops later tokens from being subcommands. Where
+    // a subcommand could be, a token the command has no room for is a
+    // subcommand that didn't match.
+    const subcommands = this.subcommandMatching;
     if (subcommands && this.args.length >= this.scope.argsLimit) {
       this.failUnmatched(token, subcommands.exactOnly);
     }
@@ -965,39 +1040,18 @@ export function tokenReader(spec: Spec): TokenReader {
 export async function readNext(spec: Spec, before: readonly string[], partial: string): Promise<NextToken> {
   const s = new Scanner(spec);
   await s.readAll(before, false);
-  const next = s.next();
-  let attached: NextToken["attached"] = null;
-  let partialIsOption = false;
-  if (partial !== "" && next.optionsAllowed) {
-    // Nothing follows the partial token, so a command it names isn't loaded.
-    const reading = s.read(partial, false);
-    partialIsOption =
-      reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
-    const found = reading.kind === "options" ? reading.attached : null;
-    const arg = found && argAt(found.option.args, 0);
-    if (found && arg) {
-      attached = {
-        option: found.option,
-        arg,
-        prefix: partial.slice(0, found.start),
-        value: partial.slice(found.start),
-      };
-    }
-  }
-  return { ...next, attached, partialIsOption };
+  return s.next(partial);
 }
 
 /**
- * Say what the parser reads `token` as when it comes after `before`. Reads
- * leniently, like {@link readNext}. To read every token of a line, use
- * {@link tokenReader}, which this is built on.
+ * Say what the parser reads `token` as when it comes after `before`, without
+ * reading it, so a subcommand it names isn't loaded. Reads leniently, like
+ * {@link readNext}. To read every token of a line, use {@link tokenReader}.
  */
 export async function readToken(spec: Spec, before: readonly string[], token: string): Promise<TokenReading> {
-  const reader = tokenReader(spec);
-  for (const earlier of before) {
-    await reader.read(earlier);
-  }
-  return reader.read(token);
+  const s = new Scanner(spec);
+  await s.readAll(before, false);
+  return s.peek(token);
 }
 
 /**

@@ -166,7 +166,7 @@ test("loadSpec: parse and readNext wait for a loadSpec that gives a promise", as
   expect(parsed.path.map((command) => command.name)).toEqual(["forge", ["remote", "r"], "add"]);
   expect(parsed.args).toEqual(["x"]);
   const next = await readNext(spec, ["remote"], "");
-  expect(next.subcommands.map(({ command }) => command.name)).toEqual(
+  expect(next.subcommands().map(({ command }) => command.name)).toEqual(
     expect.arrayContaining(["add", "list"]),
   );
 });

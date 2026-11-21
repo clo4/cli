@@ -218,7 +218,7 @@ test("readNext: keeps reading past missing and repeated option values", async ()
   });
   const next = await readNext(spec, ["-v", "-v", "--out"], "");
   // -v can be used once, so the second use doesn't make it usable again.
-  expect(next.options.map((usable) => usable.option)).toEqual([out]);
+  expect(next.options().map((usable) => usable.option)).toEqual([out]);
   expect(next.value).toEqual({ option: out, arg: out.args, required: true });
 });
 
@@ -318,7 +318,7 @@ test("readNext: lists the options the next token can use, with the names that re
   const lone: Option = { name: ["--lone", "build"] };
   const sub: Subcommand = { name: "sub", options: [shadow, file, lone], subcommands: [{ name: "build" }] };
   const spec: Spec = { name: "test", options: [all], subcommands: [sub] };
-  expect((await readNext(spec, ["sub", "--lone"], "")).options).toEqual([
+  expect((await readNext(spec, ["sub", "--lone"], "")).options()).toEqual([
     { option: shadow, forms: [{ name: "--all", join: null }], used: false },
     { option: file, forms: [{ name: "--file", join: "=" }], used: false },
     // A subcommand matches "build", so only "--lone" reads as the option.
@@ -326,7 +326,7 @@ test("readNext: lists the options the next token can use, with the names that re
     // --all refers to the hidden option here, so only -a is left.
     { option: all, forms: [{ name: "-a", join: null }], used: false },
   ]);
-  expect((await readNext(spec, ["--"], "")).options).toEqual([]);
+  expect((await readNext(spec, ["--"], "")).options()).toEqual([]);
 });
 
 test("readHelpNames: reads the names after help the way the parser reads a command line", async () => {
