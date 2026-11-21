@@ -13,11 +13,32 @@ import { asArray, print, printError } from "./util.js";
 // the first time it's called, and a CLI prints help at most once a run, so
 // each callback would be compiled for one use.
 
-/** Remove the leading newline and the first line's indent from every line. */
-function dedent(str: string) {
-  const lines = str.split("\n").slice(1, -1);
-  const margin = lines[0].length - lines[0].trimStart().length;
-  return lines.map((line) => line.slice(margin)).join("\n");
+/**
+ * A description written as an indented block after a leading newline, like a
+ * template literal in a spec, without the block's indentation: the leading
+ * newline, a last line of only whitespace, and the indentation of the least
+ * indented line are removed, and a line of only whitespace is left empty.
+ */
+function dedent(text: string): string {
+  const lines = text.split("\n").slice(1);
+  // A last line of only whitespace is the indentation of the closing backtick.
+  if (lines[lines.length - 1].trimStart() === "") {
+    lines.pop();
+  }
+  let margin = Infinity;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const indent = line.length - line.trimStart().length;
+    if (indent === line.length) {
+      lines[i] = "";
+    } else if (indent < margin) {
+      margin = indent;
+    }
+  }
+  for (let i = 0; i < lines.length; i++) {
+    lines[i] = lines[i].slice(margin);
+  }
+  return lines.join("\n");
 }
 
 export interface HelpConfig {
@@ -204,11 +225,11 @@ function helpText(
       parts.push(`    Did you mean '${suggestion}'?`);
     }
   }
-  const description = command.description;
+  // Checked here so that help for a description without a leading newline
+  // doesn't compile `dedent`.
+  const description = command.description?.[0] === "\n" ? dedent(command.description) : command.description;
   if (showDescription && description) {
-    // Checked here so that help for a description without a leading newline
-    // doesn't compile `dedent`.
-    parts.push(description[0] === "\n" ? dedent(description) : description);
+    parts.push(description);
   }
   if (usage) {
     parts.push(`Usage:\n${indent}${usage}`);

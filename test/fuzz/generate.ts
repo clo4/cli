@@ -134,8 +134,6 @@ const DEFAULT_VALUES = ["d", "", "-v", "--", "build"];
 
 // Descriptions that help lays out differently: several lines, an indented
 // block after a leading newline, paragraphs, trailing spaces and a tab.
-// A lone "\n", or a leading newline without a trailing one, makes dedenting
-// throw, so those are rare.
 const DESCRIPTIONS = [
   "Short.",
   "",
@@ -146,8 +144,10 @@ const DESCRIPTIONS = [
   "Line one.\nLine two.\n\nNext paragraph.",
   "Trailing spaces   ",
   "Tab\tinside",
+  "\n",
+  "\nNo trailing newline",
+  "\n    Indented more.\n  Less.\n",
 ];
-const BROKEN_DESCRIPTIONS = ["\n", "\nNo trailing newline"];
 const ARG_NAMES = ["v", "", "file", "a-much-longer-argument-name", "x"];
 const HELP_OPTION = { name: ["-h", "--help"], description: "Print a help message", isPersistent: true };
 
@@ -170,9 +170,6 @@ export function generator(seed: number, options: GenerateOptions = {}) {
    * default lands on either side of the 68-character limit.
    */
   const description = (): string => {
-    if (extras.chance(0.02)) {
-      return extras.pick(BROKEN_DESCRIPTIONS);
-    }
     if (extras.chance(0.3)) {
       return `${extras.pick(["", "Above.\n"])}${"Word ".repeat(1 + extras.int(15)).trimEnd()}`;
     }

@@ -227,6 +227,23 @@ test("help: a description's common indentation is removed", () => {
   expect(getHelp([spec]).startsWith("First line.\n  Indented line.\n\nUsage:")).toBe(true);
 });
 
+test("help: a description after a leading newline loses only its indentation", () => {
+  const shown = (description: string) => getHelp([{ name: "cli", description }]).split("\n\nUsage:")[0];
+  // The least indented line sets the margin, so no line loses text.
+  expect(shown("\n    Indented more.\n  Less.\n")).toBe("  Indented more.\nLess.");
+  // A last line with text is kept.
+  expect(shown("\nNo trailing newline")).toBe("No trailing newline");
+  expect(shown("\n  One.\n  Two.")).toBe("One.\nTwo.");
+  // A line of only spaces and tabs is left empty.
+  expect(shown("\n  First.\n      \n  Second.\n  ")).toBe("First.\n\nSecond.");
+  expect(shown("\n\tTabbed.\n\t\tMore.\n")).toBe("Tabbed.\n\tMore.");
+  // A description with nothing in it shows nothing.
+  expect(getHelp([{ name: "cli", description: "\n" }]).startsWith("Usage:")).toBe(true);
+  expect(getHelp([{ name: "cli", description: "\n   \n  " }]).startsWith("Usage:")).toBe(true);
+  // Without a leading newline, a description is shown as written.
+  expect(shown("  Kept as written.\n    So is this.")).toBe("  Kept as written.\n    So is this.");
+});
+
 test("help: an option that requires a separator shows the separator in effect", () => {
   const sub: Spec = { name: "sub", parserDirectives: { optionArgSeparators: "=" } };
   const spec: Spec = {
