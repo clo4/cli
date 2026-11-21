@@ -98,6 +98,7 @@ ${before}CLI.run(CLI.spec({
 ${range(shape.groups)
   .map((g) => `    { name: "g${g}", description: "Group ${g}.", ${group(g)} },`)
   .join("\n")}
+    CLI.completion,
   ],
 }));
 `;
@@ -227,10 +228,12 @@ ${range(commands)
 /** The Cliffy CLI, with `group` writing the calls that add each group. */
 const cliffyCli = (shape: LargeShape, group: (g: number) => string): string => `
 import { Command } from "@cliffy/command";
+import { CompletionsCommand } from "@cliffy/command/completions";
 await new Command().name("forge").description("Big CLI.")
 ${range(shape.groups)
   .map((g) => `  ${group(g)}`)
   .join("\n")}
+  .command("completions", new CompletionsCommand())
   .parse(process.argv.slice(2));
 `;
 
@@ -335,6 +338,7 @@ const gunshiCli = (
   before = "",
 ): string => `
 import { cli${before} } from "gunshi";
+import completion from "@gunshi/plugin-completion";
 import { renderHeader } from "gunshi/renderer";
 try {
   await cli(process.argv.slice(2), { name: "forge", description: "Big CLI." }, {
@@ -342,6 +346,7 @@ try {
     description: "Big CLI.",
     strict: true,
     renderHeader: (ctx) => (ctx.values.help ? renderHeader(ctx) : ""),
+    plugins: [completion()],
     subCommands: {
 ${range(groups)
   .map(
@@ -413,6 +418,7 @@ ${range(commands)
   )
   .join("\n")}
   .demandCommand()
+  .completion()
   .parseAsync();
 `,
 );

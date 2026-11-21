@@ -1,4 +1,5 @@
 import { Command } from "@cliffy/command";
+import { CompletionsCommand } from "@cliffy/command/completions";
 
 const remote = new Command()
   .description("Manage remotes.")
@@ -46,4 +47,6 @@ await new Command()
   })
   .command("remote", remote)
   .command("config", config)
+  // Completion, Cliffy's own, as an app that offers it adds it.
+  .command("completions", new CompletionsCommand())
   .parse(process.argv.slice(2));

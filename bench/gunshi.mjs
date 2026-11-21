@@ -1,4 +1,5 @@
 import { cli } from "gunshi";
+import completion from "@gunshi/plugin-completion";
 import { renderHeader } from "gunshi/renderer";
 
 // gunshi has no command aliases, so `b` is registered as a second command, and
@@ -101,6 +102,8 @@ try {
       description: "Build orchestrator.",
       strict: true,
       renderHeader: (ctx) => (ctx.values.help ? renderHeader(ctx) : ""),
+      // Completion, gunshi's own plugin, as an app that offers it adds it.
+      plugins: [completion()],
       subCommands: { build, b: { ...build, name: "b" }, remote, config },
     },
   );

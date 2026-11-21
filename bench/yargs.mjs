@@ -82,4 +82,6 @@ await yargs(hideBin(process.argv))
       .demandCommand(),
   )
   .demandCommand()
+  // Completion, Yargs' own, as an app that offers it turns it on.
+  .completion()
   .parseAsync();

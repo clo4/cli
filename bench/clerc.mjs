@@ -1,4 +1,4 @@
-import { Cli, friendlyErrorPlugin, notFoundPlugin, strictFlagsPlugin } from "clerc";
+import { Cli, completionsPlugin, friendlyErrorPlugin, notFoundPlugin, strictFlagsPlugin } from "clerc";
 
 // Cli() comes with clerc's help and version plugins, which fail unless the CLI
 // has a name and a version. Rejecting unknown options,
@@ -14,6 +14,8 @@ await Cli()
   .use(strictFlagsPlugin())
   .use(notFoundPlugin())
   .use(friendlyErrorPlugin())
+  // Completion, clerc's own, as an app that offers it adds it.
+  .use(completionsPlugin())
   .command("build", "Build inputs.", {
     alias: "b",
     parameters: ["[inputs...]"],

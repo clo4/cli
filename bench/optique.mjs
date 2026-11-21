@@ -74,6 +74,8 @@ const result = run(parser, {
   programName: "forge",
   brief: message`Build orchestrator.`,
   help: "option",
+  // Completion, Optique's own, as an app that offers it turns it on.
+  completion: "command",
 });
 
 switch (result.command) {

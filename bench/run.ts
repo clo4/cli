@@ -115,7 +115,6 @@ for (const name of ["NODE_ENV", "NODE_OPTIONS", "DEBUG", "FORCE_COLOR", "CI"]) {
 }
 
 const baselineAdapter = new URL("../baseline.mjs", import.meta.url);
-const completionAdapter = new URL("../clo4-cli-completion.mjs", import.meta.url);
 
 const adapters: readonly Adapter[] = [
   [ours, new URL("../clo4-cli.mjs", import.meta.url)],
@@ -504,7 +503,6 @@ async function prepareJobs(
 
   await Promise.all([
     bundle(fileURLToPath(baselineAdapter), bundled("baseline")),
-    bundle(fileURLToPath(completionAdapter), bundled("completion")),
     ...adapters.map(([library, url]) => bundle(fileURLToPath(url), bundled(library))),
     ...large.map(({ input, output, entry, files }) => bundle(input, output, entry, files)),
   ]);
@@ -520,7 +518,7 @@ async function prepareJobs(
       jobs.push({ library, scenario, bundle: output });
     }
   }
-  jobs.push({ library: ours, scenario: completionScenario, bundle: bundled("completion") });
+  jobs.push({ library: ours, scenario: completionScenario, bundle: bundled(ours) });
 
   return {
     jobs,

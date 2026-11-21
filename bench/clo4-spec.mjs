@@ -1,8 +1,8 @@
 import * as CLI from "../dist/index.js";
 
 // The CLI every adapter builds: nested commands, variadic arguments, an alias,
-// a repeatable option, a required option and two command groups. The
-// completion adapter adds completion to it.
+// a repeatable option, a required option, two command groups and shell
+// completion.
 export const spec = CLI.spec({
   name: "forge",
   description: "Build orchestrator.",
@@ -89,5 +89,7 @@ export const spec = CLI.spec({
         },
       ],
     },
+    // Completion, the way the docs install it, so every scenario pays for it.
+    CLI.completion,
   ],
 });
