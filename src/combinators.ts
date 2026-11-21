@@ -240,7 +240,7 @@ export class Seq<const P extends readonly Part[]> extends Parser<Values<P>> {
 }
 
 /** A whole number, like `12` or `-3`. The same as `number({ int: true })`. */
-export const int: Parser<number> = number({ int: true });
+export const int: Parser<number> = /* @__PURE__ */ number({ int: true });
 
 const uintAtom: Atom = {
   run(self, input, start, state) {
@@ -269,7 +269,7 @@ const uintAtom: Atom = {
  * sign, so `-0` is rejected, and `seq(uint, "x", uint)` rejects `1920x-1080`.
  * Use it for the numbers in a format.
  */
-export const uint: Parser<number> = new Parser(uintAtom);
+export const uint: Parser<number> = /* @__PURE__ */ new Parser(uintAtom);
 
 /**
  * Reads each part in order. Gives the values as a tuple, and a string gives

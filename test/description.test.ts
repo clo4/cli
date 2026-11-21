@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import * as CLI from "../src/index.js";
-import { describeParser } from "../src/description.js";
+import { describeParser, parserCompletions } from "../src/description.js";
 import type { StandardSchemaV1 } from "../src/types.js";
 import { captureConsole, run } from "./helpers.js";
 
@@ -39,12 +39,14 @@ test("describeParser: a built-in parser says what JSON Schema has no words for",
   expect(jobs.choices).toEqual(["auto"]);
   expect(jobs.range).toBeUndefined();
   expect(jobs.constraint).toEqual(["auto", "<int>"]);
-  expect(jobs.complete("a")).toEqual([{ value: "auto" }]);
+  expect(parserCompletions({ parse: CLI.choice("auto", CLI.int) }, "a")).toEqual([{ value: "auto" }]);
 
   const size = describeParser({ parse: CLI.seq(CLI.uint.as("width"), "x", CLI.uint.as("height")) })!;
   expect(size.choices).toBeUndefined();
   expect(size.constraint).toEqual(["<width>x<height>"]);
-  expect(size.complete("1920")).toEqual([{ value: "1920x", open: true }]);
+  expect(
+    parserCompletions({ parse: CLI.seq(CLI.uint.as("width"), "x", CLI.uint.as("height")) }, "1920"),
+  ).toEqual([{ value: "1920x", open: true }]);
 
   const mapped = describeParser({ parse: CLI.choice("a", CLI.choice("b", "c")).map((value) => value) })!;
   expect(mapped.choices).toEqual(["a", "b", "c"]);
@@ -70,7 +72,7 @@ test("describeParser: a schema that can't describe itself says nothing", () => {
       undefined,
       undefined,
     ]);
-    expect(description.complete("")).toEqual([]);
+    expect(parserCompletions({ parse }, "")).toEqual([]);
   }
 });
 

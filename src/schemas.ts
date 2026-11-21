@@ -150,8 +150,6 @@ export class Parser<T, L extends string | undefined = string | undefined> {
   declare readonly fn: any;
   /** The name `as` gave the parser. */
   declare readonly label: L;
-  declare readonly version: 1;
-  declare readonly vendor: string;
   declare readonly types?: { readonly input: string; readonly output: T } | undefined;
 
   constructor(atom: Atom, of?: unknown, fn?: unknown, label?: L) {
@@ -197,9 +195,20 @@ export class Parser<T, L extends string | undefined = string | undefined> {
     const schema = this.atom.schema?.(this);
     return schema && { input: () => schema };
   }
+
+  // Getters, so that every parser shares them without an assignment to the
+  // prototype, which a bundler would have to keep even for a CLI with no parser.
+
+  /** The version of the Standard Schema specification the parser follows. */
+  get version(): 1 {
+    return 1;
+  }
+
+  /** The library the parser comes from. */
+  get vendor(): string {
+    return "@clo4/cli";
+  }
 }
-(Parser.prototype as { version: 1 }).version = 1;
-(Parser.prototype as { vendor: string }).vendor = "@clo4/cli";
 
 /** Whether `value` is a {@link Parser}, from this copy of the library or another. */
 export function isParser(value: unknown): value is Parser<unknown> {

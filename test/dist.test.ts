@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { rolldown } from "rolldown";
 import { build } from "tsdown";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -47,4 +48,21 @@ test("completion's command imports only public names, from index.js", () => {
   }
   // Nothing else is imported, statically or with `import()`.
   expect(code.match(/\bimport\b/g)).toHaveLength(1);
+});
+
+test("a CLI without parsers or completion bundles without their code", async () => {
+  // What a bundler keeps of index.js for a spec that uses neither: anything
+  // that runs when the module loads stays, whether the spec uses it or not.
+  const entry = join(dir, "cli.js");
+  writeFileSync(
+    entry,
+    `import * as CLI from "./index.js";
+CLI.run(CLI.spec({ name: "x", options: [CLI.help], subcommands: [CLI.helpCommand], action() {} }));`,
+  );
+  const result = await rolldown({ input: entry, platform: "node", logLevel: "silent" });
+  const { output } = await result.generate({ format: "esm", codeSplitting: false, minify: true });
+  const code = output[0].code;
+  // The vendor of a built-in parser, and the shells completion writes scripts for.
+  expect(code).not.toContain("@clo4/cli");
+  expect(code).not.toContain("nushell");
 });

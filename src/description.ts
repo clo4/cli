@@ -2,6 +2,8 @@
  * What an argument's parser says about the values it takes. Help, completion,
  * the "did you mean" line of a rejected value and the spec checks all read it
  * from {@link describeParser}, so they describe a parser the same way.
+ * Completion also asks {@link parserCompletions} what a partly typed value
+ * could become, which only completion needs.
  *
  * A built-in parser describes itself from its atom. Any other Standard
  * Schema is described by the JSON Schema it gives, if it gives one.
@@ -43,11 +45,6 @@ export interface ParserDescription {
    * ` | `, and starts a new line between two when it has to.
    */
   readonly constraint: readonly string[] | undefined;
-  /**
-   * What a partly typed value could become, for completion to offer. A
-   * value that isn't whole yet, like `1920x`, is `open`.
-   */
-  complete(partial: string): { value: string; open?: true }[];
 }
 
 /** What the parser of `arg` says about the values it takes, or undefined if it has none. */
@@ -70,11 +67,27 @@ function builtIn(parser: Parser<unknown>): ParserDescription {
     range: described.range,
     // A choice with a parser among its values lists each one, like `auto | <int>`.
     constraint: described.constraint ?? listOf(parser) ?? [patternOf(parser)],
-    complete: (partial) =>
-      completionsOf(parser, partial).map((value) =>
-        accepts(parser, value) ? { value } : { value, open: true },
-      ),
   };
+}
+
+/**
+ * What the partly typed `word` could become, as the parser of `arg` says, for
+ * completion to offer. A built-in parser gives the text that can come next,
+ * and a value that isn't whole yet, like `1920x`, is `open`. Another schema
+ * gives the values its JSON Schema lists. It's a function of its own so that
+ * a CLI that never completes leaves it out of a bundle.
+ */
+export function parserCompletions(arg: Arg, word: string): { value: string; open?: true }[] {
+  const parse = arg.parse;
+  if (parse === undefined) {
+    return [];
+  }
+  if (isParser(parse)) {
+    return completionsOf(parse, word).map((value) =>
+      accepts(parse, value) ? { value } : { value, open: true },
+    );
+  }
+  return (standard(jsonSchemaOf(parse)).choices ?? []).map((value) => ({ value }));
 }
 
 /** A schema described by the JSON Schema it gives, if any. */
@@ -89,7 +102,6 @@ function standard(schema: Record<string, unknown> | undefined): ParserDescriptio
       ? values.map(describeChoice)
       : // Help says `int`, the name the parser has in a spec.
         range && [describeRange(range.type === "integer" ? "int" : "number", range.bounds)],
-    complete: () => (choices ?? []).map((value) => ({ value })),
   };
 }
 

@@ -11,7 +11,7 @@
  */
 
 import type { Arg, Spec, Suggestion, SuggestInit, Template } from "./types.js";
-import { describeParser } from "./description.js";
+import { parserCompletions } from "./description.js";
 import { shownDescription } from "./help.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
@@ -101,7 +101,7 @@ async function argValues(arg: Arg, init: SuggestInit): Promise<Completion[]> {
     found.push(...(await paths(init.word, arg.template)));
   }
   if (arg.suggestions === undefined && suggest === undefined && arg.template === undefined) {
-    found.push(...(describeParser(arg)?.complete(init.word) ?? []));
+    found.push(...parserCompletions(arg, init.word));
   }
   return found;
 }
