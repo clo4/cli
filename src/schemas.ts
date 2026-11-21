@@ -31,9 +31,10 @@ export interface Atom {
   run(self: Parser<any>, input: string, start: number, state: State): number;
   /** The parser as help shows it, like `<int>` or `(s|m|h|d)`. */
   pattern(self: Parser<any>): string;
-  /** The parser in words for a message, like `an integer from 1 to 5`. */
-  words?(self: Parser<any>): string | undefined;
-  /** What the parser takes as JSON Schema, if JSON Schema has words for it. */
+  /**
+   * What the parser takes as JSON Schema, if JSON Schema has words for it.
+   * A message says what a number or a choice of strings expects from this.
+   */
   schema?(self: Parser<any>): Record<string, unknown> | undefined;
   /** Each value the parser accepts, for a parser that help shows as a list of them. */
   list?(self: Parser<any>): string[] | undefined;
@@ -76,8 +77,26 @@ export function describeChoice(value: unknown): string {
   return text === "" || /[\s|,()"']/.test(text) ? JSON.stringify(text) : text;
 }
 
+/**
+ * A parser in words for a message, like `an integer from 1 to 5` or
+ * `debug | release`: each value it lists, or else the type and range of the
+ * number it takes. Undefined for any other parser.
+ */
+function wordsOf(parser: Parser<unknown>): string | undefined {
+  const list = listOf(parser);
+  if (list) {
+    return list.join(" | ");
+  }
+  const schema = schemaOf(parser);
+  if (schema?.type !== "integer" && schema?.type !== "number") {
+    return undefined;
+  }
+  const bounds = { min: schema.minimum as number | undefined, max: schema.maximum as number | undefined };
+  return `${schema.type === "integer" ? "an integer" : "a number"}${describeRange("", bounds)}`;
+}
+
 /** Something that was expected, in words for a message. */
-function wordsOf(what: unknown): string {
+function expected(what: unknown): string {
   if (typeof what === "string") {
     return JSON.stringify(what);
   }
@@ -89,7 +108,7 @@ function wordsOf(what: unknown): string {
       .join(" | ");
   }
   if (isParser(what)) {
-    return what.atom.words?.(what) ?? patternOf(what);
+    return wordsOf(what) ?? patternOf(what);
   }
   return (what as { label: string }).label;
 }
@@ -107,7 +126,7 @@ function explain(self: Parser<any>, state: State, input: unknown, end: number): 
   let at = state.far;
   if (end > at) {
     // The parser read a value and nothing asked for more, so the rest is extra.
-    const words = self.atom.words?.(self);
+    const words = wordsOf(self);
     at = words === undefined ? end : 0;
     message = words === undefined ? `unexpected ${JSON.stringify(input.slice(end))}` : `expected ${words}`;
   } else {
@@ -118,7 +137,7 @@ function explain(self: Parser<any>, state: State, input: unknown, end: number): 
       if (problem !== undefined) {
         return { issues: [{ message: text === input ? problem : `${text} is ${problem}` }] };
       }
-      const words = wordsOf(what);
+      const words = expected(what);
       if (words !== "" && !wants.includes(words)) {
         wants.push(words);
       }
@@ -192,7 +211,7 @@ export class Parser<T, L extends string | undefined = string | undefined> {
 
   /** What the parser takes as JSON Schema, for a number or a choice of strings. */
   get jsonSchema(): { input(): Record<string, unknown> } | undefined {
-    const schema = this.atom.schema?.(this);
+    const schema = schemaOf(this);
     return schema && { input: () => schema };
   }
 
@@ -224,11 +243,32 @@ export function patternOf(parser: Parser<unknown>): string {
   if (parser.label === undefined) {
     return parser.atom.pattern(parser);
   }
+  return bare(parser).atom.optional ? `[<${parser.label}>]` : `<${parser.label}>`;
+}
+
+/**
+ * `parser` without the `map`s around it. A `map` reads what the parser it
+ * wraps reads, so that parser describes it: its schema, its list and its
+ * choices are the wrapped parser's.
+ */
+export function bare(parser: Parser<unknown>): Parser<unknown> {
   let inner = parser;
   while (inner.atom === mapAtom) {
     inner = inner.of;
   }
-  return inner.atom.optional ? `[<${parser.label}>]` : `<${parser.label}>`;
+  return inner;
+}
+
+/** What `parser` takes as JSON Schema, if JSON Schema has words for it. */
+export function schemaOf(parser: Parser<unknown>): Record<string, unknown> | undefined {
+  const inner = bare(parser);
+  return inner.atom.schema?.(inner);
+}
+
+/** The strings `parser` lists among its values, as the user types them. */
+export function choicesOf(parser: Parser<unknown>): string[] | undefined {
+  const inner = bare(parser);
+  return inner.atom.choices?.(inner);
 }
 
 /**
@@ -250,10 +290,6 @@ export const mapAtom: Atom = {
     return end;
   },
   pattern: (self) => patternOf(self.of),
-  words: (self) => self.of.atom.words?.(self.of),
-  schema: (self) => self.of.atom.schema?.(self.of),
-  list: (self) => listOf(self.of),
-  choices: (self) => self.of.atom.choices?.(self.of),
 };
 
 /** The least and greatest numbers a schema accepts, and whether each is itself left out. */
@@ -369,10 +405,6 @@ const numberAtom: Atom = {
     return at;
   },
   pattern: (self) => (self.of?.int ? "<int>" : "<number>"),
-  words(self) {
-    const options: NumberOptions = self.of ?? {};
-    return `${options.int ? "an integer" : "a number"}${describeRange("", options)}`;
-  },
   schema(self) {
     const options: NumberOptions = self.of ?? {};
     const schema: Record<string, unknown> = { type: options.int ? "integer" : "number" };
@@ -418,7 +450,6 @@ const choiceAtom: Atom = {
   },
   pattern: (self) =>
     `(${self.of.map((value: Part) => (typeof value === "string" ? literal(value) : patternOf(value))).join("|")})`,
-  words: (self) => choiceAtom.list!(self)!.join(" | "),
   schema: (self) =>
     self.of.every((value: Part) => typeof value === "string")
       ? { type: "string", enum: [...self.of] }
@@ -426,14 +457,13 @@ const choiceAtom: Atom = {
   list: (self) =>
     self.of.map((value: Part) => (typeof value === "string" ? describeChoice(value) : patternOf(value))),
   choices: (self) =>
-    self.of.flatMap((value: Part) =>
-      typeof value === "string" ? [value] : (value.atom.choices?.(value) ?? []),
-    ),
+    self.of.flatMap((value: Part) => (typeof value === "string" ? [value] : (choicesOf(value) ?? []))),
 };
 
 /** Each value `parser` accepts as help lists them, unless it has a label or isn't shown as a list. */
 export function listOf(parser: Parser<unknown>): string[] | undefined {
-  return parser.label === undefined ? parser.atom.list?.(parser) : undefined;
+  const inner = bare(parser);
+  return parser.label === undefined ? inner.atom.list?.(inner) : undefined;
 }
 
 /**

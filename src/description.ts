@@ -14,12 +14,14 @@
 import type { Arg, StandardSchemaV1 } from "./types.js";
 import {
   accepts,
+  choicesOf,
   completionsOf,
   describeChoice,
   describeRange,
   isParser,
   listOf,
   patternOf,
+  schemaOf,
 } from "./schemas.js";
 import type { Bounds, Parser } from "./schemas.js";
 
@@ -61,9 +63,9 @@ export function describeParser(arg: Arg): ParserDescription | undefined {
  * the atom gives, with what JSON Schema has no words for added.
  */
 function builtIn(parser: Parser<unknown>): ParserDescription {
-  const described = standard(parser.atom.schema?.(parser));
+  const described = standard(schemaOf(parser));
   return {
-    choices: parser.atom.choices?.(parser),
+    choices: choicesOf(parser),
     range: described.range,
     // A choice with a parser among its values lists each one, like `auto | <int>`.
     constraint: described.constraint ?? listOf(parser) ?? [patternOf(parser)],

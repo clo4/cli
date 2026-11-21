@@ -17,7 +17,7 @@
  * @module
  */
 
-import { fail, literal, mapAtom, number, Parser, patternOf, tooBig } from "./schemas.js";
+import { bare, fail, literal, number, Parser, patternOf, tooBig } from "./schemas.js";
 import type { Atom, Part, State, ValueOf } from "./schemas.js";
 
 /** Read one part. A string part gives itself as the value. */
@@ -46,11 +46,7 @@ function showRepeated(part: Part, whole: boolean): string {
   if (typeof part === "string") {
     return whole && part.length > 1 && shown === part ? `(${shown})` : shown;
   }
-  let inner = part;
-  while (inner.label === undefined && inner.atom === mapAtom) {
-    inner = inner.of;
-  }
-  const { atom, label, of } = inner;
+  const { atom, label, of } = part.label === undefined ? bare(part) : part;
   return label === undefined &&
     (atom === manyAtom || atom === sepByAtom || (whole && atom === seqAtom && of.length > 1))
     ? `(${shown})`
@@ -260,7 +256,6 @@ const uintAtom: Atom = {
     return at;
   },
   pattern: () => "<int>",
-  words: () => "an integer, at least 0",
   schema: () => ({ type: "integer", minimum: 0 }),
 };
 
