@@ -139,25 +139,31 @@ class SpecWalk {
     walk(new CommandVisit([spec], [], true, null));
   }
 
-  /** Run a function once for each path. A check of what the parser does at a command uses this. */
-  forEachPath(fn: (visit: CommandVisit) => void): void {
-    this.visits.forEach(fn);
-  }
-
-  /** Each path, as {@link forEachPath} visits them, for a check that waits on the parser. */
+  /** Each path. A check of what the parser does at a command reads these. */
   get paths(): readonly CommandVisit[] {
     return this.visits;
   }
 
   /**
-   * Run a function once for each command in the spec, at the path that
-   * defines it, parents before their subcommands. A check of how a command
-   * is written uses this.
+   * Each command in the spec, at the path that defines it, parents before
+   * their subcommands. A check of how a command is written reads these.
    */
-  forEachCommand(fn: (visit: CommandVisit) => void): void {
-    for (const visit of this.visits) {
-      if (visit.isDefinition) {
-        fn(visit);
+  get commands(): readonly CommandVisit[] {
+    return this.visits.filter((visit) => visit.isDefinition);
+  }
+
+  /**
+   * Each `args` property in the spec, as a list: every command's, then every
+   * option's, each at the command that defines it.
+   */
+  *argLists(): Generator<ArgsAt> {
+    for (const { command, path } of this.commands) {
+      const where = `In ${namedArrayToString(...path)}, argument`;
+      yield { args: makeArray(command.args), option: null, path, where };
+    }
+    for (const { option, isDefinedHere, path, where } of this.optionUses()) {
+      if (isDefinedHere) {
+        yield { args: makeArray(option.args), option, path, where: `${where}, argument` };
       }
     }
   }
@@ -167,28 +173,21 @@ class SpecWalk {
    * then its options'. This will convert single args to an array with one item.
    */
   forEachArgArray(fn: (args: Arg[], path: Subcommand[]) => void): void {
-    this.forEachCommand(({ command, path }) => {
+    for (const { command, path } of this.commands) {
       fn(makeArray(command.args), path);
       for (const option of makeArray(command.options)) {
         fn(makeArray(option.args), path);
       }
-    });
-  }
-
-  /**
-   * Run a function once for each option at the end of each path it can be
-   * used on: the options the command scope has in effect there, local ones
-   * first. A check that is about how the option is written skips the uses
-   * that aren't `isDefinedHere`. A check that depends on the scope sees the
-   * option the way the parser does at each command.
-   */
-  forEachOption(fn: (use: OptionUse) => void): void {
-    for (const use of this.optionUses()) {
-      fn(use);
     }
   }
 
-  /** Each option use, as {@link forEachOption} visits them, for a check that waits on the parser. */
+  /**
+   * Each option at the end of each path it can be used on: the options the
+   * command scope has in effect there, local ones first. A check that is
+   * about how the option is written skips the uses that aren't
+   * `isDefinedHere`. A check that depends on the scope sees the option the
+   * way the parser does at each command.
+   */
   *optionUses(): Generator<OptionUse> {
     for (const visit of this.visits) {
       const { path, scope } = visit;
@@ -275,6 +274,17 @@ function describeOption(definedIn: readonly Subcommand[], index: number, usedIn 
   const option = makeArray(definedIn[definedIn.length - 1].options)[index];
   const name = `${namedArrayToString(...definedIn, option)} (index ${index})`;
   return usedIn === definedIn ? `Option ${name}` : `In ${namedArrayToString(...usedIn)}, option ${name}`;
+}
+
+/** One `args` property in the spec, as a list, at the command that defines it. */
+interface ArgsAt {
+  args: Arg[];
+  /** The option it's of, or null for a command's. */
+  option: Option | null;
+  /** The commands from the root to the one that defines it. */
+  path: Subcommand[];
+  /** Names the list at the start of a message. The argument's name goes after it. */
+  where: string;
 }
 
 /** One option, at one command it can be used in. */
@@ -551,20 +561,9 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "The parser can use every default",
     name: "assertDefaultsCanBeUsed",
     check(walk) {
-      walk.forEachCommand(({ command, path }) => {
-        for (const [index, arg] of makeArray(command.args).entries()) {
-          assert(
-            arg.default === undefined || arg.isOptional,
-            `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} has a default, but it's required, so the default is never used`,
-          );
-        }
-      });
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
-        if (!isDefinedHere) {
-          return;
-        }
+      for (const { args, option, where } of walk.argLists()) {
         let firstWithout: number | null = null;
-        for (const [index, arg] of makeArray(option.args).entries()) {
+        for (const [index, arg] of args.entries()) {
           if (arg.default === undefined) {
             firstWithout ??= index;
             continue;
@@ -572,14 +571,15 @@ const specChecks: readonly SpecCheck[] = [
           if (arg.isOptional) {
             continue;
           }
-          const name = `${where}, argument ${argName(arg, String(index))} has a default, but`;
+          const name = `${where} ${argName(arg, String(index))} has a default, but`;
+          assert(option, `${name} it's required, so the default is never used`);
           assert(!option.isRequired, `${name} the option is required, so the default is never used`);
           assert(
             firstWithout === null,
             `${name} the argument at index ${firstWithout} has none, so the default is never used`,
           );
         }
-      });
+      }
     },
   },
   {
@@ -592,22 +592,11 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertDefaultsPassTheirParse",
     async check(walk) {
       const defaults: { arg: Arg; where: string }[] = [];
-      walk.forEachCommand(({ command, path }) => {
-        for (const [index, arg] of makeArray(command.args).entries()) {
-          defaults.push({
-            arg,
-            where: `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))}`,
-          });
+      for (const { args, where } of walk.argLists()) {
+        for (const [index, arg] of args.entries()) {
+          defaults.push({ arg, where: `${where} ${argName(arg, String(index))}` });
         }
-      });
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
-        if (!isDefinedHere) {
-          return;
-        }
-        for (const [index, arg] of makeArray(option.args).entries()) {
-          defaults.push({ arg, where: `${where}, argument ${argName(arg, String(index))}` });
-        }
-      });
+      }
       for (const { arg, where } of defaults) {
         if (arg.default === undefined || arg.parse === undefined) {
           continue;
@@ -653,28 +642,20 @@ const specChecks: readonly SpecCheck[] = [
           `${where} has a parser that rejects every value, since it asks for ${type === "integer" ? "an" : "a"} ${describeRange(type, bounds)}`,
         );
       };
-      walk.forEachCommand(({ command, path }) => {
-        for (const [index, arg] of makeArray(command.args).entries()) {
-          check(arg, `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))}`);
+      for (const { args, where } of walk.argLists()) {
+        for (const [index, arg] of args.entries()) {
+          check(arg, `${where} ${argName(arg, String(index))}`);
         }
-      });
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
-        if (!isDefinedHere) {
-          return;
-        }
-        for (const [index, arg] of makeArray(option.args).entries()) {
-          check(arg, `${where}, argument ${argName(arg, String(index))}`);
-        }
-      });
+      }
     },
   },
   {
     sentence: "Repeatable options that are numbers are integers greater than 1",
     name: "assertRepeatableOptionsArePositiveIntegers",
     check(walk) {
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
+      for (const { option, isDefinedHere, where } of walk.optionUses()) {
         if (!isDefinedHere || typeof option.isRepeatable !== "number") {
-          return;
+          continue;
         }
         assert(
           Number.isSafeInteger(option.isRepeatable),
@@ -688,14 +669,14 @@ const specChecks: readonly SpecCheck[] = [
           option.isRepeatable !== 1,
           `${where} has its \`isRepeatable\` value set to 1, which is no different that omitting the property entirely`,
         );
-      });
+      }
     },
   },
   {
     sentence: "Options have locally unique names",
     name: "assertOptionsHaveLocallyUniqueNames",
     check(walk) {
-      walk.forEachCommand(({ path, own }) => {
+      for (const { path, own } of walk.commands) {
         const optionNames = new Set<string>();
         for (const { option, index } of own) {
           for (const name of makeArray(option.name)) {
@@ -706,7 +687,7 @@ const specChecks: readonly SpecCheck[] = [
             optionNames.add(name);
           }
         }
-      });
+      }
     },
   },
   {
@@ -719,7 +700,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "An option that shadows a persistent option has a ref, and so does the option it shadows",
     name: "assertShadowingOptionsHaveRefs",
     check(walk) {
-      walk.forEachPath(({ path, own, parent }) => {
+      for (const { path, own, parent } of walk.paths) {
         // The persistent options of the commands above, which this command's
         // options take names from.
         const inherited = parent?.scope.persistent ?? [];
@@ -749,7 +730,7 @@ const specChecks: readonly SpecCheck[] = [
             );
           }
         }
-      });
+      }
     },
   },
   {
@@ -775,7 +756,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Different options on a subcommand and its parents have different names",
     name: "assertOptionsHaveDifferentNamesFromParents",
     check(walk) {
-      walk.forEachPath(({ path, own, onLine }) => {
+      for (const { path, own, onLine } of walk.paths) {
         for (const { option, index } of own) {
           const where = describeOption(path, index);
           const names = makeArray(option.name);
@@ -808,7 +789,7 @@ const specChecks: readonly SpecCheck[] = [
             );
           }
         }
-      });
+      }
     },
   },
   {
@@ -823,7 +804,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "No option a ref can meet on a command line has the same ref, or has it as a name",
     name: "assertRefsAreUnique",
     check(walk) {
-      walk.forEachPath(({ path, own, onLine }) => {
+      for (const { path, own, onLine } of walk.paths) {
         const met = onLine.map(({ option, definedIn, index }) => ({
           option,
           where: describeOption(definedIn, index),
@@ -860,7 +841,7 @@ const specChecks: readonly SpecCheck[] = [
             );
           }
         }
-      });
+      }
     },
   },
   {
@@ -874,7 +855,7 @@ const specChecks: readonly SpecCheck[] = [
     check(walk) {
       const sharing = new Set<Option>();
       const withRef: { option: Option; where: string }[] = [];
-      walk.forEachPath(({ path, own, onLine, isDefinition }) => {
+      for (const { path, own, onLine, isDefinition } of walk.paths) {
         for (const { option, index } of own) {
           if (option.ref !== undefined && isDefinition) {
             withRef.push({ option, where: describeOption(path, index) });
@@ -890,7 +871,7 @@ const specChecks: readonly SpecCheck[] = [
             }
           }
         }
-      });
+      }
       for (const { option, where } of withRef) {
         assert(
           sharing.has(option),
@@ -903,7 +884,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Subcommands have locally unique names",
     name: "assertSubcommandsHaveLocallyUniqueNames",
     check(walk) {
-      walk.forEachCommand(({ command, path }) => {
+      for (const { command, path } of walk.commands) {
         const names = new Set<string>();
         for (const [index, subcommand] of makeArray(command.subcommands).entries()) {
           for (const name of makeArray(subcommand.name)) {
@@ -914,7 +895,7 @@ const specChecks: readonly SpecCheck[] = [
             names.add(name);
           }
         }
-      });
+      }
     },
   },
   {
@@ -950,7 +931,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Option arg separators are not an empty string",
     name: "assertOptionArgSeparatorsHaveCharacters",
     check(walk) {
-      walk.forEachCommand(({ command, path }) => {
+      for (const { command, path } of walk.commands) {
         const separators = makeArray(command.parserDirectives?.optionArgSeparators);
         for (const [sepIndex, separator] of separators.entries()) {
           assert(
@@ -958,26 +939,26 @@ const specChecks: readonly SpecCheck[] = [
             `${describeCommand(path)} has an empty string for an option arg separator at index ${sepIndex}. If you wanted to disable option arg separators, use an empty array.`,
           );
         }
-      });
+      }
     },
   },
   {
     sentence: "Names have no extra leading or trailing whitespace",
     name: "assertNamesHaveNoExtraWhitespace",
     check(walk) {
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
+      for (const { option, isDefinedHere, where } of walk.optionUses()) {
         if (!isDefinedHere) {
-          return;
+          continue;
         }
         for (const name of makeArray(option.name)) {
           assert(name === name.trim(), `${where} has a name with extra whitespace`);
         }
-      });
-      walk.forEachCommand(({ command, path }) => {
+      }
+      for (const { command, path } of walk.commands) {
         for (const name of makeArray(command.name)) {
           assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
         }
-      });
+      }
       walk.forEachArgArray((args, path) => {
         for (const [index, arg] of makeArray(args).entries()) {
           for (const name of makeArray(arg.name)) {
@@ -997,14 +978,14 @@ const specChecks: readonly SpecCheck[] = [
     check(walk) {
       const spec = walk.spec;
       assert(spec.description, `Spec has no description`);
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
+      for (const { option, isDefinedHere, where } of walk.optionUses()) {
         if (isDefinedHere) {
           assert(option.description, `${where} has no description`);
         }
-      });
-      walk.forEachCommand(({ command, path }) => {
+      }
+      for (const { command, path } of walk.commands) {
         assert(command.description, `${describeCommand(path)} has no description`);
-      });
+      }
     },
   },
   {
@@ -1019,16 +1000,16 @@ const specChecks: readonly SpecCheck[] = [
           `Spec has a description line over 68 characters`,
         );
       }
-      walk.forEachOption(({ option, isDefinedHere, where }) => {
+      for (const { option, isDefinedHere, where } of walk.optionUses()) {
         if (!isDefinedHere || !option.description) {
-          return;
+          continue;
         }
         assert(
           option.description.split("\n").every((line) => line.length <= 68),
           `${where} has a description line over 68 characters`,
         );
-      });
-      walk.forEachCommand(({ command, path }) => {
+      }
+      for (const { command, path } of walk.commands) {
         if (command.description) {
           assert(
             command.description.split("\n").every((line) => line.length <= 68),
@@ -1042,7 +1023,7 @@ const specChecks: readonly SpecCheck[] = [
             `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} has a description line over 68 characters`,
           );
         }
-      });
+      }
     },
   },
   {
@@ -1050,9 +1031,9 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertCommonOptionsArePersistent",
     check(walk) {
       const failures: [string, string][] = [];
-      walk.forEachCommand(({ command, path }) => {
+      for (const { command, path } of walk.commands) {
         if (!command.subcommands) {
-          return;
+          continue;
         }
         // This command's options that every command below it defines too. An
         // option with a ref is a different option from the ones that share its
@@ -1068,7 +1049,7 @@ const specChecks: readonly SpecCheck[] = [
             failures.push([key, namedArrayToString(...path, option)]);
           }
         }
-      });
+      }
       assert(
         failures.length === 0,
         `The following options were also defined by all subcommands. Instead, define the option once, and use \`isPersistent: true\` to persist it across all subcommands.
@@ -1082,7 +1063,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
     sentence: "References to other options by name are valid",
     name: "assertOptionNameReferencesExist",
     check(walk) {
-      walk.forEachOption(({ option, where, scope }) => {
+      for (const { option, where, scope } of walk.optionUses()) {
         for (const name of makeArray(option.dependsOn)) {
           assert(
             scope.resolve(name) !== null,
@@ -1095,7 +1076,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
             `${where} is exclusive on an option named ${repr(name)}, which doesn't exist in its scope`,
           );
         }
-      });
+      }
     },
   },
   {
@@ -1103,11 +1084,11 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
     name: "assertPrefixMatchCommandsHaveNoArguments",
     skippedBy: "allowMatchingSubcommandPrefixAndArgs",
     check(walk) {
-      walk.forEachPath(({ command, path, scope }) => {
+      for (const { command, path, scope } of walk.paths) {
         // The scope is at this command, so this is the setting that decides how
         // its own subcommands are matched.
         if (!scope.directives.subcommandsMatchUniquePrefix) {
-          return;
+          continue;
         }
 
         assert(
@@ -1116,7 +1097,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
             ...path,
           )} has at least one argument and subcommand, but matches subcommands based on unique prefixes. To fix this, use \`parserDirectives: { subcommandsMatchUniquePrefix: false }\``,
         );
-      });
+      }
     },
   },
 ];
