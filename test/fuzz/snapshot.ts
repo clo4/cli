@@ -88,7 +88,7 @@ export function nextDifference(
   y: NextToken,
   sameCommand: SameCommand = Object.is,
 ): string | null {
-  if (!sameItems(x.path, y.path, sameCommand)) {
+  if (!sameItems(x.line.path, y.line.path, sameCommand)) {
     return "path differs";
   }
   if (JSON.stringify(x.directives) !== JSON.stringify(y.directives)) {

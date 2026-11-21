@@ -14,7 +14,7 @@ function is<Expected>() {
 
 // A description the compiler only knows is a string, like one read from a catalog.
 const described: string = ["Described", "at", "runtime."].join(" ");
-const listTargets = (tokens: string[]): Promise<string[]> => Promise.resolve(tokens);
+const listTargets = (word: string): Promise<string[]> => Promise.resolve([word]);
 
 test("spec and command return the object they're given", async () => {
   const root = { name: "demo" };
@@ -83,7 +83,7 @@ const demo = CLI.spec({
         name: "file",
         isOptional: true,
         template: ["filepaths", "folders"],
-        generators: { custom: async (tokens) => listTargets(tokens) },
+        suggest: async ({ word }) => listTargets(word),
       },
       options: [
         { name: "--watch", description: "Watch." },
@@ -107,7 +107,7 @@ const demo = CLI.spec({
         {
           name: "--target",
           description: "Target.",
-          args: { name: "t", generators: { custom: (tokens) => tokens } },
+          args: { name: "t", suggest: ({ args }) => args },
         },
         { name: "--version", description: "Version.", action: ({ help }) => void help() },
         { name: "--pure", description: "Pure.", args: { name: "c" }, exclusiveOn: ["--watch"] },
@@ -268,12 +268,12 @@ CLI.spec({
     },
     {
       name: "second",
-      args: { name: "f", generators: [{ custom: async (tokens) => tokens }, { custom: (tokens) => tokens }] },
+      args: { name: "f", suggest: [async ({ word }) => [word], ({ options }) => options.all("--tag")] },
     },
     {
       name: "third",
       args: [
-        { name: "f", generators: { custom: (tokens) => tokens } },
+        { name: "f", suggest: ({ path }) => [String(path.length)] },
         { name: "g", isOptional: true },
       ],
       action: ({ args }) => is<[string] | [string, string]>()(args),
@@ -466,5 +466,16 @@ test("spec: a function with properties is a value, not a schema to check", () =>
     name: "demo",
     action: vi.fn(),
     subcommands: [{ name: "sub", loadSpec: vi.fn(() => ({ name: "sub" })) }],
+  });
+});
+
+test("a spec with generators is told to use suggest", () => {
+  CLI.spec({
+    name: "x",
+    args: {
+      name: "target",
+      // @ts-expect-error `generators` became `suggest`.
+      generators: { custom: () => [] },
+    },
   });
 });

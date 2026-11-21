@@ -13,12 +13,14 @@ import { join } from "node:path";
 
 import { expect, test } from "vitest";
 
-import { completeRuntime, completion, formatCandidates, getCompletion } from "../src/completion.js";
-import type { Shell } from "../src/completion.js";
+import { complete } from "../src/complete.js";
+import { formatCandidates, script as shellScript } from "../src/completion-command.js";
+import { completion } from "../src/completion.js";
+import type { Shell } from "../src/completion-command.js";
 import { helpCommand } from "../src/help.js";
 
 import { parse } from "../src/parse.js";
-import type { Spec, Subcommand } from "../src/types.js";
+import type { Spec, Subcommand, SuggestInit } from "../src/types.js";
 import { captureConsole, expectIncludes, expectNotIncludes, run } from "./helpers.js";
 
 const fixture: Spec = {
@@ -53,8 +55,8 @@ const fixture: Spec = {
 
 const values = (cands: { value: string }[]) => cands.map((c) => c.value);
 
-const resolve = (spec: Spec, before: readonly string[], partial: string, gateOptions?: boolean) =>
-  completeRuntime({ spec, before, partial, gateOptions });
+const resolve = (spec: Spec, before: readonly string[], partial: string, optionsNeedDash?: boolean) =>
+  complete(spec, before, partial, { optionsNeedDash });
 
 test("runtime: a description after a leading newline is offered by its first line", async () => {
   const spec: Spec = {
@@ -110,7 +112,7 @@ test("runtime: a Windows path can use backslashes", async () => {
   );
 });
 
-test("runtime: pending option value runs a custom generator with no file leak", async () => {
+test("runtime: pending option value runs a suggester with no file leak", async () => {
   const spec: Spec = {
     name: "x",
     subcommands: [
@@ -119,14 +121,14 @@ test("runtime: pending option value runs a custom generator with no file leak", 
         options: [
           {
             name: ["-t", "--target"],
-            args: { name: "t", generators: { custom: () => ["staging", "production"] } },
+            args: { name: "t", suggest: () => ["staging", "production"] },
           },
         ],
       },
     ],
   };
   const v = values(await resolve(spec, ["deploy", "-t"], ""));
-  expect(v).toEqual(["staging", "production"]); // exactly the generator output
+  expect(v).toEqual(["staging", "production"]); // exactly the suggester output
 });
 
 test("runtime: static suggestions complete a option value", async () => {
@@ -232,7 +234,7 @@ test("runtime: a variadic option without suggestions still offers options", asyn
   expect(values(await resolve(openOptionSpec, ["--names=a"], ""))).toContain("--watch");
 });
 
-test("runtime: gateOptions applies after a variadic option's first value", async () => {
+test("runtime: optionsNeedDash applies after a variadic option's first value", async () => {
   expect(values(await resolve(openOptionSpec, ["--tags", "a"], "", true))).toEqual(["T1"]);
   // The parser reads `-` and `--w` here as values of --tags, so they complete
   // values too.
@@ -259,18 +261,87 @@ test("runtime: subcommands are offered after an option's value", async () => {
   }
 });
 
-test("runtime: a custom generator receives the current tokens", async () => {
+test("runtime: a suggester gets what the action would get from the line so far", async () => {
+  const seen: SuggestInit[] = [];
+  const deploy: Subcommand = {
+    name: ["deploy", "d"],
+    args: [{ name: "env" }, { name: "rest", isVariadic: true, suggest: (init) => (seen.push(init), []) }],
+    options: [{ name: ["-t", "--tag"], args: { name: "tag" }, isRepeatable: true }, { name: "--dry" }],
+  };
+  const spec: Spec = { name: "x", options: [{ name: "-v", isPersistent: true }], subcommands: [deploy] };
+  await resolve(spec, ["-v", "d", "prod", "-t", "a", "--tag=b", "--", "one"], "tw");
+  expect(seen).toHaveLength(1);
+  const { word, path, args, argSeparatorIndex, options } = seen[0];
+  expect(word).toBe("tw");
+  expect(path.map((command) => command.name)).toEqual(["x", ["deploy", "d"]]);
+  expect(args).toEqual(["prod", "one"]);
+  expect(argSeparatorIndex).toBe(1);
+  expect(options.all("--tag")).toEqual(["a", "b"]);
+  expect(options.has("-v")).toBe(true);
+  expect(options.has("--dry")).toBe(false);
+});
+
+test("runtime: a suggester sees the line before the word, not the word", async () => {
+  // The word is read after the suggester's view is taken. It's a value of the
+  // open option, and the name of a subcommand the scope would move into.
+  const seen: SuggestInit[] = [];
   const spec: Spec = {
     name: "x",
     options: [
-      {
-        name: "--t",
-        args: { name: "t", generators: { custom: (tokens) => [`n:${tokens.length}`] } },
-      },
+      { name: "--a", args: { name: "a", isOptional: true, suggest: (init) => (seen.push(init), []) } },
+      { name: "--b", args: { name: "b", default: "fallback" } },
     ],
+    subcommands: [{ name: "sub", options: [{ name: "--b", args: { name: "other", default: "inner" } }] }],
   };
-  const v = values(await resolve(spec, ["--t"], "pre"));
-  expect(v).toEqual(["n:2"]); // ["--t", "pre"]
+  await resolve(spec, ["--a"], "sub");
+  expect(seen).toHaveLength(1);
+  const { path, options } = seen[0];
+  expect(path).toHaveLength(1);
+  expect(options.all("--a")).toEqual([]);
+  // An unused option's default is the one at the root, where the value goes.
+  expect(options.get("--b")).toBe("fallback");
+});
+
+test("runtime: suggesters run together, and their values keep the spec's order", async () => {
+  const order: string[] = [];
+  const later = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    order.push("later");
+    return ["b"];
+  };
+  const sooner = () => (order.push("sooner"), ["c"]);
+  const spec: Spec = { name: "x", args: { name: "v", suggestions: ["a"], suggest: [later, sooner] } };
+  expect(values(await resolve(spec, [], ""))).toEqual(["a", "b", "c"]);
+  // `sooner` didn't wait for `later` to finish.
+  expect(order).toEqual(["sooner", "later"]);
+});
+
+test("runtime: a value the parser would read as a subcommand isn't offered as a value", async () => {
+  const spec: Spec = {
+    name: "x",
+    args: { name: "v", isOptional: true, suggestions: ["build", "other"] },
+    subcommands: [{ name: "build", description: "Build it" }],
+  };
+  expect(await resolve(spec, [], "")).toEqual([
+    { value: "other" },
+    { value: "build", description: "Build it" },
+  ]);
+});
+
+test("runtime: each value is offered once, where it first appears", async () => {
+  const spec: Spec = {
+    name: "x",
+    args: { name: "v", suggestions: ["a", { name: "b", description: "first" }], suggest: () => ["a", "b"] },
+  };
+  expect(await resolve(spec, [], "")).toEqual([{ value: "a" }, { value: "b", description: "first" }]);
+});
+
+test("runtime: a command like help completes its names with no help of its own", async () => {
+  // Help completes through its argument's suggester, so a copy under another name does too.
+  const man: Subcommand = { ...helpCommand, name: "man" };
+  const spec: Spec = { name: "x", subcommands: [{ name: "remote", subcommands: [{ name: "add" }] }, man] };
+  expect(values(await resolve(spec, ["man"], ""))).toEqual(["remote", "man"]);
+  expect(values(await resolve(spec, ["man", "remote"], ""))).toEqual(["add"]);
 });
 
 test("runtime: isRepeatable and exclusiveOn filter the option list", async () => {
@@ -455,7 +526,7 @@ test("runtime: required options are annotated", async () => {
   expect(first.description).toMatch(/\[required\]/);
 });
 
-test("runtime: gateOptions hides options until the token starts with a dash", async () => {
+test("runtime: optionsNeedDash hides options until the token starts with a dash", async () => {
   // Ungated (default): options show on a bare token.
   expect(values(await resolve(fixture, ["build"], ""))).toContain("--out");
 
@@ -471,7 +542,7 @@ test("runtime: gateOptions hides options until the token starts with a dash", as
   expect(dashed).toContain("--help");
 });
 
-test("runtime: gateOptions offers values for a dashed word the parser reads as one", async () => {
+test("runtime: optionsNeedDash offers values for a dashed word the parser reads as one", async () => {
   const spec: Spec = {
     name: "t",
     args: { name: "x", suggestions: ["-", "a"] },
@@ -485,7 +556,7 @@ test("runtime: gateOptions offers values for a dashed word the parser reads as o
   expect(values(await resolve(spec, [], "--o", true))).toEqual(["--o"]);
 });
 
-test("runtime: gateOptions offers a dashed subcommand once the word starts its name", async () => {
+test("runtime: optionsNeedDash offers a dashed subcommand once the word starts its name", async () => {
   const spec: Spec = {
     name: "x",
     args: { name: "file", isOptional: true, suggestions: ["--arg-value"] },
@@ -498,7 +569,7 @@ test("runtime: gateOptions offers a dashed subcommand once the word starts its n
   expect(values(await resolve(spec, [], "--h", true))).toEqual([]);
 });
 
-test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate on)", async () => {
+test("runtime: optionsNeedDash exempts posix-noncompliant options (no dash to gate on)", async () => {
   const spec: Spec = {
     name: "x",
     parserDirectives: { flagsArePosixNoncompliant: true },
@@ -513,19 +584,19 @@ test("runtime: gateOptions exempts posix-noncompliant options (no dash to gate o
 // The shim and the `completion` / `complete` subcommands
 // ---------------------------------------------------------------------------
 
-test("getCompletion emits the shim", async () => {
-  const bash = getCompletion(fixture, "bash");
+test("script emits the shim", async () => {
+  const bash = shellScript(fixture, "bash");
   expectIncludes(bash, "completion complete --");
   expectIncludes(bash, 'command -v "$bin"'); // guarded
   expectIncludes(bash, "complete -o nospace -F _forge_complete 'forge'");
 
-  const fish = getCompletion(fixture, "fish");
+  const fish = shellScript(fixture, "fish");
   expectIncludes(fish, "function __forge_complete");
   expectIncludes(fish, 'command -q -- $bin; or test -x "$bin"');
 });
 
-test("getCompletion emits the PowerShell shim", async () => {
-  const powershell = getCompletion(fixture, "powershell");
+test("script emits the PowerShell shim", async () => {
+  const powershell = shellScript(fixture, "powershell");
   expectIncludes(powershell, "Register-ArgumentCompleter -Native -CommandName 'forge'");
   expectIncludes(powershell, "Get-Command $bin"); // guarded
   // `--` goes through an array, so PowerShell passes it on.
@@ -538,7 +609,7 @@ test("getCompletion emits the PowerShell shim", async () => {
 });
 
 test("the PowerShell shim makes a CompletionResult from each line's fields", async () => {
-  const powershell = getCompletion(fixture, "powershell");
+  const powershell = shellScript(fixture, "powershell");
   // `foreach` runs no times when the CLI prints nothing.
   expectIncludes(powershell, "foreach ($line in $lines) {");
   expectIncludes(powershell, '$text, $value, $tooltip = $line -split "`t", 3');
@@ -547,25 +618,25 @@ test("the PowerShell shim makes a CompletionResult from each line's fields", asy
 
 test("the PowerShell shim passes an empty word as --empty-word", async () => {
   // Windows PowerShell drops an empty argument to a native command.
-  const powershell = getCompletion(fixture, "powershell");
+  const powershell = shellScript(fixture, "powershell");
   expectIncludes(powershell, "if ($partial -eq '') { $arguments += '--empty-word' }");
   expectIncludes(powershell, "if ($partial -ne '') { $arguments += $partial }");
 });
 
 test("the PowerShell shim runs a quoted command path without its quotes", async () => {
-  const powershell = getCompletion(fixture, "powershell");
+  const powershell = shellScript(fixture, "powershell");
   expectIncludes(powershell, "StringConstantExpressionAst]) { $first.Value } else { $first.Extent.Text }");
 });
 
 test("the PowerShell shim passes a quoted word without its opening quote", async () => {
-  const powershell = getCompletion(fixture, "powershell");
+  const powershell = shellScript(fixture, "powershell");
   expectIncludes(powershell, `if ($partial.StartsWith("'")) { $partial = $partial.Substring(1)`);
   expectIncludes(powershell, `elseif ($partial.StartsWith('"')) { $partial = $partial.Substring(1)`);
   expectNotIncludes(powershell, "$arguments += $wordToComplete");
 });
 
-test("getCompletion emits the Nushell shim", async () => {
-  const nushell = getCompletion(fixture, "nushell");
+test("script emits the Nushell shim", async () => {
+  const nushell = shellScript(fixture, "nushell");
   expectIncludes(nushell, "let __forge_previous_completer = $env.config.completions.external.completer?");
   // A command on Windows can be typed with its extension.
   expectIncludes(
@@ -577,7 +648,7 @@ test("getCompletion emits the Nushell shim", async () => {
 });
 
 test("the Nushell shim passes words without their quotes", async () => {
-  const nushell = getCompletion(fixture, "nushell");
+  const nushell = shellScript(fixture, "nushell");
   expectIncludes(nushell, `if $quote in ["'", '"', '\`'] {`);
   expectIncludes(
     nushell,
@@ -642,7 +713,7 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
     ];
     writeFakeCli(forge, "nushell", candidates, ["my f", "bu", "ot"], log);
     copyFileSync(forge, join(bin, "forge.exe"));
-    writeFileSync(join(dir, "shim.nu"), getCompletion(fixture, "nushell"));
+    writeFileSync(join(dir, "shim.nu"), shellScript(fixture, "nushell"));
     const cases = [
       ["forge", "build", "'my f"],
       ["forge", "build", '"my f'],
@@ -674,34 +745,36 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
 
 test("shims quote a name with a quote in it", async () => {
   const spec: Spec = { name: "it's", subcommands: [completion] };
-  expectIncludes(getCompletion(spec, "powershell"), "-CommandName 'it''s'");
-  expectIncludes(getCompletion(spec, "nushell"), `not-in ["it's" "it's.exe"`);
+  expectIncludes(shellScript(spec, "powershell"), "-CommandName 'it''s'");
+  expectIncludes(shellScript(spec, "nushell"), `not-in ["it's" "it's.exe"`);
 });
 
 test("runtime shims gate options for every shell but zsh", async () => {
   for (const shell of ["bash", "fish", "powershell", "nushell"] as const) {
-    expectIncludes(getCompletion(fixture, shell), "--gate-options");
+    expectIncludes(shellScript(fixture, shell), "--gate-options");
   }
   // zsh keeps its convention of surfacing options, so no gating option.
-  const zsh = getCompletion(fixture, "zsh");
+  const zsh = shellScript(fixture, "zsh");
   expectIncludes(zsh, "completion complete --");
   expectNotIncludes(zsh, "--gate-options");
 });
 
 test("complete subcommand honors --gate-options", async () => {
   const gated = await captureConsole(() =>
-    run(fixture, ["completion", "complete", "--gate-options", "--", "build", ""]),
+    run(fixture, ["completion", "complete", "--shell", "fish", "--gate-options", "--", "build", ""]),
   );
   expect(gated.code).toBe(0);
   expectNotIncludes(gated.stdout, "--out");
 
-  const ungated = await captureConsole(() => run(fixture, ["completion", "complete", "--", "build", ""]));
+  const ungated = await captureConsole(() =>
+    run(fixture, ["completion", "complete", "--shell", "fish", "--", "build", ""]),
+  );
   expectIncludes(ungated.stdout, "--out");
 });
 
 test("complete subcommand reads every token as before an empty word with --empty-word", async () => {
   const result = await captureConsole(() =>
-    run(fixture, ["completion", "complete", "--empty-word", "--", "remote"]),
+    run(fixture, ["completion", "complete", "--shell", "fish", "--empty-word", "--", "remote"]),
   );
   expect(result.code).toBe(0);
   // Without the flag, "remote" would be the word being completed.
@@ -737,7 +810,9 @@ test("completion subcommand suggests the closest shell", async () => {
 });
 
 test("complete subcommand prints resolver candidates", async () => {
-  const result = await captureConsole(() => run(fixture, ["completion", "complete", "--", "remote", ""]));
+  const result = await captureConsole(() =>
+    run(fixture, ["completion", "complete", "--shell", "fish", "--", "remote", ""]),
+  );
   expect(result.code).toBe(0);
   expectIncludes(result.stdout, "remove");
 });
@@ -868,7 +943,7 @@ test("runtime: an option isn't offered under a name that a subcommand matches", 
   expect(candidates).toEqual(["--foo:subcommand", "-f:option"]);
 });
 
-test("runtime: gateOptions offers dashed suggestions after '--', where they're arguments", async () => {
+test("runtime: optionsNeedDash offers dashed suggestions after '--', where they're arguments", async () => {
   const spec: Spec = {
     name: "demo",
     action: () => {},
@@ -949,7 +1024,7 @@ test("runtime: help offers the persistent subcommands the command its names lead
   expect(candidates).toEqual([{ value: "status", description: "Show the status" }]);
 });
 
-test("runtime: gateOptions offers help's subcommand names until the word starts with a dash", async () => {
+test("runtime: optionsNeedDash offers help's subcommand names until the word starts with a dash", async () => {
   const spec = helpFixture(helpCommand);
   const v = values(await resolve(spec, ["help"], "", true));
   expect(v).toContain("build");
@@ -967,14 +1042,11 @@ test("runtime: a help command with a copied action still completes names", async
 // ---------------------------------------------------------------------------
 
 test("every shim sets SHELL_COMPLETION_GENERATOR to the shell's name for the CLI", async () => {
-  expectIncludes(
-    getCompletion(fixture, "bash"),
-    `SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete`,
-  );
-  expectIncludes(getCompletion(fixture, "zsh"), `SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete`);
-  expectIncludes(getCompletion(fixture, "fish"), "set -lx SHELL_COMPLETION_GENERATOR fish");
-  expectIncludes(getCompletion(fixture, "powershell"), "$env:SHELL_COMPLETION_GENERATOR = 'powershell'");
-  expectIncludes(getCompletion(fixture, "nushell"), "$env.SHELL_COMPLETION_GENERATOR = 'nushell'");
+  expectIncludes(shellScript(fixture, "bash"), `SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete`);
+  expectIncludes(shellScript(fixture, "zsh"), `SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete`);
+  expectIncludes(shellScript(fixture, "fish"), "set -lx SHELL_COMPLETION_GENERATOR fish");
+  expectIncludes(shellScript(fixture, "powershell"), "$env:SHELL_COMPLETION_GENERATOR = 'powershell'");
+  expectIncludes(shellScript(fixture, "nushell"), "$env.SHELL_COMPLETION_GENERATOR = 'nushell'");
 });
 
 /** Whether `command` runs on this machine. */
@@ -998,7 +1070,7 @@ function runWithShim(shell: Shell & ("bash" | "fish" | "nushell"), args: string[
     writeFileSync(join(dir, "forge"), `#!/bin/sh\nprintf '%s\\n' "\${SHELL_COMPLETION_GENERATOR:-unset}"\n`, {
       mode: 0o755,
     });
-    writeFileSync(join(dir, "shim"), getCompletion(fixture, shell));
+    writeFileSync(join(dir, "shim"), shellScript(fixture, shell));
     const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
     delete env.SHELL_COMPLETION_GENERATOR;
     const command = shell === "nushell" ? "nu" : shell;
@@ -1223,24 +1295,6 @@ const awkwardSpec: Spec = {
   ],
 };
 
-test("complete subcommand prints candidates as they are without --shell", async () => {
-  // These are the lines 3.1.0 printed, which the scripts it generated read.
-  // The variable those scripts set doesn't change them.
-  const previous = process.env.SHELL_COMPLETION_GENERATOR;
-  process.env.SHELL_COMPLETION_GENERATOR = "bash";
-  try {
-    const result = await captureConsole(() => run(awkwardSpec, ["completion", "complete", "--", "go", ""]));
-    expect(result.code).toBe(0);
-    expect(result.stdout).toBe("a:b\tcolon: and\ttab\ntwo\nlines\tfirst\nsecond\nend\n");
-  } finally {
-    if (previous === undefined) {
-      delete process.env.SHELL_COMPLETION_GENERATOR;
-    } else {
-      process.env.SHELL_COMPLETION_GENERATOR = previous;
-    }
-  }
-});
-
 test("complete subcommand prints the shell's lines with --shell", async () => {
   const zsh = await captureConsole(() =>
     run(awkwardSpec, ["completion", "complete", "--shell", "zsh", "--", "go", ""]),
@@ -1280,11 +1334,11 @@ test("complete subcommand rejects an unknown shell", async () => {
 });
 
 test("every shim asks for its own shell's lines", async () => {
-  expectIncludes(getCompletion(fixture, "bash"), "completion complete --shell bash --gate-options --");
-  expectIncludes(getCompletion(fixture, "zsh"), "completion complete --shell zsh --");
-  expectIncludes(getCompletion(fixture, "fish"), "completion complete --shell fish --gate-options --");
-  expectIncludes(getCompletion(fixture, "powershell"), "'complete', '--shell', 'powershell'");
-  expectIncludes(getCompletion(fixture, "nushell"), "completion complete --shell nushell --gate-options --");
+  expectIncludes(shellScript(fixture, "bash"), "completion complete --shell bash --gate-options --");
+  expectIncludes(shellScript(fixture, "zsh"), "completion complete --shell zsh --");
+  expectIncludes(shellScript(fixture, "fish"), "completion complete --shell fish --gate-options --");
+  expectIncludes(shellScript(fixture, "powershell"), "'complete', '--shell', 'powershell'");
+  expectIncludes(shellScript(fixture, "nushell"), "completion complete --shell nushell --gate-options --");
 });
 
 // ---------------------------------------------------------------------------
@@ -1309,7 +1363,7 @@ function trickyDir(shell: Shell, words: readonly string[]): string {
   const dir = mkdtempSync(join(tmpdir(), `clo4-cli-${shell}-`));
   mkdirSync(join(dir, "bin"));
   writeFakeCli(join(dir, "bin", "forge"), shell, tricky, words, join(dir, "args"));
-  writeFileSync(join(dir, "shim"), getCompletion(fixture, shell));
+  writeFileSync(join(dir, "shim"), shellScript(fixture, shell));
   return dir;
 }
 
@@ -1516,7 +1570,7 @@ test.skipIf(!hasShell("zsh") || process.platform === "win32")(
     try {
       // The script goes on fpath as _forge, the way the docs install it.
       mkdirSync(join(dir, "fpath"));
-      writeFileSync(join(dir, "fpath", "_forge"), getCompletion(fixture, "zsh"));
+      writeFileSync(join(dir, "fpath", "_forge"), shellScript(fixture, "zsh"));
       writeFileSync(join(dir, "setup.zsh"), zshSetup);
       writeFileSync(join(dir, "drive.zsh"), zshDriver);
       const lines = [

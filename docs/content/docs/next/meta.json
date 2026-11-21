@@ -17,7 +17,7 @@
     "loading-commands",
     "testing",
     "testing-commands",
-    "completion-generators",
+    "suggest-values",
     "install-completion",
     "wrapping-commands",
     "---Reference---",

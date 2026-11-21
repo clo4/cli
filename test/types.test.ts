@@ -54,7 +54,7 @@ declare const moduleNamespace: Promise<{ default: Subcommand }>;
 ({
   name: "branch",
   suggestions: ["main", { name: "release", description: "Release branch" }],
-  generators: { custom: (tokens) => tokens },
+  suggest: ({ word, args }) => [word, ...args],
 }) satisfies Arg;
 
 // @ts-expect-error template must be a known completion template.

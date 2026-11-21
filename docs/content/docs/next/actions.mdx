@@ -63,6 +63,8 @@ Completion suggestions do not restrict accepted values. If a value must belong t
 
 If an action throws an `Error`, `CLI.run` prints its message to stderr and returns exit code `1`. It does not print a stack trace. To report an error without throwing, call `CLI.printError("message")` and return `1`.
 
+`CLI.print` is its twin for stdout. Both write to the file descriptor directly, without the stream Node builds for the first `console.log` of a process, which costs 1 to 3 ms. A CLI that prints one line and exits spends less time printing it this way.
+
 Return a number to set the exit code. Returning nothing means success, code `0`. Async actions are awaited. Exit codes are limited to `0`–`255`.
 
 Parsing errors also return `1`. They include usage information and, when a close match exists, a spelling suggestion. A command line with several problems, such as a missing option and a value its parser rejects, prints one error line for each. Errors thrown by an action do not include usage automatically.

@@ -48,4 +48,10 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Label**: A name that `as` gives a parser. A pattern shows it in the parser's place, like `<width>x<height>`.
 
+**Completion**: A value the word being typed can become, as the parser reads the line before it. `complete` gives them, and each shell's completion script is an adapter of it. _Avoid_: candidate (outside the shell adapters)
+
+**Suggestion**: A value an argument offers for completion, as a spec author writes it: in `suggestions`, or returned by a suggester. A suggestion is one source of a completion.
+
+**Suggester**: A function in an argument's `suggest` that works out its suggestions when the user presses Tab. It gets what the action would get from the line so far, as strings, and the word being typed. _Avoid_: generator
+
 **Spec check**: An assertion from `./testing` that a spec is one the parser reads the way help and completion present it.

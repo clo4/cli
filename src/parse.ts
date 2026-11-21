@@ -1,4 +1,4 @@
-import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand } from "./types.js";
+import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand, SuggestInit } from "./types.js";
 import { addDefaults, argAt, hasParse, maxArgs, minArgs, unusedDefaults } from "./args.js";
 import { asArray, print } from "./util.js";
 import {
@@ -34,8 +34,11 @@ export interface ParseResult {
 
 /** What the token after a command line can be, as the parser would read it. */
 export interface NextToken {
-  /** The commands from the root to the current one. */
-  path: CommandPath;
+  /**
+   * What the line before the token gives a suggester. It's a copy, so reading
+   * the token doesn't change it.
+   */
+  line: Omit<SuggestInit, "word">;
   /** The directives in effect. */
   directives: Readonly<Directives>;
   /** Whether the token can be an option. */
@@ -55,8 +58,6 @@ export interface NextToken {
   value: { option: Option; arg: Arg | undefined; required: boolean } | null;
   /** The argument the token fills if it isn't an option, subcommand or value. */
   arg: Arg | undefined;
-  /** The arguments of the current command so far. */
-  args: readonly string[];
   /**
    * The partial token, if the parser reads it as an option with a value
    * attached. `prefix` is everything before the value.
@@ -295,7 +296,7 @@ function unusedValues(
 
 /** The action of a command that has none of its own: print the command's help. */
 export const usage: Action = ({ help }) => {
-  print(help());
+  print(help().trimEnd());
   return 0;
 };
 
@@ -795,8 +796,21 @@ class Scanner {
     const command = this.scope.command;
     // Every token after `--` is an argument.
     const afterSeparator = this.argSeparatorIndex !== -1;
+    // The token is read on this scanner after this, which can add a value to
+    // an option's values and move the scope into a subcommand.
+    const options = new Map<string, unknown[]>();
+    for (const [name, values] of this.options) {
+      options.set(name, [...values]);
+    }
+    const path: CommandPath = [...this.scope.path];
     return {
-      path: [...this.scope.path],
+      line: {
+        path,
+        args: [...this.args],
+        argSeparatorIndex: this.argSeparatorIndex,
+        // The spec's types say what each value is. Here every value is a string.
+        options: optionArgs(options, CommandScope.at(path), null) as OptionArgs,
+      },
       directives: { ...this.directives },
       optionsAllowed: this.optionsAllowed,
       subcommands: !afterSeparator && this.subcommandMatching ? this.scope.subcommands() : [],
@@ -807,7 +821,6 @@ class Scanner {
         required: count < min,
       },
       arg: open ? undefined : argAt(command.args, this.args.length),
-      args: [...this.args],
     };
   }
 

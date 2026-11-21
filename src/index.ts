@@ -9,7 +9,6 @@ export type {
   ActionInit,
   Arg,
   CommandPath,
-  Generator,
   NonEmptyArray,
   Option,
   OptionArgs,
@@ -19,14 +18,18 @@ export type {
   StandardResult,
   StandardSchemaV1,
   Subcommand,
+  Suggester,
   Suggestion,
+  SuggestInit,
   Template,
 } from "./types.js";
 
+export { complete } from "./complete.js";
+export type { CompleteOptions, Completion } from "./complete.js";
 export { completion } from "./completion.js";
 export type { Shell } from "./completion.js";
 export { help, helpCommand } from "./help.js";
-export { printError, run } from "./run.js";
+export { print, printError, run } from "./run.js";
 export { int, many, optional, sepBy, seq, text, uint } from "./combinators.js";
 export type { Seq } from "./combinators.js";
 export { choice, number } from "./schemas.js";
@@ -35,15 +38,17 @@ export type { RunOptions } from "./run.js";
 export { command, spec } from "./spec.js";
 
 import { int, many, optional, sepBy, seq, text, uint } from "./combinators.js";
+import { complete } from "./complete.js";
 import { completion } from "./completion.js";
 import { help, helpCommand } from "./help.js";
-import { printError, run } from "./run.js";
+import { print, printError, run } from "./run.js";
 import { choice, number } from "./schemas.js";
 import { command, spec } from "./spec.js";
 
 export default {
   choice,
   command,
+  complete,
   completion,
   help,
   helpCommand,
@@ -51,6 +56,7 @@ export default {
   many,
   number,
   optional,
+  print,
   printError,
   run,
   sepBy,

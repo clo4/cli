@@ -365,20 +365,33 @@ export interface Suggestion {
 }
 
 /**
- * Generates dynamic completion suggestions.
- *
- * `custom` runs inside the CLI when the shell asks it for completions. It only
- * affects completion and has no effect on parsing.
+ * What a {@link Suggester} gets: what the action would get from the line typed
+ * so far, as strings, and the word being typed.
  */
-export interface Generator {
-  /**
-   * Produce suggestions synchronously or asynchronously. Tokens exclude the
-   * program name and end with the partial value. For an attached value such
-   * as `--target=prod`, the last token is `"prod"`. Completion does not run
-   * the selected command action.
-   */
-  custom?(tokens: string[]): (Suggestion | string)[] | Promise<(Suggestion | string)[]>;
+export interface SuggestInit {
+  /** The partly typed value. For `--target=pro`, it's `pro`. */
+  word: string;
+
+  /** The commands from the root to the one the value is for. */
+  path: CommandPath;
+
+  /** That command's positional arguments so far. */
+  args: readonly string[];
+
+  /** Index of the `--` argument separator among `args`, or -1 if it wasn't typed. */
+  argSeparatorIndex: number;
+
+  /** The options used so far, read the way an action reads them. */
+  options: OptionArgs;
 }
+
+/**
+ * Works out the values completion offers for an argument when the user
+ * presses Tab. It runs inside the CLI, and doesn't affect parsing.
+ */
+export type Suggester = (
+  init: SuggestInit,
+) => readonly (Suggestion | string)[] | Promise<readonly (Suggestion | string)[]>;
 
 /**
  * A positional argument or an argument of an option. A value is a string,
@@ -447,11 +460,22 @@ export interface Arg {
   /** Completions: complete file or folder paths for this argument. */
   template?: Template;
 
-  /** Static completion suggestions. These do not restrict accepted input. */
+  /**
+   * Values completion offers, written out. The same as a {@link Suggester}
+   * that returns them. These do not restrict accepted input.
+   */
   suggestions?: readonly (string | Suggestion)[];
 
-  /** Completion generators for this argument. These do not validate input. */
-  generators?: SingleOrArray<Generator>;
+  /**
+   * Work out the values completion offers when the user presses Tab. Each
+   * suggester runs at the same time as the others, and their values are
+   * offered in order, after `suggestions`. These do not restrict accepted
+   * input.
+   *
+   * Completion offers what the argument's parser accepts only when the
+   * argument has no `suggestions`, `suggest` or `template`.
+   */
+  suggest?: SingleOrArray<Suggester>;
 }
 
 /**

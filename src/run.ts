@@ -2,10 +2,10 @@ import type { ActionInit, Spec } from "./types.js";
 import { getHelp, printUsageError } from "./help.js";
 import { ParseError } from "./errors.js";
 import { parse } from "./parse.js";
-import { describeThrown, printError } from "./util.js";
+import { describeThrown, print, printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
 
-export { printError };
+export { print, printError };
 
 /** How {@link run} reads the command line and reports the exit code. */
 export interface RunOptions {

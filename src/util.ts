@@ -92,9 +92,13 @@ function writeFd(fd: 1 | 2, text: string): void {
  */
 export const output: { write: (fd: 1 | 2, text: string) => void } = { write: writeFd };
 
-/** Print a message to stdout, trimming trailing whitespace. */
-export function print(text: string): void {
-  output.write(1, `${text.trimEnd()}\n`);
+/**
+ * Print the values to stdout, separated by spaces, then a line break. Like
+ * {@link printError}, it writes to the file descriptor without the stream
+ * that the first `console.log` of a process builds, which costs 1 to 3 ms.
+ */
+export function print(...values: unknown[]): void {
+  output.write(1, `${values.map(String).join(" ")}\n`);
 }
 
 /** Print `Error:` and the given values to stderr, separated by spaces. */

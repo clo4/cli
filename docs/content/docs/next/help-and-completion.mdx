@@ -74,7 +74,7 @@ For short lists without descriptions, use `suggestions: ["staging", "production"
 
 ### Dynamic suggestions
 
-A generator is a function that returns suggestions. Set `generators.custom` on the argument it completes:
+A suggester is a function that works out suggestions when the user presses Tab. Set `suggest` on the argument it completes:
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -87,12 +87,7 @@ const spec = CLI.spec({
       description: "Deployment target",
       args: {
         name: "target",
-        generators: {
-          custom: async (tokens) => {
-            const partial = tokens.at(-1) ?? "";
-            return ["staging", "production"].filter((name) => name.startsWith(partial));
-          },
-        },
+        suggest: async ({ word }) => ["staging", "production"].filter((name) => name.startsWith(word)),
       },
     },
   ],
@@ -105,9 +100,9 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
-A generator returns the same suggestion shapes as `suggestions`. It receives tokens without the program name, with the partial value last. The library selects the argument and formats results for the shell.
+A suggester returns the same shapes as `suggestions`. It gets what the action would get from the line typed so far, and `word`, the value being typed. The library selects the argument and formats the results for the shell.
 
-[Generate completion suggestions](./completion-generators.mdx) shows a generator that reads application data and explains how to test it.
+[Suggest values from application data](./suggest-values.mdx) shows a suggester that reads application data, one that reads the rest of the line, and how to test them.
 
 ### Files and directories
 
@@ -121,7 +116,7 @@ Templates affect completion only. They do not check whether a supplied path exis
 
 ## Completion startup
 
-Each completion request starts a CLI process. It runs the relevant generators without running the selected command's action.
+Each completion request starts a CLI process. It runs the relevant suggesters without running the selected command's action.
 
 Put application initialization inside actions when only command execution needs it. Work at module scope runs during completion too, including imported modules' initialization.
 
@@ -133,10 +128,21 @@ if (!process.env.SHELL_COMPLETION_GENERATOR) {
 }
 ```
 
-Here, `loadPlugins` is application code. Keep any initialization that your generators need available during completion.
+Here, `loadPlugins` is application code. Keep any initialization that your suggesters need available during completion.
 
 ## Installing the scripts
 
 [Install shell completion](./install-completion.mdx) shows startup configuration for Bash, Zsh, Fish, PowerShell and Nushell. Generate the script at shell startup so it matches the installed CLI. The command must be available by its installed executable name.
 
-See [Arg](./reference/cli/interfaces/Arg.mdx), [Generator](./reference/cli/interfaces/Generator.mdx) and [Suggestion](./reference/cli/interfaces/Suggestion.mdx) for the field reference.
+## Complete a command line anywhere
+
+The shell scripts are one use of `CLI.complete`. It says what the word being typed can become after the words before it, the way the parser reads the line, so a prompt, a REPL or a script for another shell completes exactly as the built-in shells do:
+
+```ts
+const completions = await CLI.complete(spec, ["deploy", "--target"], "pro");
+// [{ value: "production" }]
+```
+
+Each completion has a `value`, and a `description` and `open` when they apply. An open value needs more text after it, like `1920x`, so a shell adds no space. Pass `{ optionsNeedDash: true }` to offer options only once the word starts one of their names, which is what the Bash, Fish, PowerShell and Nushell scripts do.
+
+See [Arg](./reference/cli/interfaces/Arg.mdx), [Suggester](./reference/cli/type-aliases/Suggester.mdx), [SuggestInit](./reference/cli/interfaces/SuggestInit.mdx), [Suggestion](./reference/cli/interfaces/Suggestion.mdx) and [complete](./reference/cli/functions/complete.mdx) for the field reference.

@@ -450,7 +450,9 @@ type Unknown<Y, S> = {
     ? K extends keyof Subcommand
       ? Invalid<`'${K & string}' isn't a field of the root command. Only a subcommand has one.`>
       : Invalid<`'${K & string}' isn't a field of a command. Check its spelling.`>
-    : Invalid<`'${K & string}' isn't a field of ${Described<S>}. Check its spelling.`>;
+    : K extends "generators"
+      ? Invalid<"'generators' isn't a field of an argument. Use 'suggest', a function that gets the line so far.">
+      : Invalid<`'${K & string}' isn't a field of ${Described<S>}. Check its spelling.`>;
 };
 
 /**

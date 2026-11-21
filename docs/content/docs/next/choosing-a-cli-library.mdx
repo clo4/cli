@@ -53,11 +53,11 @@ oclif also provides a project generator, packaging tools and user-installable pl
 
 ## Completion
 
-`@clo4/cli` generates completion for Bash, Zsh, Fish, PowerShell and Nushell. A custom generator belongs to the argument it completes. The library selects the argument, calls its generator and formats the results for the shell.
+`@clo4/cli` generates completion for Bash, Zsh, Fish, PowerShell and Nushell. A suggester belongs to the argument it completes. The library reads the line, selects the argument, calls its suggester and formats the results for the shell.
 
-Commander and citty have no built-in shell completion. oclif provides completion through a separate plugin. Yargs uses a custom completion function for the CLI rather than a generator attached to each argument.
+Commander and citty have no built-in shell completion. oclif provides completion through a separate plugin. Yargs uses a custom completion function for the CLI rather than a suggester attached to each argument.
 
-[Generate completion suggestions](./completion-generators.mdx) shows a custom generator. [Install shell completion](./install-completion.mdx) covers shell setup.
+[Suggest values from application data](./suggest-values.mdx) shows a suggester. [Install shell completion](./install-completion.mdx) covers shell setup.
 
 ## Type inference
 

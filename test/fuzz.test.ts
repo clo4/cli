@@ -7,7 +7,7 @@
 
 import { expect, test, vi } from "vitest";
 
-import { completeRuntime } from "../src/completion.js";
+import { complete } from "../src/complete.js";
 import { ParseError } from "../src/errors.js";
 import type { Directives } from "../src/directives.js";
 import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
@@ -113,7 +113,7 @@ async function violation(spec: Spec, input: string[]): Promise<string | null> {
     return `readNext threw ${String(error)}`;
   }
 
-  const path = next.path as readonly (Spec | Subcommand)[];
+  const path = next.line.path as readonly (Spec | Subcommand)[];
   const badPath = invalidPath(path, spec, input);
   if (badPath) {
     return badPath;
@@ -367,7 +367,7 @@ test("completion never throws on random specs", async () => {
     const before = gen.input(spec);
     const partial = gen.input(spec)[0] ?? "";
     try {
-      await completeRuntime({ spec, before, partial, gateOptions: gen.random.chance(0.5) });
+      await complete(spec, before, partial, { optionsNeedDash: gen.random.chance(0.5) });
     } catch (error) {
       expect.fail(report(n, spec, [...before, partial], `completion threw: ${String(error)}`));
     }
@@ -386,7 +386,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   if ((await specCheckError(specChecks, spec)) !== undefined) {
     return null;
   }
-  const offered = new Set((await completeRuntime({ spec, before, partial: "" })).map((c) => c.value));
+  const offered = new Set((await complete(spec, before, "")).map((c) => c.value));
   const next = await readNext(spec, before, "");
   for (const { command, names } of next.subcommands) {
     for (const name of names) {

@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 
-import { completeRuntime } from "../src/completion.js";
+import { complete } from "../src/complete.js";
 import { getHelp } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
 import { help, helpCommand } from "../src/index.js";
@@ -142,7 +142,7 @@ for (const [kind, wrap] of kinds) {
   test(`loadSpec returning ${kind}: completion loads the commands before the word`, async () => {
     const { spec, loads } = lazyCli(wrap);
     const names = async (before: string[], partial: string) =>
-      (await completeRuntime({ spec, before, partial, gateOptions: true })).map(({ value }) => value);
+      (await complete(spec, before, partial, { optionsNeedDash: true })).map(({ value }) => value);
     // The word names a command, but nothing follows it, so it isn't loaded.
     expect(await names([], "remote")).toContain("remote");
     expect(loads).toEqual({ remote: 0, add: 0, config: 0 });
@@ -261,7 +261,7 @@ async function helpCommandView(spec: Spec, names: string[]): Promise<string> {
 /** What completion offers after `before`, in order. */
 async function completionView(spec: Spec, before: string[], partial: string): Promise<string> {
   try {
-    return JSON.stringify(await completeRuntime({ spec, before, partial, gateOptions: partial !== "" }));
+    return JSON.stringify(await complete(spec, before, partial, { optionsNeedDash: partial !== "" }));
   } catch (error) {
     return `threw ${String(error)}`;
   }

@@ -4,7 +4,7 @@ _A magical CLI framework, with no magic._
 
 Build a CLI from plain TypeScript objects. One command definition supplies the parser, inferred action types, help and shell completion. Actions receive strings, or the numbers and choices an argument's parser turns them into, and run your application code.
 
-The package has no runtime dependencies. It supports completion for Bash, Zsh, Fish, PowerShell and Nushell, with static suggestions, file paths and sync or async generators on individual arguments. Large CLIs can load command definitions on demand.
+The package has no runtime dependencies. It supports completion for Bash, Zsh, Fish, PowerShell and Nushell, with static suggestions, file paths and sync or async suggesters on individual arguments. Large CLIs can load command definitions on demand.
 
 ```sh
 npm install @clo4/cli
@@ -88,23 +88,21 @@ An argument's parser runs before the action. Help shows `--jobs` as `(int from 1
 
 ## Custom completion
 
-Attach a generator to the argument it completes. This option asks application code for deployment targets:
+Attach a suggester to the argument it completes. This option asks application code for deployment targets:
 
 ```ts
 {
   name: "--target",
   args: {
     name: "target",
-    generators: {
-      custom: async (tokens) => listTargets(tokens),
-    },
+    suggest: async ({ word }) => listTargets(word),
   },
 }
 ```
 
-`listTargets` is your function. It receives the command-line tokens and returns strings or `{ name, description }` objects. The library selects the argument and formats suggestions for the shell.
+`listTargets` is your function. It receives the value being typed and returns strings or `{ name, description }` objects. The library selects the argument and formats suggestions for the shell.
 
-Add `CLI.completion` to the root's subcommands. Generate and load its script at shell startup so completion stays matched to the installed CLI. See [Install shell completion](https://clo4.net/cli/next/install-completion) for shell configuration and [Help and completion](https://clo4.net/cli/next/help-and-completion) for generator details.
+Add `CLI.completion` to the root's subcommands. Generate and load its script at shell startup so completion stays matched to the installed CLI. See [Install shell completion](https://clo4.net/cli/next/install-completion) for shell configuration and [Help and completion](https://clo4.net/cli/next/help-and-completion) for suggester details.
 
 ## Documentation
 

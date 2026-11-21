@@ -301,7 +301,7 @@ With [shell completion installed](./install-completion.mdx), the parser offers l
 
 After `1920x`, the value still needs a height, so bash, zsh and fish leave the cursor directly after the `x`. They add a space once the value is complete, such as `30s`. Nushell never adds a space after a suggestion.
 
-Completion does not invent numbers or arbitrary text. An argument's own `suggestions` or `generators` take precedence over suggestions from its parser. A choice of strings also supplies spelling suggestions when a rejected argument value is close to one of them.
+Completion does not invent numbers or arbitrary text. An argument's own `suggestions`, `suggest` or `template` take precedence over suggestions from its parser. A choice of strings also supplies spelling suggestions when a rejected argument value is close to one of them.
 
 ## Use a schema from another library
 

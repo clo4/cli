@@ -1,7 +1,7 @@
-import type { ActionInit, Arg, CommandPath, Option, NonEmptyArray, Subcommand } from "./types.js";
+import type { ActionInit, Arg, Option, NonEmptyArray, Subcommand, Suggestion } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
-import type { LiveOption, LiveSubcommand, OptionForm } from "./scope.js";
+import type { LiveOption, OptionForm } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
 import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
@@ -94,28 +94,23 @@ export const helpCommand: Subcommand = {
     name: "command",
     isOptional: true,
     isVariadic: true,
+    // The names the parser would read next in place of `help`.
+    async suggest({ path, args }) {
+      const suggestions: Suggestion[] = [];
+      for (const { command, names } of (await readHelpNames(path, args)).subcommands) {
+        if (!command.hidden) {
+          for (const name of names) {
+            suggestions.push({ name, description: command.description });
+          }
+        }
+      }
+      return suggestions;
+    },
   },
   async action({ path, args, help }) {
     return printHelpNames(await readHelpNames(path, args), help);
   },
 };
-
-/**
- * The subcommands the next name after a help command can lead to, hidden ones
- * included, each with the names that still refer to it. `path` ends at the
- * command being completed and `names` are its arguments so far. Empty if that
- * command isn't a help command. A copy of {@link helpCommand}, like a
- * persistent one, is recognised by its action. Completion offers these.
- */
-export async function nextHelpNames(
-  path: CommandPath,
-  names: readonly string[],
-): Promise<readonly LiveSubcommand[]> {
-  if (path[path.length - 1].action !== helpCommand.action) {
-    return [];
-  }
-  return (await readHelpNames(path, names)).subcommands;
-}
 
 /** Print the help of the command the help command's names led to, or the error they ended in. */
 function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
@@ -123,7 +118,7 @@ function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
     printUsageError(target.path, target.error.message, target.error.didYouMean);
     return 1;
   }
-  print(help({ path: target.path }));
+  print(help({ path: target.path }).trimEnd());
   return 0;
 }
 
@@ -136,7 +131,7 @@ export const help: Option & { readonly name: readonly ["-h", "--help"]; readonly
   description: "Print a help message",
   isPersistent: true,
   action({ path }) {
-    print(helpText(path, true, true, undefined));
+    print(helpText(path, true, true, undefined).trimEnd());
     return 0;
   },
 };
