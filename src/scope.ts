@@ -83,8 +83,15 @@ export interface OptionForm {
  * ask this module what a name refers to, so they can't disagree.
  */
 export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
-  /** See {@link path}. */
+  /**
+   * The commands from the root to the current one. A command that has a
+   * `loadSpec` is on it as the command that loaded in its place.
+   */
+  readonly path: readonly [Root, ...Subcommand[]];
+  /** {@link path}, which only this class adds to. */
   private readonly commands: [Root, ...Subcommand[]];
+  /** The current command, the last one on {@link path}. */
+  command: Root | Subcommand;
   /** Non-persistent options of the current command, in definition order. */
   readonly local: Option[] = [];
   /** Persistent options from every command on the path, in definition order. */
@@ -121,7 +128,8 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /** The scope at `root`. */
   constructor(root: Root) {
-    this.commands = [root];
+    this.path = this.commands = [root];
+    this.command = root;
     this.select(root);
   }
 
@@ -136,19 +144,6 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       scope.enterNow(path[i]);
     }
     return scope;
-  }
-
-  /**
-   * The commands from the root to the current one. A command that has a
-   * `loadSpec` is on it as the command that loaded in its place.
-   */
-  get path(): readonly [Root, ...Subcommand[]] {
-    return this.commands;
-  }
-
-  /** The current command, the last one on {@link path}. */
-  get command(): Root | Subcommand {
-    return this.commands[this.commands.length - 1];
   }
 
   /**
@@ -194,6 +189,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       }
     }
     this.commands.push(command);
+    this.command = command;
     this.select(command);
   }
 
@@ -466,11 +462,17 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     local: LiveOption[];
     persistent: LiveOption[];
   } {
-    const write = ({ option, names }: NamedOption): LiveOption => ({
-      option,
-      forms: this.forms(option, names),
-    });
-    return { local: local.map(write), persistent: persistent.map(write) };
+    return { local: this.writeEach(local), persistent: this.writeEach(persistent) };
+  }
+
+  /** See {@link withForms}. It uses a loop instead of a callback, like {@link liveOptions}. */
+  private writeEach(options: readonly NamedOption[]): LiveOption[] {
+    const written: LiveOption[] = [];
+    for (let i = 0; i < options.length; i++) {
+      const { option, names } = options[i];
+      written.push({ option, forms: this.forms(option, names) });
+    }
+    return written;
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */

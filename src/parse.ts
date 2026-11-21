@@ -393,11 +393,6 @@ class Scanner {
     this.directives = this.scope.directives;
   }
 
-  /** The commands from the root to the current one. */
-  private get path(): CommandPath {
-    return this.scope.path;
-  }
-
   /**
    * Read each of `tokens` in turn, waiting after each one for the command it
    * entered to load. If `strict`, throw the first problem as soon as it's found.
@@ -428,7 +423,7 @@ class Scanner {
   // A copy of the path, since reading carries on after a problem and can
   // enter a subcommand before the error is made.
   private ctx(): ErrorContext {
-    return contextAt(this.path);
+    return contextAt(this.scope.path);
   }
 
   /**
@@ -694,10 +689,10 @@ class Scanner {
     }
     if (!skipsChecks) {
       if (this.rules) {
-        problems = checkOptionRules(this.rules, this.seenOptions, this.path, problems);
+        problems = checkOptionRules(this.rules, this.seenOptions, this.scope.path, problems);
       }
       if (this.scope.hasRequiredOption) {
-        problems = checkRequiredOptions(this.options, this.scope, this.path, problems);
+        problems = checkRequiredOptions(this.options, this.scope, this.scope.path, problems);
       }
     }
     // Defaults are added after the checks, so they never count as typed.
@@ -747,7 +742,7 @@ class Scanner {
 
   private result(defaults: Map<Option, unknown[]> | null): ParseResult {
     return {
-      path: this.path,
+      path: this.scope.path,
       action: this.optionAction ?? this.scope.command.action ?? usage,
       args: this.args,
       argSeparatorIndex: this.argSeparatorIndex,
@@ -801,7 +796,7 @@ class Scanner {
     // Every token after `--` is an argument.
     const afterSeparator = this.argSeparatorIndex !== -1;
     return {
-      path: [...this.path],
+      path: [...this.scope.path],
       directives: { ...this.directives },
       optionsAllowed: this.optionsAllowed,
       subcommands: !afterSeparator && this.subcommandMatching ? this.scope.subcommands() : [],
@@ -925,11 +920,15 @@ class Scanner {
         // a name it has no room for as too many arguments. Help prints the
         // command's help instead.
         const error = this.tooManyArgs?.() ?? null;
-        return { path: this.path, error: error instanceof TooManyArguments ? null : error, subcommands: [] };
+        return {
+          path: this.scope.path,
+          error: error instanceof TooManyArguments ? null : error,
+          subcommands: [],
+        };
       }
       // With a persistent help command, `cli help a help` is `cli a help`.
       if (reading.command === help && !own?.includes(help)) {
-        const [root, ...entered] = this.path;
+        const [root, ...entered] = this.scope.path;
         return { path: [root, ...entered.slice(0, -1)], error: null, subcommands: [] };
       }
       if (this.pending) {
@@ -938,7 +937,7 @@ class Scanner {
     }
     const subcommands = this.scope.subcommands();
     if (this.scope.command.subcommands?.includes(help)) {
-      return { path: this.path, error: null, subcommands };
+      return { path: this.scope.path, error: null, subcommands };
     }
     // An inherited copy of help ends the names, so it leads nowhere new.
     const next: LiveSubcommand[] = [];
@@ -947,7 +946,7 @@ class Scanner {
         next.push(subcommands[i]);
       }
     }
-    return { path: this.path, error: null, subcommands: next };
+    return { path: this.scope.path, error: null, subcommands: next };
   }
 }
 

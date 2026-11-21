@@ -320,7 +320,9 @@ function optionDescriptions(options: readonly LiveOption[]): string[] {
     const option = options[i].option;
     const defaults = leadingDefaults(option.args);
     const args = asArray(option.args);
-    const constraint = args.length === 1 ? describeParser(args[0])?.constraint : undefined;
+    // Checked here so that help for options without a parser doesn't compile `describeParser`.
+    const constraint =
+      args.length === 1 && args[0].parse !== undefined ? describeParser(args[0])?.constraint : undefined;
     const description = shownDescription(option.description);
     descriptions.push(
       defaults.length === 0 && constraint === undefined
@@ -375,7 +377,7 @@ function argumentRows(args: readonly Arg[]): string {
     const name = argName(arg) + (arg.isVariadic ? "..." : "");
     names.push(name);
     width = Math.max(width, name.length);
-    const constraint = describeParser(arg)?.constraint;
+    const constraint = arg.parse === undefined ? undefined : describeParser(arg)?.constraint;
     const description = shownDescription(arg.description);
     descriptions.push(
       arg.default === undefined && constraint === undefined
