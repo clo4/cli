@@ -196,6 +196,11 @@ complete -o nospace -F _${id}_complete ${shQuote(name)}`;
     // opens the word being completed out of $PREFIX, and (Q) removes the rest.
     // A line that ends with a tab is a value that needs more text, and -S ''
     // stops zsh adding a space after it.
+    //
+    // The same script works evaluated in .zshrc and as a file on $fpath. Zsh
+    // sets $compstate only while it completes, so when zsh runs the file as a
+    // completion function, the script completes the word. Evaluated, it
+    // registers the function for the command instead.
     return `#compdef ${name}
 _${id}_complete() {
   local bin="\${(Q)words[1]}"
@@ -207,7 +212,11 @@ _${id}_complete() {
   done
   _describe -t values ${shQuote(name)} lines -- open -S ''
 }
-_${id}_complete "$@"`;
+if (( \${+compstate} )); then
+  _${id}_complete "$@"
+else
+  compdef _${id}_complete ${shQuote(name)}
+fi`;
   }
   if (shell === "powershell") {
     // The arguments go through an array so that PowerShell passes `--` on to

@@ -1512,34 +1512,44 @@ test.skipIf(!hasShell("fish") || process.platform === "win32")(
   },
 );
 
+/** Each way the docs install the zsh script, read from `$DIR/forge.zsh`. */
+const zshInstalls = {
+  // The file goes on fpath as _forge before compinit runs.
+  fpath: "",
+  eval: 'eval "$(<$DIR/forge.zsh)"',
+  functions: 'functions[_forge]="$(<$DIR/forge.zsh)"; compdef _forge forge',
+};
+
 /**
- * Sourced by an interactive zsh. A wrapper around compadd prints each match
- * and display string that `_describe` hands to zsh. Tab prints the command
- * line once it has completed.
+ * Sourced by an interactive zsh, which installs the script with `install`. A
+ * wrapper around compadd prints each match and display string that
+ * `_describe` hands to zsh. Tab prints the command line once it has completed.
  */
-const zshSetup = [
-  "PS1=",
-  "RPS1=",
-  "fpath=($DIR/fpath $fpath)",
-  "autoload -Uz compinit",
-  "compinit -u -D",
-  "compadd() {",
-  // A call with -O, -A or -D only asks which words match.
-  '  if [[ ${@[1,(i)(-|--)]} == *-(O|A|D)\\ * ]]; then builtin compadd "$@"; return; fi',
-  "  local -a __matches __display",
-  '  builtin compadd -O __matches "$@"',
-  "  local -i __i=${@[(i)-d]}",
-  '  (( __i < $# )) && __display=( "${(@P)argv[__i+1]}" )',
-  "  local __m",
-  `  for __m in $__matches; do print -r -- $'\\n'"MATCH<$__m>"; done`,
-  `  for __m in $__display; do print -r -- $'\\n'"DISPLAY<$__m>"; done`,
-  '  builtin compadd "$@"',
-  "}",
-  `_tab() { zle complete-word; print -r -- $'\\n'"LINE<$BUFFER>"; print -r -- "DO""NE" }`,
-  "zle -N _tab",
-  "bindkey '^I' _tab",
-  'print -r -- "REA""DY"',
-].join("\n");
+const zshSetup = (install: string) =>
+  [
+    "PS1=",
+    "RPS1=",
+    "fpath=($DIR/fpath $fpath)",
+    "autoload -Uz compinit",
+    "compinit -u -D",
+    install,
+    "compadd() {",
+    // A call with -O, -A or -D only asks which words match.
+    '  if [[ ${@[1,(i)(-|--)]} == *-(O|A|D)\\ * ]]; then builtin compadd "$@"; return; fi',
+    "  local -a __matches __display",
+    '  builtin compadd -O __matches "$@"',
+    "  local -i __i=${@[(i)-d]}",
+    '  (( __i < $# )) && __display=( "${(@P)argv[__i+1]}" )',
+    "  local __m",
+    `  for __m in $__matches; do print -r -- $'\\n'"MATCH<$__m>"; done`,
+    `  for __m in $__display; do print -r -- $'\\n'"DISPLAY<$__m>"; done`,
+    '  builtin compadd "$@"',
+    "}",
+    `_tab() { zle complete-word; print -r -- $'\\n'"LINE<$BUFFER>"; print -r -- "DO""NE" }`,
+    "zle -N _tab",
+    "bindkey '^I' _tab",
+    'print -r -- "REA""DY"',
+  ].join("\n");
 
 /**
  * Types each line and Tab into an interactive zsh in a pseudo-terminal, and
@@ -1563,15 +1573,18 @@ const zshDriver = [
   "zpty -d z",
 ].join("\n");
 
-test.skipIf(!hasShell("zsh") || process.platform === "win32")(
-  "the zsh shim hands zsh each value whole, colons included",
-  () => {
+test.skipIf(!hasShell("zsh") || process.platform === "win32").each(Object.keys(zshInstalls))(
+  "the zsh shim hands zsh each value whole, colons included, installed with %s",
+  (install) => {
     const dir = trickyDir("zsh", ["", "a:", "ht", "my f", "back", "$("]);
     try {
-      // The script goes on fpath as _forge, the way the docs install it.
       mkdirSync(join(dir, "fpath"));
-      writeFileSync(join(dir, "fpath", "_forge"), shellScript(fixture, "zsh"));
-      writeFileSync(join(dir, "setup.zsh"), zshSetup);
+      if (install === "fpath") {
+        writeFileSync(join(dir, "fpath", "_forge"), shellScript(fixture, "zsh"));
+      } else {
+        writeFileSync(join(dir, "forge.zsh"), shellScript(fixture, "zsh"));
+      }
+      writeFileSync(join(dir, "setup.zsh"), zshSetup(zshInstalls[install as keyof typeof zshInstalls]));
       writeFileSync(join(dir, "drive.zsh"), zshDriver);
       const lines = [
         "forge go ",

@@ -25,20 +25,32 @@ The shell loads the generated script directly. There is no completion file to up
 
 ## Zsh
 
-Add these lines to `~/.zshrc`, after your existing `compinit` call:
+Add this line to `~/.zshrc`, after your existing `compinit` call:
 
 ```zsh
-functions[_demo]="$(demo completion zsh)"
-compdef _demo demo
+eval "$(demo completion zsh)"
 ```
 
-The generated script is a completion function body. Zsh's `functions` parameter defines it in memory, and `compdef` registers it for `demo`.
+The script defines a completion function and registers it for `demo` with `compdef`.
 
-If your configuration does not already initialize [Zsh completion](https://zsh.sourceforge.io/Doc/Release/Completion-System.html#Initialization), add this before those lines:
+If your configuration does not already initialize [Zsh completion](https://zsh.sourceforge.io/Doc/Release/Completion-System.html#Initialization), add this before that line:
 
 ```zsh
 autoload -Uz compinit
 compinit
+```
+
+The same script also works as a completion file on your `fpath`, which zsh loads the first time you press Tab instead of running `demo` each time a shell starts. Save it once, and again after you upgrade the CLI:
+
+```zsh
+mkdir -p ~/.zfunc
+demo completion zsh > ~/.zfunc/_demo
+```
+
+Then, in place of the `eval` line, add the directory to `fpath` in `~/.zshrc`, before `compinit` runs:
+
+```zsh
+fpath=(~/.zfunc $fpath)
 ```
 
 ## Fish
