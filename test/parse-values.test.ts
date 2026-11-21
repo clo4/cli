@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import * as CLI from "../src/index.js";
-import { InvalidValue, MissingRequiredOption, SeveralProblems, TooFewArguments } from "../src/errors.js";
+import { ParseError } from "../src/errors.js";
 import { parse } from "../src/parse.js";
 import { captureConsole, run, runSpecCheck } from "./helpers.js";
 
@@ -306,7 +306,7 @@ test("a default goes through its argument's parser", async () => {
 });
 
 test("a rejected value is a usage error that says what the schema said", async () => {
-  await expect(parse(["http", "--token", "abc"], serve)).rejects.toThrow(InvalidValue);
+  await expect(parse(["http", "--token", "abc"], serve)).rejects.toBeInstanceOf(ParseError);
   const { code, stderr, init } = await received(serve, ["http", "--token", "abc"]);
   expect(code).toBe(1);
   expect(init).toBeUndefined();
@@ -348,15 +348,7 @@ test("every problem with a readable command line is reported together", async ()
   } catch (error) {
     thrown = error;
   }
-  expect(thrown).toBeInstanceOf(SeveralProblems);
-  const problems = (thrown as SeveralProblems).problems;
-  expect(problems.map((problem) => problem.constructor)).toEqual([
-    MissingRequiredOption,
-    InvalidValue,
-    InvalidValue,
-    InvalidValue,
-    InvalidValue,
-  ]);
+  const problems = (thrown as ParseError).problems!;
   expect(problems.map((problem) => problem.message)).toEqual([
     "Option --token is required, but wasn't found",
     'Invalid value "http" for <port>: expected an integer from 1 to 65535',
@@ -376,10 +368,10 @@ test("every problem with a readable command line is reported together", async ()
     await parse(["-t", "maybe"], serve);
     expect.unreachable();
   } catch (error) {
-    expect((error as SeveralProblems).problems.map((problem) => problem.constructor)).toEqual([
-      TooFewArguments,
-      MissingRequiredOption,
-      InvalidValue,
+    expect((error as ParseError).problems!.map((problem) => problem.message)).toEqual([
+      "Expected at least 1 argument",
+      "Option --token is required, but wasn't found",
+      'Invalid value "maybe" for -t: expected on or off; got something else',
     ]);
   }
 });
@@ -392,7 +384,7 @@ test("a token the parser can't read is still reported alone", async () => {
     thrown = error;
   }
   expect((thrown as Error).message).toContain('"--nope" looks like a flag');
-  expect(thrown).not.toBeInstanceOf(SeveralProblems);
+  expect((thrown as ParseError).problems).toBeUndefined();
 });
 
 test("an invalid default says it's the default", async () => {

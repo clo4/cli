@@ -8,7 +8,7 @@
  */
 
 import type { Arg, Option, StandardResult, StandardSchemaV1 } from "./types.js";
-import { InvalidValue, problemsError } from "./errors.js";
+import { invalidValue, problemsError } from "./errors.js";
 import { describeParser } from "./description.js";
 import type { ErrorContext, ParseError } from "./errors.js";
 import { argAt, argName, unusedDefaults } from "./args.js";
@@ -149,7 +149,7 @@ export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unkno
     const result = results[i];
     if (result instanceof Rejected) {
       (problems ??= []).push(
-        new InvalidValue(
+        invalidValue(
           job.raw,
           job.target,
           result.reason,

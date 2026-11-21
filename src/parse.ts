@@ -2,14 +2,14 @@ import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand, Su
 import { addDefaults, argAt, hasParse, maxArgs, minArgs, unusedDefaults } from "./args.js";
 import { asArray, print } from "./util.js";
 import {
-  InvalidOptionArg,
-  MissingRequiredOption,
+  missingOption,
   ParseError,
   problemsError,
-  TooFewArguments,
-  TooFewOptionArguments,
-  TooManyArguments,
-  UnknownOption,
+  takesNoArguments,
+  tooFewArguments,
+  tooFewOptionArguments,
+  tooManyArguments,
+  unknownOption,
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
 import type { Directives } from "./directives.js";
@@ -240,13 +240,13 @@ function checkRequiredOptions(
     const names = option.name;
     if (typeof names === "string") {
       if (!options.has(names)) {
-        (problems ??= []).push(new MissingRequiredOption(names, contextAt(path)));
+        (problems ??= []).push(new ParseError(contextAt(path), missingOption(names)));
       }
       continue;
     }
     for (let j = 0; j < names.length; j++) {
       if (!options.has(names[j])) {
-        (problems ??= []).push(new MissingRequiredOption(names[j], contextAt(path)));
+        (problems ??= []).push(new ParseError(contextAt(path), missingOption(names[j])));
         break;
       }
     }
@@ -365,20 +365,21 @@ class Scanner {
   private valuesMax = 0;
   private valueArgs: Option["args"] = undefined;
 
-  // Makes the error for the first token that can't be read the way it's
-  // written, like an unknown option or a value an option doesn't take.
-  // `parse` stops there.
-  private problem: (() => ParseError) | null = null;
+  // The first token that can't be read the way it's written, like an unknown
+  // option or a value an option doesn't take. `parse` stops there.
+  private problem: ParseError | null = null;
 
   // The load of the command just entered, if its `loadSpec` returned a
   // promise. Nothing can be read until it settles, so `settle` waits for it
   // before the next token.
   private pending: Promise<void> | null = null;
 
-  // The first argument past the command's limit, or a subcommand that didn't
-  // match. It's only an error once the whole line is read, because an option
-  // action like --help allows it.
-  private tooManyArgs: (() => ParseError) | null = null;
+  // The first argument past the command's limit, and the first name of a
+  // subcommand that didn't match. They're only errors once the whole line is
+  // read, because an option action like --help allows them. A name that
+  // didn't match always comes before an argument past the limit.
+  private tooManyArgs: ParseError | null = null;
+  private unmatched: ParseError | null = null;
 
   // Each use of an option whose argument has a parser, or null until one is used.
   private uses: ParsedUse[] | null = null;
@@ -402,7 +403,7 @@ class Scanner {
     for (let i = 0; i < tokens.length; i++) {
       this.read(tokens[i]);
       if (strict && this.problem) {
-        throw this.problem();
+        throw this.problem;
       }
       if (this.pending) {
         await this.settle();
@@ -427,31 +428,18 @@ class Scanner {
     return contextAt(this.scope.path);
   }
 
-  /**
-   * Keep the problem `make` describes if it's the first. The error is only
-   * made if {@link parse} throws it, since a lenient read never needs it and
-   * an error is slow to make. So `make` can't read anything later tokens change.
-   */
-  private fail(make: (ctx: ErrorContext) => ParseError): void {
-    if (!this.problem) {
-      const ctx = this.ctx();
-      this.problem = () => make(ctx);
-    }
+  /** Keep the problem `message` describes if it's the first. */
+  private fail(message: string): void {
+    this.problem ??= new ParseError(this.ctx(), message);
   }
 
   /** Keep the first argument the command has no room for, like {@link fail}. */
-  private failArgs(make: (ctx: ErrorContext) => ParseError): void {
-    if (!this.tooManyArgs) {
-      const ctx = this.ctx();
-      this.tooManyArgs = () => make(ctx);
-    }
+  private failArgs(message: string): void {
+    this.tooManyArgs ??= new ParseError(this.ctx(), message);
   }
 
   private unknownOption(option: string): void {
-    if (!this.problem) {
-      const names = this.scope.suggestionNames();
-      this.fail((ctx) => new UnknownOption(option, names, ctx));
-    }
+    this.problem ??= unknownOption(option, this.scope.suggestionNames(), this.ctx());
   }
 
   // Every token except an option's value, or an unknown option, ends the
@@ -497,9 +485,7 @@ class Scanner {
    * option gets its values doesn't compile it.
    */
   private failTooFewValues(): void {
-    const { valuesMin, valuesMax } = this;
-    const name = this.open.name;
-    this.fail((ctx) => new TooFewOptionArguments(name, valuesMin, valuesMax, ctx));
+    this.fail(tooFewOptionArguments(this.open.name, this.valuesMin, this.valuesMax));
   }
 
   private useOption(option: Option, name: string): void {
@@ -582,7 +568,7 @@ class Scanner {
       repeatedUses.set(key, uses);
     }
     if (uses.count >= repeatLimit(option)) {
-      this.fail((ctx) => new ParseError(ctx, "Too many repetitions"));
+      this.fail("Too many repetitions");
     }
     uses.count += 1;
     return uses.values;
@@ -605,12 +591,12 @@ class Scanner {
     open.count += 1;
     open.min = open.separateMax = 0;
     if (!this.values) {
-      this.fail((ctx) => new InvalidOptionArg(name, ctx));
+      this.fail(takesNoArguments(name));
       return null;
     }
     const problem = this.scope.separatorProblem(option, name, separator);
     if (problem) {
-      this.fail((ctx) => new ParseError(ctx, problem));
+      this.fail(problem);
     }
     this.values.push(token.slice(start));
     return problem === null ? { option, start } : null;
@@ -619,7 +605,7 @@ class Scanner {
   private addArg(value: string): TokenReading {
     this.endOption();
     if (this.args.length >= this.scope.argsLimit) {
-      this.failArgs((ctx) => new TooManyArguments(value, ctx));
+      this.failArgs(tooManyArguments(value));
     }
     this.args.push(value);
     return argumentReading;
@@ -634,9 +620,7 @@ class Scanner {
     // any argument after it.
     const command = this.scope.command;
     if (this.args.length >= this.scope.argsLimit && !command.requiresSubcommand) {
-      this.failArgs(
-        (ctx) => new ParseError(ctx, "Unexpected argument '--', did you mean to use an option instead?"),
-      );
+      this.failArgs("Unexpected argument '--', did you mean to use an option instead?");
     }
     this.argSeparatorIndex = this.args.length;
     return separatorReading;
@@ -678,15 +662,18 @@ class Scanner {
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
     const skipsChecks = this.optionAction !== undefined || showsUsage;
     let problems: ParseError[] | null = null;
-    if (!skipsChecks && this.tooManyArgs) {
-      problems = [this.tooManyArgs()];
+    const extra = this.unmatched ?? this.tooManyArgs;
+    if (!skipsChecks && extra) {
+      problems = [extra];
     }
     if (!skipsChecks && this.args.length < this.scope.argsMin) {
-      (problems ??= []).push(new TooFewArguments(this.scope.argsMin, this.scope.argsMax, this.ctx()));
+      (problems ??= []).push(
+        new ParseError(this.ctx(), tooFewArguments(this.scope.argsMin, this.scope.argsMax)),
+      );
     }
     this.endOption();
     if (this.problem) {
-      (problems ??= []).push(this.problem());
+      (problems ??= []).push(this.problem);
     }
     if (!skipsChecks) {
       if (this.rules) {
@@ -898,17 +885,14 @@ class Scanner {
   }
 
   /**
-   * Keep why `token` names no subcommand, like {@link failArgs}, if the
-   * current command has subcommands of its own or requires one.
+   * Keep why `token` names no subcommand, if it's the first and the current
+   * command has subcommands of its own or requires one.
    */
   private failUnmatched(token: string, exactOnly: boolean): void {
     const command = this.scope.command;
-    if (command.subcommands?.length || command.requiresSubcommand) {
-      const reason = this.scope.unmatched(token, exactOnly);
-      this.failArgs((ctx) => {
-        const { message, didYouMean } = reason();
-        return new ParseError(ctx, message, didYouMean);
-      });
+    if (!this.unmatched && (command.subcommands?.length || command.requiresSubcommand)) {
+      const { message, didYouMean } = this.scope.unmatched(token, exactOnly);
+      this.unmatched = new ParseError(this.ctx(), message, didYouMean);
     }
   }
 
@@ -932,12 +916,7 @@ class Scanner {
         // Where the command has no subcommands of its own, the parser reports
         // a name it has no room for as too many arguments. Help prints the
         // command's help instead.
-        const error = this.tooManyArgs?.() ?? null;
-        return {
-          path: this.scope.path,
-          error: error instanceof TooManyArguments ? null : error,
-          subcommands: [],
-        };
+        return { path: this.scope.path, error: this.unmatched, subcommands: [] };
       }
       // With a persistent help command, `cli help a help` is `cli a help`.
       if (reading.command === help && !own?.includes(help)) {

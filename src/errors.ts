@@ -23,126 +23,93 @@ export interface DidYouMean {
  * slower to build.
  */
 export class ParseError {
-  readonly name: string;
-  readonly message: string;
-  readonly context: ErrorContext;
-  readonly didYouMean: DidYouMean | undefined;
-  constructor(context: ErrorContext, message: string, didYouMean?: DidYouMean) {
-    this.message = message;
-    this.context = context;
-    this.didYouMean = didYouMean;
-    this.name = this.constructor.name;
-  }
-}
-
-export class UnknownOption extends ParseError {
-  readonly option: string;
-  constructor(option: string, validOptions: readonly Choice[], context: ErrorContext) {
-    const msg = `${repr(option)} looks like a flag, but is unknown in this context`;
-    super(context, msg, { input: option, choices: validOptions });
-    this.option = option;
-  }
-}
-
-export class InvalidOptionArg extends ParseError {
-  readonly option: string;
-  constructor(option: string, context: ErrorContext) {
-    super(context, `Option ${option} doesn't take arguments`);
-    this.option = option;
-  }
-}
-
-export class TooManyArguments extends ParseError {
-  constructor(value: string, context: ErrorContext) {
-    super(context, `Too many arguments, ${repr(value)} was unexpected`);
-  }
-}
-
-export class TooFewOptionArguments extends ParseError {
-  constructor(option: string, min: number, max: number, context: ErrorContext) {
-    const msg =
-      min === max
-        ? `Option ${option} needs ${min} argument${min === 1 ? "" : "s"}`
-        : !Number.isFinite(max)
-          ? `Option ${option} needs at least ${min} argument${min === 1 ? "" : "s"}`
-          : `Option ${option} needs between ${min} and ${max} arguments`;
-    super(context, msg);
-  }
-}
-
-export class TooFewArguments extends ParseError {
-  constructor(min: number, max: number, context: ErrorContext) {
-    const msg =
-      min === max
-        ? `Expected ${min} argument${min === 1 ? "" : "s"}`
-        : !Number.isFinite(max)
-          ? `Expected at least ${min} argument${min === 1 ? "" : "s"}`
-          : `Expected between ${min} and ${max} arguments`;
-    super(context, msg);
-  }
-}
-
-export class MissingRequiredOption extends ParseError {
-  constructor(name: string, context: ErrorContext) {
-    const msg = `Option ${name} is required, but wasn't found`;
-    super(context, msg);
-  }
-}
-
-/** A value that its argument's parser rejected. `reason` is what that parser said about it. */
-export class InvalidValue extends ParseError {
-  readonly value: string;
-  readonly reason: string;
-  /**
-   * `target` is what the value is for, as the user would write it: an option
-   * name like `--port`, or `<port>` for a positional argument. `isDefault` is
-   * for a default from the spec, which the user didn't type. `choices` are
-   * the values that parser lists, and `run` suggests the closest one.
-   */
   constructor(
-    value: string,
-    target: string,
-    reason: string,
-    isDefault: boolean,
-    context: ErrorContext,
-    choices?: readonly string[],
-  ) {
-    const what = isDefault
-      ? `The default ${repr(value)} for ${target} is invalid`
-      : `Invalid value ${repr(value)} for ${target}`;
-    super(
-      context,
-      reason === "" ? what : `${what}: ${reason}`,
-      choices && !isDefault ? { input: value, choices } : undefined,
-    );
-    this.value = value;
-    this.reason = reason;
-  }
+    readonly context: ErrorContext,
+    readonly message: string,
+    readonly didYouMean?: DidYouMean,
+    /** Each problem, for an error that reports several. */
+    readonly problems?: readonly ParseError[],
+  ) {}
+}
+
+/*
+ * The messages of the problems the parser finds, each in words for the user.
+ */
+
+const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+
+/** A token written like an option that names none here. */
+export function unknownOption(option: string, choices: readonly Choice[], context: ErrorContext): ParseError {
+  return new ParseError(context, `${repr(option)} looks like a flag, but is unknown in this context`, {
+    input: option,
+    choices,
+  });
+}
+
+export const takesNoArguments = (option: string) => `Option ${option} doesn't take arguments`;
+
+export const tooManyArguments = (value: string) => `Too many arguments, ${repr(value)} was unexpected`;
+
+export function tooFewOptionArguments(option: string, min: number, max: number): string {
+  return min === max
+    ? `Option ${option} needs ${count(min, "argument")}`
+    : !Number.isFinite(max)
+      ? `Option ${option} needs at least ${count(min, "argument")}`
+      : `Option ${option} needs between ${min} and ${max} arguments`;
+}
+
+export function tooFewArguments(min: number, max: number): string {
+  return min === max
+    ? `Expected ${count(min, "argument")}`
+    : !Number.isFinite(max)
+      ? `Expected at least ${count(min, "argument")}`
+      : `Expected between ${min} and ${max} arguments`;
+}
+
+export const missingOption = (name: string) => `Option ${name} is required, but wasn't found`;
+
+/**
+ * A value that its argument's parser rejected. `target` is what the value is
+ * for, as the user would write it: an option name like `--port`, or `<port>`
+ * for a positional argument. `isDefault` is for a default from the spec,
+ * which the user didn't type. `choices` are the values that parser lists, and
+ * `run` suggests the closest one. `reason` is what that parser said.
+ */
+export function invalidValue(
+  value: string,
+  target: string,
+  reason: string,
+  isDefault: boolean,
+  context: ErrorContext,
+  choices?: readonly string[],
+): ParseError {
+  const what = isDefault
+    ? `The default ${repr(value)} for ${target} is invalid`
+    : `Invalid value ${repr(value)} for ${target}`;
+  return new ParseError(
+    context,
+    reason === "" ? what : `${what}: ${reason}`,
+    choices && !isDefault ? { input: value, choices } : undefined,
+  );
 }
 
 /**
- * Every problem with a command line that has more than one. The parser stops
- * at a token it can't read, and reports that alone. Once it has read the
- * whole line, what's missing and what an argument's parser rejected don't depend on each
- * other, so it reports all of it for the user to fix in one go.
- *
- * `run` prints each message on a line of its own, then the help once.
+ * The error for `problems`: the problem itself if there's one, or all of them
+ * together. The parser stops at a token it can't read, and reports that alone.
+ * Once it has read the whole line, what's missing and what an argument's
+ * parser rejected don't depend on each other, so it reports all of it for the
+ * user to fix in one go. `run` prints each message on a line of its own, then
+ * the help once.
  */
-export class SeveralProblems extends ParseError {
-  readonly problems: readonly ParseError[];
-  constructor(problems: readonly ParseError[]) {
-    let didYouMean: DidYouMean | undefined;
-    const messages: string[] = [];
-    for (const problem of problems) {
-      messages.push(problem.message);
-      didYouMean ??= problem.didYouMean;
-    }
-    super(problems[0].context, messages.join("\nError: "), didYouMean);
-    this.problems = problems;
-  }
-}
-
-/** The error for `problems`: the problem itself if there's one, or all of them together. */
 export function problemsError(problems: readonly ParseError[]): ParseError {
-  return problems.length === 1 ? problems[0] : new SeveralProblems(problems);
+  if (problems.length === 1) {
+    return problems[0];
+  }
+  let didYouMean: DidYouMean | undefined;
+  const messages: string[] = [];
+  for (const problem of problems) {
+    messages.push(problem.message);
+    didYouMean ??= problem.didYouMean;
+  }
+  return new ParseError(problems[0].context, messages.join("\nError: "), didYouMean, problems);
 }

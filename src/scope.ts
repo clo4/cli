@@ -251,15 +251,12 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   /**
    * Why `token` names no subcommand here, as an error message and suggestions.
    * It's for a token {@link meaning} read as no subcommand, matched the same
-   * way. The scope moves on, so this takes what the answer depends on now. The
-   * message is only made when it's asked for, since an option action like
-   * `--help` can make the token's error moot.
+   * way.
    */
-  unmatched(token: string, exactOnly: boolean): () => { message: string; didYouMean?: DidYouMean } {
+  unmatched(token: string, exactOnly: boolean): { message: string; didYouMean?: DidYouMean } {
     const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !exactOnly;
     const prefixOf = allowPrefix ? prefixMatches(this.command.subcommands ?? [], token) : [];
-    const subcommands = this.subcommands();
-    return () => unmatchedReason(token, prefixOf, subcommands);
+    return unmatchedReason(token, prefixOf, this.subcommands());
   }
 
   /** The option `name` refers to, if any. */

@@ -1,17 +1,18 @@
 import { expect, test } from "vitest";
 
-import {
-  InvalidOptionArg,
-  MissingRequiredOption,
-  ParseError,
-  TooFewArguments,
-  TooFewOptionArguments,
-  TooManyArguments,
-  UnknownOption,
-} from "../src/errors.js";
 import { parse, usage } from "../src/parse.js";
 import type { Action, Option, OptionArgs, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
+
+import { ParseError } from "../src/errors.js";
+
+// What each problem the parser finds says.
+const unknownOption = /looks like a flag, but is unknown/;
+const takesNoArguments = /doesn't take arguments/;
+const tooFewArguments = /^Expected /;
+const tooFewOptionArguments = /^Option \S+ needs /;
+const tooManyArguments = /^Too many arguments/;
+const missingOption = /is required, but wasn't found/;
 
 test("parse: no args and no values executes action", async () => {
   const result = await parse([], { name: "test" });
@@ -160,8 +161,10 @@ test("parse: a command without an action still checks its arguments and options"
     args: {},
     options: [{ name: "--token", isRequired: true }],
   };
-  await expect(parse(["--token"], spec)).rejects.toThrow(TooFewArguments);
-  await expect(parse(["a"], spec)).rejects.toThrow(MissingRequiredOption);
+  await expect(parse(["--token"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(tooFewArguments),
+  });
+  await expect(parse(["a"], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
   expect((await parse(["a", "--token"], spec)).action).toBe(usage);
   // Only a command that requires a subcommand skips them, when none is named.
   expect((await parse([], { ...spec, args: undefined, requiresSubcommand: true })).action).toBe(usage);
@@ -490,7 +493,9 @@ test("parse: a parent's required option can be supplied before the subcommand", 
     subcommands: [{ name: "sub" }],
   };
   expect((await parse(["--req", "sub"], spec)).path).toHaveLength(2);
-  await expect(parse(["sub", "--req"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["sub", "--req"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
 });
 
 test("parse: an option's value doesn't stop subcommand matching", async () => {
@@ -1070,7 +1075,9 @@ test("parse: an unknown option after a requiresSeparator option is reported as u
     name: "test",
     options: [{ name: "--tag", args: {}, requiresSeparator: true }],
   };
-  await expect(parse(["--tag", "--nope"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["--tag", "--nope"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
 });
 
 test("parse: an exact alias wins over prefix matches in prefix mode", async () => {
@@ -1094,7 +1101,7 @@ test("parse: a parent's required non-persistent option isn't required by its sub
   };
   expect((await parse(["sub"], spec)).path).toEqual([spec, spec.subcommands![0]]);
   // The root command still requires it.
-  await expect(parse([], spec)).rejects.toThrow(MissingRequiredOption);
+  await expect(parse([], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
 });
 
 test("parse: a subcommand's own required option is still enforced", async () => {
@@ -1102,7 +1109,7 @@ test("parse: a subcommand's own required option is still enforced", async () => 
     name: "test",
     subcommands: [{ name: "sub", options: [{ name: "--name", isRequired: true, args: {} }] }],
   };
-  await expect(parse(["sub"], spec)).rejects.toThrow(MissingRequiredOption);
+  await expect(parse(["sub"], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
   expect((await parse(["sub", "--name", "x"], spec)).options.options).toEqual(map({ "--name": ["x"] }));
 });
 
@@ -1152,7 +1159,9 @@ test("parse: a repeatable option with a required argument rejects a missing valu
     name: "test",
     options: [{ name: "-I", isRepeatable: true, args: {} }],
   };
-  await expect(parse(["-I"], spec)).rejects.toThrow(TooFewOptionArguments);
+  await expect(parse(["-I"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(tooFewOptionArguments),
+  });
 });
 
 test("parse: an empty argument doesn't prefix-match a subcommand", async () => {
@@ -1232,29 +1241,26 @@ async function thrown(fn: () => Promise<unknown>): Promise<unknown> {
 test("parse: an unknown option in a chain names its character", async () => {
   const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "-v" }] };
   const error = await thrown(() => parse(["x", "-vx"], spec));
-  expect(error).toBeInstanceOf(UnknownOption);
-  expect(error).toMatchObject({ option: "-x" });
+  expect((error as ParseError).message).toBe('"-x" looks like a flag, but is unknown in this context');
 });
 
 test("parse: an unknown long option's name leaves out its attached value", async () => {
   const spec: Spec = { name: "test", args: { isOptional: true }, options: [{ name: "--known" }] };
   const error = await thrown(() => parse(["a", "--nope=1"], spec));
-  expect(error).toBeInstanceOf(UnknownOption);
-  expect(error).toMatchObject({ option: "--nope" });
   expect((error as Error).message).toBe('"--nope" looks like a flag, but is unknown in this context');
 });
 
 test("parse: a value attached to an option without args names the option", async () => {
   const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
   const error = await thrown(() => parse(["--verbose=1"], spec));
-  expect(error).toBeInstanceOf(InvalidOptionArg);
+  expect((error as ParseError).message).toMatch(takesNoArguments);
   expect((error as Error).message).toBe("Option --verbose doesn't take arguments");
 });
 
 test("parse: too many arguments names the first extra one, including after '--'", async () => {
   const spec: Spec = { name: "test", args: {} };
   const error = await thrown(() => parse(["--", "a", "b"], spec));
-  expect(error).toBeInstanceOf(TooManyArguments);
+  expect((error as ParseError).message).toMatch(tooManyArguments);
   expect((error as Error).message).toBe('Too many arguments, "b" was unexpected');
 });
 
@@ -1269,21 +1275,21 @@ test("parse: an unknown option lists the valid names and the command it was foun
     subcommands: [sub],
   };
   const error = await thrown(() => parse(["sub", "--nope"], spec));
-  expect(error).toBeInstanceOf(UnknownOption);
+  expect((error as ParseError).message).toMatch(unknownOption);
   // Local names first, then persistent ones, each listed once, in the order
   // the options they refer to are defined. The parent's non-persistent option
   // isn't valid in the subcommand, and its `--g` is shadowed by the
   // subcommand's.
-  expect((error as UnknownOption).didYouMean?.choices).toEqual([["--x"], ["--g2"], ["--g"]]);
-  expect((error as UnknownOption).context.path).toEqual([spec, sub]);
+  expect((error as ParseError).didYouMean?.choices).toEqual([["--x"], ["--g2"], ["--g"]]);
+  expect((error as ParseError).context.path).toEqual([spec, sub]);
 });
 
 test("parse: an option missing values before a subcommand reports the command it was used in", async () => {
   const sub: Subcommand = { name: "sub" };
   const spec: Spec = { name: "test", options: [{ name: "--pair", args: [{}, {}] }], subcommands: [sub] };
   const error = await thrown(() => parse(["--pair=a", "sub"], spec));
-  expect(error).toBeInstanceOf(TooFewOptionArguments);
-  expect((error as TooFewOptionArguments).context.path).toEqual([spec]);
+  expect((error as ParseError).message).toMatch(tooFewOptionArguments);
+  expect((error as ParseError).context.path).toEqual([spec]);
 });
 
 test("parse: an unknown option doesn't suggest hidden options", async () => {
@@ -1292,13 +1298,13 @@ test("parse: an unknown option doesn't suggest hidden options", async () => {
     options: [{ name: "--secret-mode", hidden: true }, { name: "--verbose" }],
   };
   const error = await thrown(() => parse(["--secret-mod"], spec));
-  expect((error as UnknownOption).didYouMean?.choices).toEqual([["--verbose"]]);
+  expect((error as ParseError).didYouMean?.choices).toEqual([["--verbose"]]);
 });
 
 test("parse: missing argument messages describe the expected count", async () => {
   const message = async (args: Spec["args"], input: string[]) => {
     const error = await thrown(() => parse(input, { name: "test", args }));
-    expect(error).toBeInstanceOf(TooFewArguments);
+    expect((error as ParseError).message).toMatch(tooFewArguments);
     return (error as Error).message;
   };
   expect(await message({}, [])).toBe("Expected 1 argument");
@@ -1312,7 +1318,7 @@ test("parse: missing argument messages describe the expected count", async () =>
 test("parse: missing option value messages describe the expected count", async () => {
   const message = async (args: Option["args"]) => {
     const error = await thrown(() => parse(["--o", "a"], { name: "test", options: [{ name: "--o", args }] }));
-    expect(error).toBeInstanceOf(TooFewOptionArguments);
+    expect((error as ParseError).message).toMatch(tooFewOptionArguments);
     return (error as Error).message;
   };
   expect(await message([{}, {}])).toBe("Option --o needs 2 arguments");
@@ -1336,7 +1342,9 @@ test("parse: a subcommand inherits option arg separators", async () => {
     subcommands: [{ name: "sub" }],
   };
   expect((await parse(["sub", "--g:1"], spec)).options.options).toEqual(map({ "--g": ["1"] }));
-  await expect(parse(["sub", "--g=1"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["sub", "--g=1"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
 });
 
 test("parse: a subcommand's separators apply to inherited options", async () => {
@@ -1348,7 +1356,9 @@ test("parse: a subcommand's separators apply to inherited options", async () => 
     subcommands: [sub],
   };
   expect((await parse(["sub", "--g=1"], spec)).options.options).toEqual(map({ "--g": ["1"] }));
-  await expect(parse(["sub", "--g:1"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["sub", "--g:1"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
   // Before the subcommand, the parent's separators are still in effect.
   const before = await parse(["--g:1", "sub"], spec);
   expect(before.path).toEqual([spec, sub]);
@@ -1367,7 +1377,9 @@ test("parse: an empty list of separators turns off attached values", async () =>
       },
     ],
   };
-  await expect(parse(["sub", "--g=1"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["sub", "--g=1"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
   expect((await parse(["sub", "--g", "1"], spec)).options.options).toEqual(map({ "--g": ["1"] }));
   // A short option's value starts right after its name.
   expect((await parse(["sub", "-o=1"], spec)).options.options).toEqual(map({ "-o": ["=1"] }));
@@ -1388,7 +1400,9 @@ test("parse: a subcommand can turn off flagsArePosixNoncompliant", async () => {
     ],
   };
   expect((await parse(["--x"], spec)).args).toEqual(["--x"]);
-  await expect(parse(["sub", "--x"], spec)).rejects.toThrow(UnknownOption);
+  await expect(parse(["sub", "--x"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
   expect((await parse(["sub", "-ab"], spec)).options.options).toEqual(map({ "-a": [], "-b": [] }));
 });
 
@@ -1403,8 +1417,7 @@ test("parse: a POSIX-noncompliant option takes an attached value", async () => {
   expect(result.options.options).toEqual(map({ out: ["x"] }));
   expect(result.args).toEqual(["y"]);
   const error = await thrown(() => parse(["flag=x"], spec));
-  expect(error).toBeInstanceOf(InvalidOptionArg);
-  expect(error).toMatchObject({ option: "flag" });
+  expect((error as ParseError).message).toBe("Option flag doesn't take arguments");
 });
 
 test("parse: a short option's value starts after the first listed separator it begins with", async () => {
@@ -1465,8 +1478,12 @@ test("parse: an option waiting for a value takes unknown option-like tokens", as
   const spec: Spec = { name: "test", options: [{ name: "-o", args: {} }, { name: "-v" }] };
   expect((await parse(["-o", "-5"], spec)).options.options).toEqual(map({ "-o": ["-5"] }));
   expect((await parse(["-o", "--x"], spec)).options.options).toEqual(map({ "-o": ["--x"] }));
-  await expect(parse(["-o", "-v"], spec)).rejects.toThrow(TooFewOptionArguments);
-  await expect(parse(["-o", "--"], spec)).rejects.toThrow(TooFewOptionArguments);
+  await expect(parse(["-o", "-v"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(tooFewOptionArguments),
+  });
+  await expect(parse(["-o", "--"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(tooFewOptionArguments),
+  });
 });
 
 test("parse: requiresSeparator string rejects a short option's unseparated value", async () => {
@@ -1593,7 +1610,9 @@ test("parse: a command without room for arguments reports a mistyped subcommand"
   expect((error as ParseError).didYouMean?.choices).toEqual([["build"]]);
   // Once an argument is found, a later one is just too many.
   const withArg: Spec = { ...spec, args: {} };
-  await expect(parse(["a", "b"], withArg)).rejects.toThrow(TooManyArguments);
+  await expect(parse(["a", "b"], withArg)).rejects.toMatchObject({
+    message: expect.stringMatching(tooManyArguments),
+  });
   // An option action still runs.
   const helpAction: Action = () => {};
   const withHelp: Spec = { ...spec, options: [{ name: "--help", action: helpAction }] };
@@ -1618,8 +1637,7 @@ test("parse: an option action skips required arguments and options", async () =>
 test("parse: a value attached to a short option without args says it takes none", async () => {
   const spec: Spec = { name: "test", options: [{ name: ["-v", "--verbose"] }] };
   const error = await thrown(() => parse(["-v=1"], spec));
-  expect(error).toBeInstanceOf(InvalidOptionArg);
-  expect(error).toMatchObject({ option: "-v" });
+  expect((error as ParseError).message).toBe("Option -v doesn't take arguments");
   // An option named like the separator still chains.
   const chained: Spec = { name: "test", options: [{ name: "-v" }, { name: "-=" }] };
   expect((await parse(["-v="], chained)).options.options).toEqual(map({ "-v": [], "-=": [] }));
@@ -1646,7 +1664,9 @@ test("parse: an option action skips argument count and option relationship check
   expect((await parse(["--help", "--a"], spec)).action).toBe(helpAction);
   expect((await parse(["--help", "--b", "--c"], spec)).action).toBe(helpAction);
   // Without the action, each of these is still an error.
-  await expect(parse(["a"], spec)).rejects.toThrow(TooManyArguments);
+  await expect(parse(["a"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(tooManyArguments),
+  });
   await expect(parse(["--a"], spec)).rejects.toThrow("--a requires --b");
   await expect(parse(["--b", "--c"], spec)).rejects.toThrow("--c can't be used together with --b");
 });
@@ -1659,7 +1679,7 @@ test("parse: a command that shows usage for a missing subcommand skips required 
     subcommands: [{ name: "a" }],
   };
   expect((await parse([], spec)).action).toBe(usage);
-  await expect(parse(["a"], spec)).rejects.toThrow(MissingRequiredOption);
+  await expect(parse(["a"], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
 });
 
 test("parse: a command that requires a subcommand accepts '--' alone, but no argument after it", async () => {

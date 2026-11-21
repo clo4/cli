@@ -1,9 +1,12 @@
 import { expect, test } from "vitest";
 
-import { InvalidOptionArg, UnknownOption } from "../src/errors.js";
 import { parse, readHelpNames, readNext, readToken } from "../src/parse.js";
 import type { Arg, Option, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
+
+// What each problem the parser finds says.
+const unknownOption = /looks like a flag, but is unknown/;
+const takesNoArguments = /doesn't take arguments/;
 
 // How each input token is classified, checked through the result of `parse`.
 
@@ -36,12 +39,18 @@ test("scan: known option with inline arg", async () => {
 
 test("scan: an inline arg for an option without args is rejected", async () => {
   const spec: Spec = { name: "test", options: [{ name: "--option" }] };
-  await expect(parse(["--option=abc"], spec)).rejects.toThrow(InvalidOptionArg);
+  await expect(parse(["--option=abc"], spec)).rejects.toMatchObject({
+    message: expect.stringMatching(takesNoArguments),
+  });
 });
 
 test("scan: unknown option", async () => {
-  await expect(parse(["--option"], { name: "test" })).rejects.toThrow(UnknownOption);
-  await expect(parse(["--option=abc"], { name: "test" })).rejects.toThrow(UnknownOption);
+  await expect(parse(["--option"], { name: "test" })).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
+  await expect(parse(["--option=abc"], { name: "test" })).rejects.toMatchObject({
+    message: expect.stringMatching(unknownOption),
+  });
 });
 
 test("scan: posix-noncompliant options with unknown option", async () => {
