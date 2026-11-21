@@ -343,9 +343,11 @@ test("testing: assertRequiredArgumentsDoNotFollowOptionalArguments", async () =>
   await expect(
     runSpecCheck("assertRequiredArgumentsDoNotFollowOptionalArguments", {
       name: "test",
-      options: [{ name: "one", args: [{ isOptional: true }, {}] }],
+      options: [{ name: "one", args: [{ isOptional: true }, { name: "two" }] }],
     }),
-  ).rejects.toThrow();
+  ).rejects.toThrow(
+    "Option `test one` (index 0), argument two is required, but it must be optional since the argument at index 0 is optional",
+  );
 });
 
 test("testing: assertOptionArgSeparatorsHaveCharacters", async () => {
@@ -457,6 +459,12 @@ test("testing: assertNamesHaveNoExtraWhitespace", async () => {
   ] satisfies Spec[]) {
     await expect(runSpecCheck("assertNamesHaveNoExtraWhitespace", spec)).rejects.toThrow();
   }
+  await expect(
+    runSpecCheck("assertNamesHaveNoExtraWhitespace", {
+      name: "test",
+      options: [{ name: "--option", args: [{ name: "a" }, { name: "b " }] }],
+    }),
+  ).rejects.toThrow("Option `test --option` (index 0), argument at index 1 has a name with extra whitespace");
 });
 
 test("testing: assertEverythingHasDescription", async () => {

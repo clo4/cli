@@ -169,19 +169,6 @@ class SpecWalk {
   }
 
   /**
-   * Run a function once for each `args` property in the spec: each command's,
-   * then its options'. This will convert single args to an array with one item.
-   */
-  forEachArgArray(fn: (args: Arg[], path: Subcommand[]) => void): void {
-    for (const { command, path } of this.commands) {
-      fn(makeArray(command.args), path);
-      for (const option of makeArray(command.options)) {
-        fn(makeArray(option.args), path);
-      }
-    }
-  }
-
-  /**
    * Each option at the end of each path it can be used on: the options the
    * command scope has in effect there, local ones first. A check that is
    * about how the option is written skips the uses that aren't
@@ -535,21 +522,21 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Required arguments don't follow optional arguments",
     name: "assertRequiredArgumentsDoNotFollowOptionalArguments",
     check(walk) {
-      walk.forEachArgArray((args, path) => {
+      for (const { args, where } of walk.argLists()) {
         let remainingMustBeOptional = false;
         let firstOptionalArgIndex: number | null = null;
         for (const [index, arg] of args.entries()) {
           if (remainingMustBeOptional) {
             assert(
               arg.isOptional,
-              `In ${namedArrayToString(...path)}, argument ${argName(arg, String(index))} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
+              `${where} ${argName(arg, String(index))} is required, but it must be optional since the argument at index ${firstOptionalArgIndex} is optional`,
             );
           } else if (arg.isOptional) {
             remainingMustBeOptional = true;
             firstOptionalArgIndex ??= index;
           }
         }
-      });
+      }
     },
   },
   {
@@ -959,16 +946,14 @@ const specChecks: readonly SpecCheck[] = [
           assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
         }
       }
-      walk.forEachArgArray((args, path) => {
-        for (const [index, arg] of makeArray(args).entries()) {
-          for (const name of makeArray(arg.name)) {
-            assert(
-              name === name.trim(),
-              `Arg in ${namedArrayToString(...path)} (at index ${index}) has a name with extra whitespace`,
-            );
-          }
+      for (const { args, where } of walk.argLists()) {
+        for (const [index, arg] of args.entries()) {
+          assert(
+            arg.name === undefined || arg.name === arg.name.trim(),
+            `${where} at index ${index} has a name with extra whitespace`,
+          );
         }
-      });
+      }
     },
   },
   {
