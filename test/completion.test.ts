@@ -14,9 +14,9 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { complete } from "../src/complete.js";
-import { formatCandidates, script as shellScript } from "../src/completion-command.js";
+import { formatCandidates, script as shellScript } from "../src/completion.js";
 import { completion } from "../src/completion.js";
-import type { Shell } from "../src/completion-command.js";
+import type { Shell } from "../src/completion.js";
 import { helpCommand } from "../src/help.js";
 
 import { parse } from "../src/parse.js";

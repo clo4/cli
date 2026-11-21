@@ -87,3 +87,16 @@ test("the entrypoints export these types", async () => {
   ]);
   expect(await exportedTypes("testing.ts")).toEqual(["TestContextLike", "TestNamingStyle", "TestOptions"]);
 });
+
+test("the completion command is written with public functions alone", async () => {
+  // Like any spec, it uses what the package exports, so it can't do what a
+  // user's command couldn't.
+  const source = await readFile(new URL("../src/completion.ts", import.meta.url), "utf8");
+  const imported = [...source.matchAll(/^import \{([^}]*)\} from "[^"]+";$/gm)].flatMap(([, names]) =>
+    names.split(",").map((name) => name.trim()),
+  );
+  expect(imported.length).toBeGreaterThan(0);
+  for (const name of imported) {
+    expect(Object.keys(CLI)).toContain(name);
+  }
+});

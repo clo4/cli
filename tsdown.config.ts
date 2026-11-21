@@ -12,16 +12,11 @@ import type { UserConfig } from "tsdown";
 //   * One entry per build means each output is fully self-contained (no shared
 //     chunk to load), which roughly halves index's import→finish time.
 //
-// The one chunk index.js has is the command `completion` loads with
-// `import()`, so a run that doesn't complete or print a script never reads it.
-// That command is written against the public exports alone, so the chunk
-// imports them from index.js by their public names. Under the default
-// `preserveEntrySignatures`, or "strict", rolldown turns index.js into a facade
-// over a shared chunk, which every run would load too. "allow-extension"
-// lets the chunk import from index.js, and would let rolldown add exports to
-// it for anything else the chunk needed: test/dist.test.ts checks that
-// index.js exports only the public names, and that the chunk imports nothing
-// else.
+// The completion command is part of index.js. Loading it with `import()` from
+// a chunk of its own saved a run that doesn't complete about 70 µs, but cost
+// every Tab about 330 µs to load the second file. A CLI bundled with that
+// chunk was slower on every run, because its bundler moved the library into a
+// shared chunk that both the entry and the completion chunk import.
 //
 // The package has no runtime dependencies, and the source has no static
 // imports of node builtins (the `process` and `node:fs` uses are guarded), so each
@@ -49,7 +44,6 @@ export default defineConfig([
     entry: ["src/index.ts"],
     clean: true,
     minify: true,
-    inputOptions: { preserveEntrySignatures: "allow-extension" },
   },
   { ...shared, entry: ["src/testing.ts"], clean: false },
 ]);

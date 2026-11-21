@@ -24,30 +24,14 @@ beforeAll(async () => {
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-test("a run loads one file, and completion's command is a chunk of its own", () => {
-  const chunks = files().filter((file) => file !== "index.js");
-  expect(chunks).toHaveLength(1);
-  expect(chunks[0]).toMatch(/^completion-command-.*\.js$/);
-  // Only `completion` refers to the chunk, with `import()`.
+test("a run loads one file", () => {
+  expect(files()).toEqual(["index.js"]);
   expect(readFileSync(join(dir, "index.js"), "utf8")).not.toMatch(/^import[^(]/m);
 });
 
 test("index.js exports the public names and nothing else", async () => {
   const built = (await import(pathToFileURL(join(dir, "index.js")).href)) as Record<string, unknown>;
   expect(Object.keys(built).sort()).toEqual(Object.keys(CLI).sort());
-});
-
-test("completion's command imports only public names, from index.js", () => {
-  const chunk = files().find((file) => file !== "index.js")!;
-  const code = readFileSync(join(dir, chunk), "utf8");
-  const imports = [...code.matchAll(/\bimport\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)];
-  expect(imports.map(([, , from]) => from)).toEqual(["./index.js"]);
-  const names = imports[0][1].split(",").map((binding) => binding.trim().split(/\s+as\s+/)[0]);
-  for (const name of names) {
-    expect(Object.keys(CLI)).toContain(name);
-  }
-  // Nothing else is imported, statically or with `import()`.
-  expect(code.match(/\bimport\b/g)).toHaveLength(1);
 });
 
 test("a CLI without parsers or completion bundles without their code", async () => {
