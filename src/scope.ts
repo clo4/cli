@@ -105,17 +105,14 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   readonly directives: Directives = defaultDirectives();
   /** Whether the current command has subcommands of its own or inherits any. */
   hasSubcommands = false;
-  /**
-   * Whether a command on the path has a required option. It stays true after
-   * the scope moves past the command that has it, which only costs a check
-   * that finds nothing missing.
-   */
+  /** Whether an option in effect here is required. */
   hasRequiredOption = false;
-  /**
-   * Whether an option of a command on the path has a parser. Like
-   * {@link hasRequiredOption}, it stays true once it is.
-   */
+  /** Whether an option in effect here has a parser. */
   hasParse = false;
+  // The same for the persistent options, which stay in effect below the
+  // command that defines them, while each command's local options don't.
+  private persistentRequired = false;
+  private persistentParse = false;
   /** The fewest positional arguments the current command takes. */
   argsMin = 0;
   /** The most positional arguments the current command takes. */
@@ -200,18 +197,27 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     this.argsMax = maxArgs(command.args);
     this.argsLimit = command.requiresSubcommand === true ? 0 : this.argsMax;
     this.local.length = 0;
+    let localRequired = false;
+    let localParse = false;
     const options = command.options;
     if (options) {
       for (let i = 0; i < options.length; i++) {
-        (options[i].isPersistent ? this.persistent : this.local).push(options[i]);
-        if (options[i].isRequired) {
-          this.hasRequiredOption = true;
-        }
-        if (hasParse(options[i].args)) {
-          this.hasParse = true;
+        const option = options[i];
+        const required = Boolean(option.isRequired);
+        const parses = hasParse(option.args);
+        if (option.isPersistent) {
+          this.persistent.push(option);
+          this.persistentRequired ||= required;
+          this.persistentParse ||= parses;
+        } else {
+          this.local.push(option);
+          localRequired ||= required;
+          localParse ||= parses;
         }
       }
     }
+    this.hasRequiredOption = this.persistentRequired || localRequired;
+    this.hasParse = this.persistentParse || localParse;
     const configured = command.parserDirectives;
     if (configured) {
       applyDirectives(this.directives, configured);
