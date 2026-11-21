@@ -13,7 +13,7 @@ import { assert, makeArray } from "./util.js";
 import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.js";
 import type { OptionForm } from "./scope.js";
 import { optionToString, shownDescription } from "./help.js";
-import { readToken, tokenReader } from "./parse.js";
+import { tokenReader } from "./parse.js";
 import type { TokenReading } from "./parse.js";
 import { describeParser } from "./description.js";
 import { describeRange } from "./schemas.js";
@@ -34,6 +34,7 @@ interface Definition {
  */
 class CommandVisit {
   private built: CommandScope | null = null;
+  private value: string | null = null;
 
   constructor(
     /** The commands from the root to this one. */
@@ -58,6 +59,11 @@ class CommandVisit {
   /** The options, subcommands and directives in effect here, built on first use. */
   get scope(): CommandScope {
     return (this.built ??= CommandScope.at(this.path));
+  }
+
+  /** A value to write options with here, worked out on first use. See {@link placeholderValue}. */
+  get placeholder(): string {
+    return (this.value ??= placeholderValue(this.scope));
   }
 
   /** The path to the command at `depth`, which is the path itself for this command, so a message can tell. */
@@ -118,6 +124,8 @@ class CommandVisit {
 class SpecWalk {
   /** A visit for each path, parents before the commands below them. */
   private readonly visits: CommandVisit[] = [];
+  private uses: readonly OptionUse[] | null = null;
+  private lists: readonly ArgsAt[] | null = null;
 
   constructor(
     /** The root command. Every path and scope starts there. */
@@ -154,18 +162,24 @@ class SpecWalk {
 
   /**
    * Each `args` property in the spec, as a list: every command's, then every
-   * option's, each at the command that defines it.
+   * option's, each at the command that defines it. Built on first use, since
+   * the walk doesn't change.
    */
-  *argLists(): Generator<ArgsAt> {
+  get argLists(): readonly ArgsAt[] {
+    if (this.lists) {
+      return this.lists;
+    }
+    const lists: ArgsAt[] = [];
     for (const { command, path } of this.commands) {
       const where = `In ${namedArrayToString(...path)}, argument`;
-      yield { args: makeArray(command.args), option: null, path, where };
+      lists.push({ args: makeArray(command.args), option: null, path, where });
     }
-    for (const { option, isDefinedHere, path, where } of this.optionUses()) {
+    for (const { option, isDefinedHere, path, where } of this.optionUses) {
       if (isDefinedHere) {
-        yield { args: makeArray(option.args), option, path, where: `${where}, argument` };
+        lists.push({ args: makeArray(option.args), option, path, where: `${where}, argument` });
       }
     }
+    return (this.lists = lists);
   }
 
   /**
@@ -173,9 +187,14 @@ class SpecWalk {
    * command scope has in effect there, local ones first. A check that is
    * about how the option is written skips the uses that aren't
    * `isDefinedHere`. A check that depends on the scope sees the option the
-   * way the parser does at each command.
+   * way the parser does at each command. Built on first use, like
+   * {@link argLists}.
    */
-  *optionUses(): Generator<OptionUse> {
+  get optionUses(): readonly OptionUse[] {
+    if (this.uses) {
+      return this.uses;
+    }
+    const uses: OptionUse[] = [];
     for (const visit of this.visits) {
       const { path, scope } = visit;
       const { local, persistent } = scope.live();
@@ -185,7 +204,7 @@ class SpecWalk {
       for (const option of new Set([...scope.local, ...scope.persistent])) {
         const { definedIn, index } = visit.definition(option);
         const where = describeOption(definedIn, index, path);
-        yield {
+        uses.push({
           option,
           visit,
           path,
@@ -193,9 +212,10 @@ class SpecWalk {
           forms: forms.get(option) ?? [],
           isDefinedHere: visit.isDefinition && definedIn === path,
           where,
-        };
+        });
       }
     }
+    return (this.uses = uses);
   }
 }
 
@@ -360,20 +380,22 @@ function everyValue(option: Option, value: string): string[] {
  */
 async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
   const root = walk.spec as Spec;
-  for (const { option, where, scope, forms, path, visit } of walk.optionUses()) {
+  for (const { option, where, scope, forms, path, visit } of walk.optionUses) {
     const before = visit.tokens;
-    const values = everyValue(option, placeholderValue(scope));
+    const values = everyValue(option, visit.placeholder);
     for (const form of forms) {
       const tokens = writeForm(form, values);
       const reader = tokenReader(root);
       for (const token of before) {
         await reader.read(token);
       }
+      // A name joined to its value by a separator is a token by itself too.
+      const name = form.join ? await reader.peek(form.name) : null;
       const first = await reader.read(tokens[0]);
       // A name joined to its value with nothing between isn't a token by itself.
       if (form.join !== "") {
         // Without a join, the first token is the name.
-        const reading = form.join === null ? first : await readToken(root, before, form.name);
+        const reading = name ?? first;
         assert(
           readsAs(reading, option),
           `${where} has the name '${form.name}', but the parser reads it as ${describeReading(reading, path)}`,
@@ -522,7 +544,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Required arguments don't follow optional arguments",
     name: "assertRequiredArgumentsDoNotFollowOptionalArguments",
     check(walk) {
-      for (const { args, where } of walk.argLists()) {
+      for (const { args, where } of walk.argLists) {
         let remainingMustBeOptional = false;
         let firstOptionalArgIndex: number | null = null;
         for (const [index, arg] of args.entries()) {
@@ -548,7 +570,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "The parser can use every default",
     name: "assertDefaultsCanBeUsed",
     check(walk) {
-      for (const { args, option, where } of walk.argLists()) {
+      for (const { args, option, where } of walk.argLists) {
         let firstWithout: number | null = null;
         for (const [index, arg] of args.entries()) {
           if (arg.default === undefined) {
@@ -579,7 +601,7 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertDefaultsPassTheirParse",
     async check(walk) {
       const defaults: { arg: Arg; where: string }[] = [];
-      for (const { args, where } of walk.argLists()) {
+      for (const { args, where } of walk.argLists) {
         for (const [index, arg] of args.entries()) {
           defaults.push({ arg, where: `${where} ${argName(arg, String(index))}` });
         }
@@ -629,7 +651,7 @@ const specChecks: readonly SpecCheck[] = [
           `${where} has a parser that rejects every value, since it asks for ${type === "integer" ? "an" : "a"} ${describeRange(type, bounds)}`,
         );
       };
-      for (const { args, where } of walk.argLists()) {
+      for (const { args, where } of walk.argLists) {
         for (const [index, arg] of args.entries()) {
           check(arg, `${where} ${argName(arg, String(index))}`);
         }
@@ -640,7 +662,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Repeatable options that are numbers are integers greater than 1",
     name: "assertRepeatableOptionsArePositiveIntegers",
     check(walk) {
-      for (const { option, isDefinedHere, where } of walk.optionUses()) {
+      for (const { option, isDefinedHere, where } of walk.optionUses) {
         if (!isDefinedHere || typeof option.isRepeatable !== "number") {
           continue;
         }
@@ -897,10 +919,14 @@ const specChecks: readonly SpecCheck[] = [
     async check(walk) {
       const root = walk.spec as Spec;
       for (const { path, scope, tokens: before } of walk.paths) {
+        const reader = tokenReader(root);
+        for (const token of before) {
+          await reader.read(token);
+        }
         // An inherited subcommand is checked by the names that still refer to it.
         for (const { command: subcommand, names } of scope.subcommands()) {
           for (const name of names) {
-            const reading = await readToken(root, before, name);
+            const reading = await reader.peek(name);
             if (reading.kind === "subcommand" && reading.command === subcommand) {
               continue;
             }
@@ -933,7 +959,7 @@ const specChecks: readonly SpecCheck[] = [
     sentence: "Names have no extra leading or trailing whitespace",
     name: "assertNamesHaveNoExtraWhitespace",
     check(walk) {
-      for (const { option, isDefinedHere, where } of walk.optionUses()) {
+      for (const { option, isDefinedHere, where } of walk.optionUses) {
         if (!isDefinedHere) {
           continue;
         }
@@ -946,7 +972,7 @@ const specChecks: readonly SpecCheck[] = [
           assert(name === name.trim(), `${describeCommand(path)} has a name with extra whitespace`);
         }
       }
-      for (const { args, where } of walk.argLists()) {
+      for (const { args, where } of walk.argLists) {
         for (const [index, arg] of args.entries()) {
           assert(
             arg.name === undefined || arg.name === arg.name.trim(),
@@ -963,7 +989,7 @@ const specChecks: readonly SpecCheck[] = [
     check(walk) {
       const spec = walk.spec;
       assert(spec.description, `Spec has no description`);
-      for (const { option, isDefinedHere, where } of walk.optionUses()) {
+      for (const { option, isDefinedHere, where } of walk.optionUses) {
         if (isDefinedHere) {
           assert(option.description, `${where} has no description`);
         }
@@ -982,7 +1008,7 @@ const specChecks: readonly SpecCheck[] = [
       const fits = (description: string | undefined) =>
         (shownDescription(description) ?? "").split("\n").every((line) => line.length <= 68);
       assert(fits(walk.spec.description), `Spec has a description line over 68 characters`);
-      for (const { option, isDefinedHere, where } of walk.optionUses()) {
+      for (const { option, isDefinedHere, where } of walk.optionUses) {
         if (isDefinedHere) {
           assert(fits(option.description), `${where} has a description line over 68 characters`);
         }
@@ -1039,7 +1065,7 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
     sentence: "References to other options by name are valid",
     name: "assertOptionNameReferencesExist",
     check(walk) {
-      for (const { option, where, scope } of walk.optionUses()) {
+      for (const { option, where, scope } of walk.optionUses) {
         for (const name of makeArray(option.dependsOn)) {
           assert(
             scope.resolve(name) !== null,

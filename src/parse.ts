@@ -348,6 +348,8 @@ export interface TokenReader {
    * command the token before it entered has loaded.
    */
   read(token: string): Promise<TokenReading>;
+  /** Say what {@link read} would read `token` as, without reading it. */
+  peek(token: string): Promise<TokenReading>;
 }
 
 /**
@@ -1027,6 +1029,10 @@ export function tokenReader(spec: Spec): TokenReader {
     async read(token) {
       await s.settle();
       return s.read(token);
+    },
+    async peek(token) {
+      await s.settle();
+      return s.peek(token);
     },
   };
 }
