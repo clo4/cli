@@ -309,6 +309,9 @@ const completeCommand: Subcommand = {
     {
       name: "--shell",
       description: "Print the lines this shell's completion script reads",
+      // The built-ins use the public interface the way any spec does, so this
+      // parser costs each Tab what a parser costs any CLI that has one. Make
+      // that cheaper in the shared code rather than leave the parser out here.
       args: { name: "shell", parse: shellSchema },
       isRequired: true,
     },
