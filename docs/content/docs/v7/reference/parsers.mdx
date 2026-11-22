@@ -1,0 +1,111 @@
+---
+title: Parsers
+description: The built-in parsers, and the methods every parser has.
+---
+
+A parser reads the string a user typed and gives the action a value, or says what it expected instead. Put one in an argument's [`parse`](./specs-and-commands.mdx#arg-parse). The same parser writes the argument's part of help, rejects bad input with a message that names what it expected, and gives completion what can come next. [Parsers](../concepts/parsers.mdx) builds them up step by step.
+
+Each one is a named export and is on the default export too, so `seq` and `CLI.seq` are the same function.
+
+## `Parser` [#parser]
+
+What every function on this page returns. It's also a [Standard Schema](./standard-schema.mdx), so it works anywhere one is accepted.
+
+### `.map(fn)` [#parser-map]
+
+```ts
+map<U>(fn: (value: T) => U): Parser<U>;
+```
+
+A parser that reads the same text and gives `fn`'s result. Help and completion still come from the parser it wraps. Throw an `Error` from `fn` to reject a value: its message is the reason the user sees. Completion can call `fn` on partly typed values, so keep it free of side effects.
+
+```ts
+const enabled = CLI.choice("on", "off").map((value) => value === "on");
+```
+
+### `.as(label)` [#parser-as]
+
+```ts
+as<const Label extends string>(label: Label): Parser<T, Label>;
+```
+
+Name the parser. Help shows the name in place of its pattern, so `seq(uint.as("width"), "x", uint.as("height"))` is `<width>x<height>`. In a [`seq`](#seq), the label is also the value's key for [`asObject`](#seq-asobject).
+
+### `.validate(input)` [#parser-validate]
+
+```ts
+validate(input: unknown): { value: T } | { issues: { message: string }[] };
+```
+
+Read `input` directly, outside a command line, to try a parser.
+
+## `number(options?)` [#number]
+
+```ts
+function number(options?: { min?: number; max?: number; int?: boolean }): Parser<number>;
+```
+
+A number written in decimal digits, with an optional minus sign and decimal point. It isn't read the way `Number` reads it: an empty string, `0x1F`, `1e3`, a value with a space, and a value with too many digits to be a finite number are rejected. A decimal point needs a digit after it, so `.5` is a number and `3.` isn't.
+
+`min` and `max` are included in the range, and `int` accepts whole numbers only. Help shows the type and range after the description, like `(int from 1 to 65535)`.
+
+## `int` [#int]
+
+A whole number, like `12` or `-3`. The same as `number({ int: true })`.
+
+## `uint` [#uint]
+
+A whole number written in digits alone, like `12`. It never reads a sign, so `seq(uint, "x", uint)` rejects `1920x-1080`. Use it for the numbers inside a format.
+
+## `choice(...values)` [#choice]
+
+```ts
+function choice<const T extends [Part, ...Part[]]>(...values: T): Parser<...>;
+```
+
+One of `values`. A value is a string, as the user types it, or a parser: `choice("debug", "release")` gives `"debug" | "release"`, and `choice("auto", number())` gives `"auto" | number`.
+
+Where more than one value fits, the one that reads the most wins, so `choice("m", "ms")` reads `ms`. Help lists the values, completion offers the strings, and a rejected value close to one of them gets a "Did you mean" line.
+
+## `seq(...parts)` [#seq]
+
+```ts
+function seq<const P extends Part[]>(...parts: P): Seq<P>;
+```
+
+Each part in order. The values come back as a tuple, and a string part has to be there as written but gives no value, so `seq(uint, "x", uint)` reads `1920x1080` as `[1920, 1080]`.
+
+## `Seq` [#seq-type]
+
+The [`Parser`](#parser) that `seq` returns, with one more method.
+
+### `.asObject()` [#seq-asobject]
+
+The values as an object in place of the tuple. Each part labelled with [`as`](#parser-as) gives its value under its label, and an unlabelled part gives none:
+
+```ts
+const size = CLI.seq(CLI.uint.as("width"), "x", CLI.uint.as("height")).asObject();
+// "1920x1080" → { width: 1920, height: 1080 }
+```
+
+Two parts with the same label throw.
+
+## `optional(part)` [#optional]
+
+The part if it's there: its value, or `undefined`. `seq(optional("v"), uint)` reads both `v2` and `2`. Help shows it in brackets, like `[v]<int>`.
+
+## `many(part, min?)` [#many]
+
+The part zero or more times in a row, as an array. `many(choice("r", "w", "x"))` reads `rw` as `["r", "w"]`. `min` is the fewest times it has to appear.
+
+## `sepBy(part, separator)` [#sepby]
+
+The part one or more times, with `separator` between each pair, as an array. `sepBy(int, ",")` reads `1,2,3` as `[1, 2, 3]`.
+
+## `text(...stops)` [#text]
+
+One or more characters, up to the first of `stops` or the end of the value. `seq(text("="), "=", text())` reads `KEY=a=b` as `["KEY", "a=b"]`.
+
+## `Part` [#part]
+
+`string | Parser<unknown>`: a string that has to appear exactly as written, or a parser.

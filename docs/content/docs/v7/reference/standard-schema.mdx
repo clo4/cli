@@ -1,0 +1,29 @@
+---
+title: Standard Schema
+description: Use a schema from Zod, Valibot, ArkType or another library as an argument's parser.
+---
+
+An argument's [`parse`](./specs-and-commands.mdx#arg-parse) takes any [Standard Schema](https://standardschema.dev), the interface that Zod, Valibot, ArkType and other validation libraries share. If your application already validates its config with one of them, the command line can use the same schemas.
+
+```ts
+import * as z from "zod";
+
+{
+  name: "--port",
+  args: { name: "port", parse: z.coerce.number().int().min(1).max(65535) },
+}
+```
+
+The action receives the schema's output type, a rejected value is reported with the schema's messages, and a schema can be async. The [built-in parsers](./parsers.mdx) are Standard Schemas too.
+
+## What help and completion read [#description]
+
+A schema that also follows the Standard JSON Schema specification can describe what it takes. Help reads the type, range and `enum` of that description, and completion offers the `enum`. A rejected value close to one of the `enum` values gets a "Did you mean" line. Zod and ArkType describe themselves this way. A Valibot picklist doesn't, so its values aren't listed.
+
+## `StandardSchemaV1` [#standardschemav1]
+
+The interface, as far as this library reads it: `"~standard"` with a `version` of 1, the `vendor`, a `validate` function, and optionally `types` and `jsonSchema`.
+
+## `StandardResult` [#standardresult]
+
+What `validate` gives: `{ value }`, or `{ issues }` where each issue has a `message`.

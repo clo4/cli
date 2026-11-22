@@ -1,6 +1,6 @@
 {
   "name": "@clo4/cli",
-  "version": "6.1.2",
+  "version": "7.0.0",
   "description": "clo4's CLI framework: fully declarative, typed from your spec, fast",
   "keywords": [
     "arg-parser",

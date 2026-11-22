@@ -1,0 +1,70 @@
+---
+title: Completion
+description: What the word being typed can become, and how an argument offers values.
+---
+
+Completion reads the line the way the parser does, so it offers only what the parser would accept there. Each shell's script is an adapter of [`complete`](#complete). [Suggest values from application data](../guides/suggest-values.mdx) is the guide.
+
+## `complete(spec, before, word, options?)` [#complete]
+
+```ts
+function complete(
+  spec: Spec,
+  before: readonly string[],
+  word: string,
+  options?: CompleteOptions,
+): Promise<Completion[]>;
+```
+
+What `word` can become after `before`: subcommands, options, and the values of the argument the word is for. `before` is the words after the program's name. Each value is offered once.
+
+It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab, and the way to complete a command line anywhere else, like in a prompt.
+
+### `CompleteOptions` [#completeoptions]
+
+| Field             | Type      | Default | Meaning                                                                                                     |
+| ----------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `optionsNeedDash` | `boolean` | `false` | Offer options only once the word starts one of their names, and no values when the word reads as an option. |
+
+### `Completion` [#completion-result]
+
+| Field         | Type      | Meaning                                                              |
+| ------------- | --------- | -------------------------------------------------------------------- |
+| `value`       | `string`  | What the word can become.                                            |
+| `description` | `string`  | The first line of its description, as help shows it.                 |
+| `open`        | `boolean` | The value needs more after it, like `1920x`, so no space follows it. |
+
+## `Suggester` [#suggester]
+
+```ts
+type Suggester = (init: SuggestInit) => (Suggestion | string)[] | Promise<(Suggestion | string)[]>;
+```
+
+A function in an argument's [`suggest`](./specs-and-commands.mdx#arg-suggest) that works out its values when the user presses Tab. It runs inside the CLI, and doesn't change what the parser accepts.
+
+## `SuggestInit` [#suggestinit]
+
+What a suggester receives: what an action would receive from the line typed so far, as strings, and the word being typed.
+
+| Field               | Type                                     | Meaning                                                     |
+| ------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| `word`              | `string`                                 | The value typed so far. For `--target=pro`, it's `pro`.     |
+| `path`              | `CommandPath`                            | The commands from the root to the one the value is for.     |
+| `args`              | `readonly string[]`                      | That command's positional arguments so far.                 |
+| `argSeparatorIndex` | `number`                                 | Where `--` is among `args`, or -1.                          |
+| `options`           | [`OptionArgs`](./running.mdx#optionargs) | The options used so far, read the way an action reads them. |
+
+## `Suggestion` [#suggestion]
+
+| Field         | Type                                      | Meaning                          |
+| ------------- | ----------------------------------------- | -------------------------------- |
+| `name`        | `string \| [string, string, ...string[]]` | The value, or values, to insert. |
+| `description` | `string`                                  | Shown beside it.                 |
+
+A plain string is a suggestion without a description.
+
+## `Template` [#template]
+
+`"filepaths" | "folders" | ["folders", "filepaths"] | ["filepaths", "folders"]`
+
+Complete paths with the shell's own path completion. It has no effect on parsing.

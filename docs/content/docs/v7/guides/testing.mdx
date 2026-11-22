@@ -1,0 +1,96 @@
+---
+title: Validate a spec
+description: Validate a spec before shipping your CLI.
+---
+
+TypeScript catches unknown fields and gives actions their input types. It cannot detect every invalid combination in a command definition.
+
+`testSpec` checks the spec's structure against the parser's behavior. It catches problems such as unreachable names, misplaced arguments, unusable defaults and conflicting option references.
+
+## Add a spec test
+
+Keep the spec in a module that does not call `CLI.run`. Tests can then import it without executing the CLI.
+
+```ts
+// src/spec.ts
+import * as CLI from "@clo4/cli";
+
+export const spec = CLI.spec({
+  name: "demo",
+  description: "A small CLI",
+  options: [CLI.help],
+  action() {
+    console.log("Hello");
+  },
+});
+```
+
+The entry file runs it:
+
+```ts
+// src/main.ts
+import * as CLI from "@clo4/cli";
+import { spec } from "./spec.ts";
+
+CLI.run(spec);
+```
+
+A Vitest test can import and validate the same spec:
+
+```ts
+import { test } from "vitest";
+import { testSpec } from "@clo4/cli/testing";
+import { spec } from "../src/spec.ts";
+
+test("CLI spec is valid", () => testSpec(spec)());
+```
+
+`testSpec(spec)` returns an async function. Calling that function runs the checks and throws on failure. Return or await its promise when wrapping it in another callback:
+
+```ts
+test("CLI spec is valid", async () => {
+  await testSpec(spec)();
+});
+```
+
+The testing entry point also exports `test` as an alias of `testSpec`.
+
+## Descriptions
+
+By default, every command and option needs a description. Description lines must fit within 68 characters. The length limit also applies to positional argument descriptions.
+
+Write a description as a phrase without a closing period, like the built-in `Print a help message`. Help puts details such as `(default: dist)` after it. The checks don't enforce this.
+
+Examples in these docs sometimes omit descriptions to keep attention on the field being explained. Set `allowNoDescription: true` to permit that in a spec test:
+
+```ts
+await testSpec(spec, {
+  allowNoDescription: true,
+})();
+```
+
+Set `allowLongDescriptionLines: true` to disable the line-length limit. These options affect validation, not parsing or help rendering.
+
+## Abbreviated commands and positional arguments
+
+With prefix matching enabled, a word can be both a positional value and an abbreviation for a subcommand. The checks reject that combination by default.
+
+If the ambiguity is intentional, set `allowMatchingSubcommandPrefixAndArgs: true`. [Parser settings](../concepts/parser-settings.mdx#abbreviated-subcommands) explains the matching rules.
+
+## Help and completion
+
+By default, the root needs a `--help` option and a `completion` subcommand, such as `CLI.help` and `CLI.completion`. A copy of either, or your own option or subcommand with that name, counts.
+
+Set `allowNoHelpOption: true` or `allowNoCompletionCommand: true` to leave one out.
+
+## What gets checked
+
+The checks load every command, including commands behind `loadSpec`. They validate the loaded definitions and their loading metadata.
+
+Persistent subcommands are checked both under their defining parent and under descendants that inherit them. This catches conflicts caused by a different scope. The walk does not cover paths that enter multiple inherited subcommands in succession.
+
+These are checks of the spec, not tests of your application. Test action behavior and custom validation separately. [Test command invocations](./testing-commands.mdx) covers parsing and dispatch with explicit `argv`.
+
+The testing API accepts a context with a `step` method for test runners that support named steps. `namingStyle: "function"` uses assertion function names in that output. The default is sentence names.
+
+See the [testing reference](../reference/testing.mdx) for signatures and configuration. Validation can become stricter in minor or patch releases when new checks identify incorrect or undefined behavior.

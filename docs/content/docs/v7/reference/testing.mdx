@@ -1,0 +1,55 @@
+---
+title: Testing
+description: Check a spec against the rules TypeScript can't.
+---
+
+```ts
+import { test } from "@clo4/cli/testing";
+```
+
+TypeScript catches a wrong field or a misspelt option name. The spec checks catch what it can't: two options with one name, a required argument after an optional one, a default its parser rejects, a `dependsOn` that names nothing. [Validate a spec](../guides/testing.mdx) is the guide.
+
+## `test(spec, options?)` [#test]
+
+```ts
+function test(spec: Subcommand, options?: TestOptions): (t?: TestContextLike) => Promise<void>;
+```
+
+Returns an async function that checks `spec` and throws on the first failure. Call it from a test, and return or await its promise.
+
+```ts
+import { test as check } from "@clo4/cli/testing";
+import { test } from "vitest";
+import { spec } from "../src/spec.ts";
+
+test("the spec is valid", check(spec));
+```
+
+It loads every command, including those behind a `loadSpec`, and checks names, argument order, defaults, option rules and refs. Persistent subcommands are checked where descendants inherit them.
+
+Import the spec without running the CLI. Checks can get stricter in a minor or patch release, when a new one finds behavior that was wrong or undefined.
+
+## `testSpec` [#testspec]
+
+Another name for [`test`](#test), for a file that imports a test runner's `test` too.
+
+## `TestOptions` [#testoptions]
+
+Every relaxation is off unless it's set.
+
+| Field                                  | Type                                  | Default      | Meaning                                                                                                 |
+| -------------------------------------- | ------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
+| `allowNoDescription`                   | `boolean`                             | `false`      | Allow commands and options without a description.                                                       |
+| `allowLongDescriptionLines`            | `boolean`                             | `false`      | Allow description lines longer than 68 characters.                                                      |
+| `allowMatchingSubcommandPrefixAndArgs` | `boolean`                             | `false`      | Allow positional arguments on a command that matches subcommand prefixes, where a word could be either. |
+| `allowNoHelpOption`                    | `boolean`                             | `false`      | Allow a root without a `--help` option.                                                                 |
+| `allowNoCompletionCommand`             | `boolean`                             | `false`      | Allow a root without a `completion` subcommand.                                                         |
+| `namingStyle`                          | [`TestNamingStyle`](#testnamingstyle) | `"sentence"` | Name each step with a sentence, or with the assertion's function name.                                  |
+
+## `TestNamingStyle` [#testnamingstyle]
+
+`"sentence" | "function"`: how the steps are named.
+
+## `TestContextLike` [#testcontextlike]
+
+A test runner's context with a `step(name, fn)` method, like Deno's. Pass it to the returned function to report each check as a named step.

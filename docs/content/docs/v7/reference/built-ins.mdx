@@ -1,0 +1,53 @@
+---
+title: Built-ins
+description: Help and completion, as ordinary options and subcommands.
+---
+
+The built-ins are an option and two subcommands, written with the same fields as yours. Put them where you want them, copy them and change a field, or write your own instead. [Help and completion](../concepts/help-and-completion.mdx) shows them in use.
+
+## `help` [#help]
+
+```ts
+const help: Option;
+```
+
+`-h` and `--help`, as a persistent [option](./specs-and-commands.mdx#option) whose action prints help for the selected command. Add it to the root's `options`, and every command below has it.
+
+```ts
+{
+  name: ["-h", "--help"],
+  description: "Print a help message",
+  isPersistent: true,
+  action({ path }) { /* print help for the last command on the path */ },
+}
+```
+
+Its type says what its names are, so [`spec`](./specs-and-commands.mdx#spec-function) knows `--help` in every command.
+
+## `helpCommand` [#helpcommand]
+
+```ts
+const helpCommand: Subcommand;
+```
+
+A `help` [subcommand](./specs-and-commands.mdx#subcommand) that prints help for the commands named after it: `demo help build`. Add it to the root's `subcommands`.
+
+The first name that isn't a subcommand ends the names, so `demo help completion zsh` prints the help of `completion`. Help reports that name as an unknown command where the parser would. Completion offers the subcommands that can come next.
+
+Add `{ ...CLI.helpCommand, isPersistent: true }` instead to make `demo remote help` work too.
+
+## `completion` [#completion]
+
+```ts
+const completion: Subcommand;
+```
+
+A `completion` subcommand that prints the completion script for a shell: `demo completion zsh`. Without a shell, it lists the shells. Add it to the root's `subcommands`.
+
+Generate the script at shell startup, so it stays matched to the installed CLI: the script and the protocol it uses can change between releases. [Install shell completion](../guides/install-completion.mdx) has the line for each shell.
+
+Each Tab starts the CLI with `SHELL_COMPLETION_GENERATOR` set to the shell's name, and runs argument [suggesters](./completion.mdx#suggester) without running the selected command's action.
+
+## `Shell` [#shell]
+
+`"bash" | "zsh" | "fish" | "powershell" | "nushell"`: the shells `completion` prints scripts for.

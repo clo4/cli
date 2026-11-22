@@ -1,0 +1,208 @@
+---
+title: Options
+description: Define named inputs and read their values in an action.
+---
+
+An option is a named input such as `--output dist`. A flag is an option without a value, such as `--watch`.
+
+Define options in a command's `options` array. Include the prefix in each name. The parser treats `-o` and `--output` as names you define, not conventions it adds.
+
+## Names and values
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    { name: ["-w", "--watch"], description: "Watch for changes" },
+    {
+      name: ["-o", "--output"],
+      description: "Output file",
+      args: { name: "file" },
+    },
+  ],
+  action({ options }) {
+    console.log(options.has("--watch"));
+    console.log(options.get("--output"));
+  },
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts -w -o out.js
+true
+out.js
+$ node demo.ts
+false
+undefined
+```
+
+An array of names defines aliases for one option. Both names work on the command line and in the action. `options.get("-o")` and `options.get("--output")` read the same value. Names are case-sensitive.
+
+The parser accepts `-o out.js`, `-oout.js` and `--output=out.js`. A supplied option must receive its required values. In this example, `--output` alone is an error.
+
+Short flags can share a token. If `-a`, `-b` and `-c` are flags, `-abc` means `-a -b -c`. [Parser settings](./parser-settings.mdx) covers literal names and other separators.
+
+## Reading options
+
+An action reads options through four methods:
+
+| Method        | Result                                                              |
+| ------------- | ------------------------------------------------------------------- |
+| `has(name)`   | Whether the user supplied the option.                               |
+| `get(name)`   | Its first value, or a default if applicable.                        |
+| `all(name)`   | All its values, or defaults if applicable.                          |
+| `count(name)` | The number of supplied values, or occurrences of a repeatable flag. |
+
+Use `has` for flags. Flags have no argument value, so the inferred types reject `get` and `all` for them.
+
+Options are optional unless you set `isRequired: true`. For an option with one required argument, this changes `get` from `string | undefined` to `string`. An option can also accept [several arguments or a variadic argument](./arguments.mdx#option-arguments).
+
+## Defaults
+
+Defaults belong to argument definitions. For an option with a required argument, a default supplies the value when the option is absent:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--port",
+      description: "Listen on this port",
+      args: { name: "port", default: "8080" },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--port"));
+    console.log(options.has("--port"));
+  },
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts
+8080
+false
+$ node demo.ts --port 3000
+3000
+true
+```
+
+The default makes `get("--port")` a `string`. It does not count as user input: `has` stays `false` and `count` stays `0`. Defaults do not satisfy `isRequired` or option dependencies.
+
+A default does not make the argument optional. `--port` alone still fails because the user supplied the option without its required value.
+
+### Optional values
+
+With `isOptional: true` on the argument, the user can supply the option without a value. Its default applies to that use. Omitting the option entirely returns `undefined`.
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--inspect",
+      description: "Enable the inspector",
+      args: {
+        name: "port",
+        isOptional: true,
+        default: "9229",
+      },
+    },
+  ],
+  action({ options }) {
+    console.log(options.get("--inspect"));
+  },
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts --inspect
+9229
+$ node demo.ts --inspect=9000
+9000
+$ node demo.ts
+undefined
+```
+
+Defaults are strings. Help displays them automatically. A default goes through the argument's [parser](./arguments.mdx#parsing-values), if it has one. [Spec checks](../guides/testing.mdx) reject defaults that the command-line parser cannot use or that the argument's parser rejects.
+
+## Repeated options
+
+Without `isRepeatable`, each use replaces the option's previous values. Set `isRepeatable: true` to collect values from every use:
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    {
+      name: "--tag",
+      description: "Add a tag",
+      args: { name: "tag" },
+      isRepeatable: true,
+    },
+  ],
+  action({ options }) {
+    console.log(JSON.stringify(options.all("--tag")));
+  },
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts --tag dev --tag latest
+["dev","latest"]
+$ node demo.ts
+[]
+```
+
+A positive integer limits the number of uses. `isRepeatable: 2` accepts two uses and rejects a third with `Too many repetitions`.
+
+For a repeatable flag, `count` counts occurrences. A repeatable `-v` flag accepts `-vvv`, and `options.count("-v")` returns `3`.
+
+For an option with arguments, `count` counts values. An option that takes two values contributes two to the count each time it appears.
+
+## Dependencies and conflicts
+
+`dependsOn` names options that must also be supplied. `exclusiveOn` names options that cannot appear together.
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  options: [
+    { name: "--json", description: "Print JSON", exclusiveOn: ["--quiet"] },
+    { name: "--quiet", description: "Suppress output" },
+    { name: "--sign", description: "Sign the output", dependsOn: ["--output"] },
+    {
+      name: "--output",
+      description: "Output file",
+      args: { name: "file" },
+    },
+  ],
+  action() {},
+});
+
+CLI.run(spec);
+```
+
+`--json --quiet` fails in either order. `--sign` requires an explicit `--output file`, even if the output argument has a default.
+
+Use an option's name, including its prefix, in these lists. TypeScript rejects names outside the command's scope. A parent command's option is available to a child only when it is [persistent](./subcommands.mdx#persistent-options).
+
+See [Option](../reference/specs-and-commands.mdx#option) and [OptionArgs](../reference/running.mdx#optionargs) for the full reference.

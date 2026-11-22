@@ -1,0 +1,113 @@
+---
+title: Introduction
+description: Define a CLI with plain TypeScript objects.
+---
+
+`@clo4/cli` builds command-line tools from plain objects. A command definition describes its arguments, options and subcommands. The library uses that definition to parse input, infer TypeScript types, print help and answer shell completion requests.
+
+An action is the function that runs a command. It receives each value as a string, or as the result of the argument's [parser](./concepts/arguments.mdx#parsing-values) when the argument has one. Your code decides what work to do with those values.
+
+## Install
+
+```sh
+npm install @clo4/cli
+```
+
+The package uses ECMAScript modules and has no runtime dependencies. Type inference requires TypeScript 6.0 or later.
+
+## A complete CLI
+
+Save this example as `demo.ts` in a project with `"type": "module"` in `package.json`. Node.js 24 or later can [run this TypeScript directly](https://nodejs.org/api/typescript.html#type-stripping).
+
+```ts
+import * as CLI from "@clo4/cli";
+
+const spec = CLI.spec({
+  name: "demo",
+  description: "A small build tool",
+  options: [CLI.help],
+  subcommands: [
+    {
+      name: "build",
+      description: "Build a project",
+      args: {
+        name: "input",
+        description: "Source directory",
+        isOptional: true,
+        default: ".",
+        template: "folders",
+      },
+      options: [
+        { name: ["-w", "--watch"], description: "Watch for changes" },
+        {
+          name: ["-o", "--output"],
+          description: "Output directory",
+          args: {
+            name: "dir",
+            default: "dist",
+            template: "folders",
+          },
+        },
+      ],
+      action({ args: [input], options }) {
+        console.log(`${input} -> ${options.get("--output")}`);
+        if (options.has("--watch")) {
+          console.log("Watch mode enabled.");
+        }
+      },
+    },
+    CLI.helpCommand,
+    CLI.completion,
+  ],
+});
+
+CLI.run(spec);
+```
+
+```console
+$ node demo.ts build
+. -> dist
+$ node demo.ts build src -o public --watch
+src -> public
+Watch mode enabled.
+```
+
+`CLI.spec` gives the action its types and returns the object unchanged. In this action, `input` and `options.get("--output")` are strings because both inputs have defaults. TypeScript rejects an unknown option name such as `options.has("--watc")`.
+
+`CLI.run` parses the command line and calls the selected action. A command without an action prints help, so `node demo.ts` lists the available commands.
+
+## Help and completion
+
+The example includes three built-in objects. `CLI.help` adds `-h` and `--help` to the root and every descendant command. `CLI.helpCommand` adds `demo help build`. `CLI.completion` prints installation scripts for Bash, Zsh, Fish, PowerShell and Nushell.
+
+```console
+$ node demo.ts build --help
+Build a project
+
+Usage:
+  demo build [flags] [input]
+
+Arguments:
+  input  Source directory (default: .)
+
+Flags:
+  -w, --watch         Watch for changes
+  -o, --output <dir>  Output directory (default: dist)
+
+Global flags:
+  -h, --help          Print a help message
+```
+
+The `template: "folders"` fields tell completion to suggest directories. They do not require a path to exist. Your action handles that validation.
+
+## Where to go next
+
+[Options](./concepts/options.mdx) explains named inputs and how an action reads them. [Arguments](./concepts/arguments.mdx) covers positional inputs, and how a parser turns a typed value into a number or one of a few choices. [Commands](./concepts/subcommands.mdx) explains command trees and inherited options.
+
+[Parsers](./concepts/parsers.mdx) introduces parser combinators, the functions that combine small parsers into larger ones. Use them to turn text such as `30s` or `1920x1080` into values that your action can use directly.
+
+[Actions](./concepts/actions.mdx) covers errors and exit codes. [Help and completion](./concepts/help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./guides/testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
+
+The [reference](./reference/specs-and-commands.mdx) describes every field and function. [Parsing behavior](./reference/parsing-behavior.mdx) collects rules that involve several fields.
+
+The guides cover [organizing command modules](./guides/organizing-commands.mdx), [loading commands on demand](./guides/loading-commands.mdx), [testing invocations](./guides/testing-commands.mdx) and [installing completion](./guides/install-completion.mdx).

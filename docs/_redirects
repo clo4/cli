@@ -38,7 +38,9 @@
 /cli/docs/next/wrapping-commands /cli/docs/next/guides/wrapping-commands 301
 /cli/next /cli/docs/next 301
 /cli/next/* /cli/docs/next/:splat 301
-/cli/v6 /cli/docs 301
-/cli/v6/* /cli/docs/:splat 301
-/cli/docs/v6 /cli/docs 302
-/cli/docs/v6/* /cli/docs/:splat 302
+/cli/v7 /cli/docs 301
+/cli/v7/* /cli/docs/:splat 301
+/cli/docs/v7 /cli/docs 302
+/cli/docs/v7/* /cli/docs/:splat 302
+/cli/v6 /cli/docs/v6 301
+/cli/v6/* /cli/docs/v6/:splat 301
