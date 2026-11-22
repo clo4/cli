@@ -20,6 +20,12 @@ export interface ParsedUse {
   option: Option;
   /** The name the option was used by. */
   name: string;
+  /**
+   * The index of the token this use's first value is in. Values in tokens of
+   * their own follow it. A value attached to the option starts at `tokenStart`.
+   */
+  token: number;
+  tokenStart: number | undefined;
   /** The option's values. A repeatable option keeps the values of every use here. */
   values: string[];
   /** Where this use's values start in `values`, where the ones the user typed end, and where the defaults after them end. */
@@ -39,6 +45,8 @@ export interface Unparsed {
   problems: ParseError[] | null;
   /** The positional arguments, with defaults from index `typedArgs` on. */
   args: unknown[];
+  /** The index of the token each typed argument came from. */
+  argTokens: readonly number[];
   typedArgs: number;
   /** The arguments of the selected command. */
   argSpecs: ArgList;
@@ -61,6 +69,9 @@ interface Job {
   isDefault: boolean;
   values: unknown[];
   index: number;
+  /** Where the value was typed. Undefined for a default. */
+  token: number | undefined;
+  tokenStart: number | undefined;
 }
 
 function readResult(result: StandardResult<unknown>): unknown {
@@ -87,7 +98,11 @@ export async function apply(schema: StandardSchemaV1, raw: string): Promise<unkn
   }
 }
 
-/** The jobs for the values from `start` to `end` of `values`, which are the arguments `args` in order. */
+/**
+ * The jobs for the values from `start` to `end` of `values`, which are the
+ * arguments `args` in order. `tokenOf` gives the index of the token each typed
+ * value is in.
+ */
 function addJobs(
   jobs: Job[],
   args: ArgList,
@@ -96,6 +111,8 @@ function addJobs(
   typedEnd: number,
   end: number,
   target: string | null,
+  tokenOf: (index: number) => number,
+  tokenStart?: number,
 ): void {
   for (let i = start; i < end; i++) {
     const arg = argAt(args, i - start);
@@ -113,6 +130,8 @@ function addJobs(
         isDefault: i >= typedEnd,
         values,
         index: i,
+        token: i < typedEnd ? tokenOf(i) : undefined,
+        tokenStart: i < typedEnd ? tokenStart : undefined,
       });
     }
   }
@@ -127,16 +146,28 @@ function addJobs(
 export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unknown[]> | null> {
   const jobs: Job[] = [];
   const { args } = unparsed;
-  addJobs(jobs, unparsed.argSpecs, args, 0, unparsed.typedArgs, args.length, null);
+  const { argTokens } = unparsed;
+  addJobs(jobs, unparsed.argSpecs, args, 0, unparsed.typedArgs, args.length, null, (i) => argTokens[i]);
   for (const use of unparsed.uses ?? []) {
-    addJobs(jobs, use.option.args, use.values, use.start, use.typedEnd, use.end, use.name);
+    const tokenOf = (i: number) => use.token + i - use.start;
+    addJobs(
+      jobs,
+      use.option.args,
+      use.values,
+      use.start,
+      use.typedEnd,
+      use.end,
+      use.name,
+      tokenOf,
+      use.tokenStart,
+    );
   }
   let defaults: Map<Option, unknown[]> | null = null;
   for (const option of unparsed.unused) {
     const values = unusedDefaults(option);
     if (values) {
       (defaults ??= new Map()).set(option, values);
-      addJobs(jobs, option.args, values, 0, 0, values.length, asArray(option.name).join("/"));
+      addJobs(jobs, option.args, values, 0, 0, values.length, asArray(option.name).join("/"), () => -1);
     }
   }
 
@@ -154,7 +185,7 @@ export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unkno
           job.target,
           result.reason,
           job.isDefault,
-          unparsed.context,
+          { ...unparsed.context, token: job.token, start: job.tokenStart },
           describeParser(job.arg)?.choices,
         ),
       );

@@ -97,7 +97,7 @@ for (const [kind, wrap] of kinds) {
     const remote = spec.subcommands![1];
     const written = { ...remote };
     await run(spec, ["remote", "add", "x"]);
-    await Testing.test(spec as Subcommand, { allowNoDescription: true })();
+    await Testing.test(spec as Subcommand, { allowNoDescription: true, ...withoutBuiltIns })();
     expect(spec.subcommands![1]).toBe(remote);
     expect(remote).toEqual(written);
     expect(remote.loadSpec).toBe(written.loadSpec);
@@ -155,7 +155,7 @@ for (const [kind, wrap] of kinds) {
 
   test(`loadSpec returning ${kind}: the spec checks load every command`, async () => {
     const { spec, loads } = lazyCli(wrap);
-    await Testing.test(spec as Subcommand, { allowNoDescription: true })();
+    await Testing.test(spec as Subcommand, { allowNoDescription: true, ...withoutBuiltIns })();
     expect(loads).toEqual({ remote: 1, add: 1, config: 1 });
   });
 }
@@ -270,7 +270,7 @@ async function completionView(spec: Spec, before: string[], partial: string): Pr
 /** The first spec check that fails, or "ok". */
 async function specCheckView(spec: Spec): Promise<string> {
   try {
-    await Testing.test(spec as Subcommand)();
+    await Testing.test(spec as Subcommand, withoutBuiltIns)();
     return "ok";
   } catch (error) {
     return String(error);
@@ -288,7 +288,9 @@ test("loadSpec: the spec checks report a problem inside a loaded command", async
       },
     ],
   };
-  await expect(Testing.test(spec as Subcommand, { allowNoDescription: true })()).rejects.toThrow(/--force/);
+  await expect(
+    Testing.test(spec as Subcommand, { allowNoDescription: true, ...withoutBuiltIns })(),
+  ).rejects.toThrow(/--force/);
 });
 
 vi.setConfig({ testTimeout: TIMEOUT * 4 });
@@ -480,3 +482,6 @@ test("loadSpec: the spec checks reject a command that sets more than its parent 
     "Subcommand `forge remote` (index 0) has a `loadSpec` and sets `options`. Beside a `loadSpec`, a command only sets `name`, `description`, `hidden`, `isPersistent`. Move `options` to the command it loads.",
   );
 });
+
+/** The load tests' specs leave out the built-ins, which the root checks would otherwise ask for. */
+const withoutBuiltIns = { allowNoHelpOption: true, allowNoCompletionCommand: true };

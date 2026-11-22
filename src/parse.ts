@@ -164,14 +164,29 @@ interface OpenOption {
   count: number;
   min: number;
   separateMax: number;
+  /** The index of the option's token. */
+  readonly token: number;
+  /** Where a value attached to the option's token starts, or -1. */
+  attachedStart: number;
 }
 
 /** The state when no option is open. It's frozen because every scanner shares it. */
-const noOpenOption: OpenOption = Object.freeze({ option: null, name: "", count: 0, min: 0, separateMax: 0 });
+const noOpenOption: OpenOption = Object.freeze({
+  option: null,
+  name: "",
+  count: 0,
+  min: 0,
+  separateMax: 0,
+  token: -1,
+  attachedStart: -1,
+});
 
-/** The context of an error at the end of `path`, with a copy of the path. */
-function contextAt(path: CommandPath): ErrorContext {
-  return { path: [...path] };
+/**
+ * The context of an error at the end of `path`, with a copy of the path, in
+ * the token at index `token`. See {@link ErrorContext}.
+ */
+function contextAt(path: CommandPath, token?: number, start?: number): ErrorContext {
+  return { path: [...path], token, start };
 }
 
 /**
@@ -184,6 +199,8 @@ function contextAt(path: CommandPath): ErrorContext {
  */
 interface UsedRules {
   option: Option;
+  /** The index of the token the option was used in. */
+  token: number;
   needs: readonly (Option | null)[];
   excludes: readonly (Option | null)[];
 }
@@ -215,7 +232,7 @@ function checkOptionRules(
       if (!need || !used.has(optionKey(need))) {
         (problems ??= []).push(
           new ParseError(
-            contextAt(path),
+            contextAt(path, rules[i].token),
             `${asArray(option.name).join("/")} requires ${option.dependsOn![j]}, add it to fix this error`,
           ),
         );
@@ -225,7 +242,7 @@ function checkOptionRules(
   // Two options that exclude each other are one problem.
   let reported: Set<string> | null = null;
   for (let i = 0; i < rules.length; i++) {
-    const { option, excludes } = rules[i];
+    const { option, excludes, token } = rules[i];
     for (let j = 0; j < excludes.length; j++) {
       const excluded = excludes[j];
       if (!excluded || !used.has(optionKey(excluded))) {
@@ -238,7 +255,7 @@ function checkOptionRules(
       (reported ??= new Set()).add(pair);
       (problems ??= []).push(
         new ParseError(
-          contextAt(path),
+          contextAt(path, token),
           `${asArray(option.name).join("/")} can't be used together with ${option.exclusiveOn![j]}`,
         ),
       );
@@ -249,12 +266,15 @@ function checkOptionRules(
 
 /**
  * Add each option that `scope` requires and that's missing to `problems`,
- * and return it. `path` ends at the command `scope` is for.
+ * and return it. `path` ends at the command `scope` is for, and `entered` has
+ * the index of the token that named each command on it. A missing option is
+ * a problem with the command that defines it.
  */
 function checkRequiredOptions(
   options: ReadonlyMap<string, unknown[]>,
   scope: CommandScope,
   path: CommandPath,
+  entered: readonly number[],
   problems: ParseError[] | null,
 ): ParseError[] | null {
   // Checking local options first reports a missing local option before a
@@ -266,20 +286,24 @@ function checkRequiredOptions(
       continue;
     }
     const names = option.name;
-    if (typeof names === "string") {
-      if (!options.has(names)) {
-        (problems ??= []).push(new ParseError(contextAt(path), missingOption(names)));
-      }
-      continue;
-    }
-    for (let j = 0; j < names.length; j++) {
-      if (!options.has(names[j])) {
-        (problems ??= []).push(new ParseError(contextAt(path), missingOption(names[j])));
-        break;
-      }
+    const missing =
+      typeof names === "string" ? (options.has(names) ? null : names) : names.find((n) => !options.has(n));
+    if (missing) {
+      const definedAt = i < local.length ? path.length - 1 : definerIndex(path, option);
+      (problems ??= []).push(new ParseError(contextAt(path, entered[definedAt]), missingOption(missing)));
     }
   }
   return problems;
+}
+
+/** The index in `path` of the command that defines the persistent `option`. */
+function definerIndex(path: CommandPath, option: Option): number {
+  for (let i = path.length - 2; i >= 0; i--) {
+    if (asArray(path[i].options).includes(option)) {
+      return i;
+    }
+  }
+  return path.length - 1;
 }
 
 /**
@@ -365,6 +389,12 @@ class Scanner {
   // The last option action used.
   private optionAction: Action | undefined = undefined;
   private readonly args: string[] = [];
+  // The index of the token each argument came from.
+  private readonly argTokens: number[] = [];
+  // The index of the token being read, and of the token that named each
+  // command on the path, -1 for the program's name.
+  private at = -1;
+  private readonly entered: number[] = [-1];
   // The values of each name used. They're strings until `finish` runs each argument's parser.
   private readonly options: Map<string, unknown[]> = new Map();
   private readonly seenOptions: Option[] = [];
@@ -463,14 +493,17 @@ class Scanner {
 
   // A copy of the path, since reading carries on after a problem and can
   // enter a subcommand before the error is made.
-  private ctx(): ErrorContext {
-    return contextAt(this.scope.path);
+  private ctx(token = this.at, start?: number): ErrorContext {
+    return contextAt(this.scope.path, token, start);
   }
 
-  /** Keep the problem `message` describes if it's the first and the scanner reports. */
-  private fail(message: string): void {
+  /**
+   * Keep the problem `message` describes if it's the first and the scanner
+   * reports. It's in the token being read unless `token` says otherwise.
+   */
+  private fail(message: string, token = this.at, start?: number): void {
     if (this.reports) {
-      this.problem ??= new ParseError(this.ctx(), message);
+      this.problem ??= new ParseError(this.ctx(token, start), message);
     }
   }
 
@@ -518,6 +551,8 @@ class Scanner {
       option: option!,
       name,
       values,
+      token: this.open.attachedStart === -1 ? this.open.token + 1 : this.open.token,
+      tokenStart: this.open.attachedStart === -1 ? undefined : this.open.attachedStart,
       start: this.valuesStart,
       typedEnd,
       end: values.length,
@@ -530,7 +565,7 @@ class Scanner {
    * option gets its values doesn't compile it.
    */
   private failTooFewValues(): void {
-    this.fail(tooFewOptionArguments(this.open.name, this.valuesMin, this.valuesMax));
+    this.fail(tooFewOptionArguments(this.open.name, this.valuesMin, this.valuesMax), this.open.token);
   }
 
   private useOption(option: Option, name: string): void {
@@ -539,7 +574,7 @@ class Scanner {
     const valuesMax = maxArgs(option.args);
     // Options that require a separator only take attached values.
     const separateMax = option.requiresSeparator ? 0 : valuesMax;
-    this.open = { option, name, count: 0, min: valuesMin, separateMax };
+    this.open = { option, name, count: 0, min: valuesMin, separateMax, token: this.at, attachedStart: -1 };
     this.seenOptions.push(option);
     if (option.action) {
       this.optionAction = option.action;
@@ -596,7 +631,7 @@ class Scanner {
     for (const name of option.exclusiveOn ?? []) {
       excludes.push(this.scope.resolve(name));
     }
-    (this.rules ??= []).push({ option, needs, excludes });
+    (this.rules ??= []).push({ option, token: this.at, needs, excludes });
   }
 
   /**
@@ -629,8 +664,9 @@ class Scanner {
     const name = open.name;
     open.count += 1;
     open.min = open.separateMax = 0;
+    open.attachedStart = start;
     if (!this.values) {
-      this.fail(takesNoArguments(name));
+      this.fail(takesNoArguments(name), this.at, start);
       return;
     }
     const problem = this.scope.separatorProblem(open.option!, name, separator);
@@ -646,6 +682,7 @@ class Scanner {
       this.failArgs(tooManyArguments(value));
     }
     this.args.push(value);
+    this.argTokens.push(this.at);
     return argumentReading;
   }
 
@@ -706,7 +743,10 @@ class Scanner {
     }
     if (!skipsChecks && this.args.length < this.scope.argsMin) {
       (problems ??= []).push(
-        new ParseError(this.ctx(), tooFewArguments(this.scope.argsMin, this.scope.argsMax)),
+        new ParseError(
+          this.ctx(this.entered[this.entered.length - 1]),
+          tooFewArguments(this.scope.argsMin, this.scope.argsMax),
+        ),
       );
     }
     this.endOption();
@@ -718,7 +758,7 @@ class Scanner {
         problems = checkOptionRules(this.rules, this.seenOptions, this.scope.path, problems);
       }
       if (this.scope.hasRequiredOption) {
-        problems = checkRequiredOptions(this.options, this.scope, this.scope.path, problems);
+        problems = checkRequiredOptions(this.options, this.scope, this.scope.path, this.entered, problems);
       }
     }
     // Defaults are added after the checks, so they never count as typed.
@@ -758,6 +798,7 @@ class Scanner {
       context: this.ctx(),
       problems,
       args: this.args,
+      argTokens: this.argTokens,
       typedArgs,
       argSpecs: this.scope.command.args,
       uses: this.uses,
@@ -918,6 +959,7 @@ class Scanner {
    * loaded unless `load` is false; {@link settle} before the next token.
    */
   read(token: string, load = true): TokenReading {
+    this.at++;
     const meaning = this.classify(token);
     const kind = meaning.kind;
     if (kind === "value") {
@@ -929,6 +971,7 @@ class Scanner {
     if (kind === "subcommand") {
       this.endOption();
       this.open = noOpenOption;
+      this.entered.push(this.at);
       this.pending = this.scope.enter(meaning.command, load);
       return meaning;
     }

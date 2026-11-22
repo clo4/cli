@@ -5,6 +5,15 @@ const repr = JSON.stringify as (str: string) => string;
 
 export interface ErrorContext {
   path: CommandPath;
+  /**
+   * The index of the token the problem is in, or -1 for the program's name. A
+   * problem with a command, like an argument it's missing, is in the token
+   * that names the command. Undefined for a problem in no token, like an
+   * invalid default.
+   */
+  token?: number;
+  /** Where the value starts in the token, for a value attached to its option. */
+  start?: number;
 }
 
 /** What the user typed, and the names they could have meant. */

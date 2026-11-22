@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 
+import { completion } from "../src/completion.js";
 import { help, helpCommand } from "../src/help.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import { parse } from "../src/parse.js";
@@ -7,7 +8,9 @@ import * as Testing from "../src/testing.js";
 import { runSpecCheck } from "./helpers.js";
 
 test("testing: run testSpec on helpCommand", async () => {
-  await expect(Testing.testSpec(helpCommand)()).resolves.toBeUndefined();
+  await expect(
+    Testing.testSpec(helpCommand, { allowNoHelpOption: true, allowNoCompletionCommand: true })(),
+  ).resolves.toBeUndefined();
 });
 
 test("testing: assertOptionsHaveLocallyUniqueNames", async () => {
@@ -828,6 +831,8 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
     "Common options are not defined on every subcommand",
     "References to other options by name are valid",
     "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
+    "The root has a --help option",
+    "The root has a completion subcommand",
   ]);
 });
 
@@ -855,6 +860,8 @@ test("testing: testSpec supports function-style step names", async () => {
     "assertCommonOptionsArePersistent",
     "assertOptionNameReferencesExist",
     "assertPrefixMatchCommandsHaveNoArguments",
+    "assertRootHasHelpOption",
+    "assertRootHasCompletionCommand",
   ]);
 });
 
@@ -869,7 +876,8 @@ test("testing: testSpec config skips optional checks", async () => {
     collectSteps(
       {
         name: "demo",
-        options: [{ name: "--option" }],
+        options: [{ name: "--option" }, help],
+        subcommands: [completion],
       },
       { allowNoDescription: true },
     ),
@@ -891,13 +899,42 @@ test("testing: testSpec config skips optional checks", async () => {
         ...validSpec(),
         parserDirectives: { subcommandsMatchUniquePrefix: true },
         args: { name: "value" },
-        subcommands: [{ name: "run", description: "Run." }],
+        subcommands: [{ name: "run", description: "Run." }, completion],
       },
       { allowMatchingSubcommandPrefixAndArgs: true },
     ),
   ).resolves.not.toContain(
     "Commands with `subcommandsMatchUniquePrefix` don't have arguments and subcommands",
   );
+
+  const bare: Spec = { name: "demo", description: "Demo." };
+  await expect(
+    collectSteps(bare, { allowNoHelpOption: true, allowNoCompletionCommand: true }),
+  ).resolves.not.toEqual(
+    expect.arrayContaining(["The root has a --help option", "The root has a completion subcommand"]),
+  );
+});
+
+test("testing: assertRootHasHelpOption", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertRootHasHelpOption", spec);
+  await check({ name: "demo", options: [help] });
+  await check({ name: "demo", options: [{ ...help, description: "Show help" }] });
+  await check({ name: "demo", options: [{ name: "--help" }] });
+  await expect(check({ name: "demo" })).rejects.toThrow("Spec has no --help option");
+  await expect(check({ name: "demo", options: [{ name: "-h" }] })).rejects.toThrow("allowNoHelpOption");
+  await expect(check({ name: "demo", subcommands: [{ name: "run", options: [help] }] })).rejects.toThrow(
+    "Spec has no --help option",
+  );
+});
+
+test("testing: assertRootHasCompletionCommand", async () => {
+  const check = (spec: Subcommand) => runSpecCheck("assertRootHasCompletionCommand", spec);
+  await check({ name: "demo", subcommands: [completion] });
+  await check({ name: "demo", subcommands: [{ ...completion, hidden: true }] });
+  await expect(check({ name: "demo" })).rejects.toThrow("Spec has no completion subcommand");
+  await expect(
+    check({ name: "demo", subcommands: [{ name: "run", subcommands: [completion] }] }),
+  ).rejects.toThrow("allowNoCompletionCommand");
 });
 
 test("testing: test and testSpec are aliases", async () => {
@@ -908,8 +945,8 @@ function validSpec(): Spec {
   return {
     name: "demo",
     description: "Demo.",
-    options: [{ name: "--option", description: "Option." }],
-    subcommands: [{ name: "run", description: "Run." }],
+    options: [{ name: "--option", description: "Option." }, help],
+    subcommands: [{ name: "run", description: "Run." }, completion],
   };
 }
 

@@ -482,6 +482,17 @@ export interface TestOptions {
   allowMatchingSubcommandPrefixAndArgs?: boolean;
 
   /**
+   * Permit a root without a `--help` option, such as `help`. Default: `false`.
+   */
+  allowNoHelpOption?: boolean;
+
+  /**
+   * Permit a root without a `completion` subcommand, such as `completion`.
+   * Default: `false`.
+   */
+  allowNoCompletionCommand?: boolean;
+
+  /**
    * Change the naming style of the tests.
    *
    * - `sentence`: Describe each check in a sentence. This is the default.
@@ -1100,6 +1111,28 @@ ${failures.map(([, line]) => " * " + line).join("\n")}
           )} has at least one argument and subcommand, but matches subcommands based on unique prefixes. To fix this, use \`parserDirectives: { subcommandsMatchUniquePrefix: false }\``,
         );
       }
+    },
+  },
+  {
+    sentence: "The root has a --help option",
+    name: "assertRootHasHelpOption",
+    skippedBy: "allowNoHelpOption",
+    check(walk) {
+      assert(
+        makeArray(walk.spec.options).some((option) => makeArray(option.name).includes("--help")),
+        "Spec has no --help option. Add `CLI.help` to its options, or set `allowNoHelpOption` to leave it out.",
+      );
+    },
+  },
+  {
+    sentence: "The root has a completion subcommand",
+    name: "assertRootHasCompletionCommand",
+    skippedBy: "allowNoCompletionCommand",
+    check(walk) {
+      assert(
+        makeArray(walk.spec.subcommands).some((command) => makeArray(command.name).includes("completion")),
+        "Spec has no completion subcommand. Add `CLI.completion` to its subcommands, or set `allowNoCompletionCommand` to leave it out.",
+      );
     },
   },
 ];
