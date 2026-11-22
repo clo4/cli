@@ -1,0 +1,177 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
+import Base from "@/layouts/Base.astro";
+import PageLink from "@/components/PageLink.astro";
+import PrevNext from "@/components/PrevNext.astro";
+import T from "@/components/T.astro";
+import Sidebar from "@/components/docs/Sidebar.astro";
+import Toc from "@/components/docs/Toc.astro";
+import Search from "@/components/docs/Search.astro";
+import PageActions from "@/components/docs/PageActions.astro";
+import { t } from "@/i18n";
+import { categories, latest, neighbours, routeOf, sameTopic, source, versionOf } from "@/lib/source";
+import { gitConfig, githubUrl, href } from "@/lib/shared";
+
+export const prerender = true;
+
+export const getStaticPaths = (() => {
+  return source.getPages().map((page) => ({
+    params: { slug: routeOf(page) || undefined },
+    props: { page },
+  }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { page } = Astro.props;
+const { body: Content, toc } = await page.data.load();
+const version = versionOf(page);
+const latestPage = version === latest ? page : (sameTopic(page, latest) ?? source.getPage([latest]));
+const category = categories(version).find((c) => c.items.some((item) => item.url === page.url))?.name;
+const { previous, next } = neighbours(page);
+const markdownUrl = `${page.url || "/cli/docs"}${routeOf(page) ? "" : "/index"}.md`;
+const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.path}`;
+---
+
+<Base
+  title={page.data.title}
+  description={page.data.description}
+  canonical={(version === latest ? page : sameTopic(page, latest))?.url ?? page.url}
+  image={href(`og/docs/${routeOf(page) || "index"}.png`)}
+  current="docs"
+>
+  <Fragment slot="sheet"><Sidebar page={page} id="sheet" /></Fragment>
+  <div class="docs">
+    <aside class="sidebar" aria-label={t("docs.label")}>
+      <Sidebar page={page} id="side" />
+    </aside>
+    <main class="article">
+      {
+        version !== latest && latestPage && (
+          <p class="notice">
+            {version === "next" ? <T k="docs.unreleased" /> : <T k="docs.old" vars={{ major: version.slice(1) }} />}{" "}
+            <a href={latestPage.url}>
+              <T k={version === "next" ? "docs.unreleased.link" : "docs.old.link"} />
+            </a>
+          </p>
+        )
+      }
+      {category && <p class="crumb">{category}</p>}
+      <h1>{page.data.title}</h1>
+      {page.data.description && <p class="lead">{page.data.description}</p>}
+      <PageActions markdownUrl={markdownUrl} editUrl={editUrl} />
+      <div class="toc-inline"><Toc toc={toc} inline /></div>
+      <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
+        <Content components={{ a: PageLink }} />
+      </div>
+      <PrevNext previous={previous} next={next} previousLabel="docs.previous" nextLabel="docs.next" />
+    </main>
+    <div class="toc"><Toc toc={toc} /></div>
+  </div>
+  <Search version={version} />
+</Base>
+
+<script>
+  import { addCopyButtons } from "@/lib/copy";
+  addCopyButtons();
+</script>
+
+<style>
+  .docs {
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr) 220px;
+    align-items: start;
+  }
+  .sidebar {
+    position: sticky;
+    top: var(--header);
+    height: calc(100dvh - var(--header));
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 12px 32px;
+    border-inline-end: 1px solid var(--line);
+  }
+  .article {
+    min-width: 0;
+    max-width: calc(72ch + 112px);
+    padding: 40px 56px 96px;
+  }
+  .notice {
+    margin: 0 0 24px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    background: var(--surface);
+    font-size: 14.5px;
+    color: var(--muted);
+    & a {
+      color: var(--fg);
+    }
+  }
+  .crumb {
+    margin: 0 0 10px;
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+  h1 {
+    margin: 0;
+    font: 400 44px/1.1 var(--display);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  .lead {
+    margin: 12px 0 0;
+    font-size: 18px;
+    color: var(--muted);
+    text-wrap: pretty;
+  }
+  .toc {
+    position: sticky;
+    top: var(--header);
+    max-height: calc(100dvh - var(--header));
+    overflow-y: auto;
+    padding: 40px 20px 32px 8px;
+  }
+  .toc-inline {
+    display: none;
+  }
+  @media (width < 1180px) {
+    .docs {
+      grid-template-columns: 272px minmax(0, 1fr);
+    }
+    .toc {
+      display: none;
+    }
+    .toc-inline {
+      display: block;
+    }
+  }
+  @media (width < 860px) {
+    .docs {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .sidebar {
+      display: none;
+    }
+    .article {
+      padding: 20px 16px 64px;
+    }
+    .notice {
+      margin-bottom: 20px;
+      padding: 8px 12px;
+      font-size: 13.5px;
+    }
+    .crumb {
+      margin-bottom: 6px;
+    }
+    h1 {
+      font-size: 34px;
+    }
+    .lead {
+      margin-top: 8px;
+      font-size: 16px;
+    }
+  }
+</style>

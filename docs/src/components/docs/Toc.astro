@@ -1,0 +1,120 @@
+---
+import type { TOCItemType } from "fumadocs-core/toc";
+import T from "@/components/T.astro";
+
+interface Props {
+  toc: TOCItemType[];
+  inline?: boolean;
+}
+
+const { toc, inline = false } = Astro.props;
+const items = toc.filter((item) => item.depth <= 3);
+---
+
+{
+  items.length > 0 &&
+    (inline ? (
+      <details class="inline">
+        <summary>
+          <T k="docs.onThisPage" />
+        </summary>
+        <ul>
+          {items.map((item) => (
+            <li class={`depth-${item.depth}`}>
+              <a href={item.url}>{item.title}</a>
+            </li>
+          ))}
+        </ul>
+      </details>
+    ) : (
+      <nav class="rail" data-toc>
+        <h2>
+          <T k="docs.onThisPage" />
+        </h2>
+        <ul>
+          {items.map((item) => (
+            <li class={`depth-${item.depth}`}>
+              <a href={item.url}>{item.title}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    ))
+}
+
+<script>
+  const links = [...document.querySelectorAll<HTMLAnchorElement>("[data-toc] a")];
+  const headings = links
+    .map((link) => document.getElementById(decodeURIComponent(link.hash.slice(1))))
+    .filter((heading): heading is HTMLElement => heading !== null);
+  function spy() {
+    const line = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) + 8;
+    let current = headings[0];
+    for (const heading of headings) {
+      if (heading.getBoundingClientRect().top <= line) {current = heading;}
+    }
+    for (const link of links) {link.toggleAttribute("aria-current", link.hash === `#${current?.id}`);}
+  }
+  if (headings.length) {
+    addEventListener("scroll", spy, { passive: true });
+    spy();
+  }
+</script>
+
+<style>
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .depth-3 a {
+    padding-inline-start: 24px;
+  }
+  .rail {
+    font-size: 13.5px;
+    & h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    & a {
+      display: block;
+      padding: 4px 0 4px 12px;
+      border-inline-start: 1px solid var(--line);
+      line-height: 1.4;
+      color: var(--muted);
+      text-decoration: none;
+      transition:
+        color var(--ease),
+        border-color var(--ease);
+      &:hover {
+        color: var(--fg);
+      }
+      &[aria-current] {
+        color: var(--fg);
+        border-color: var(--fg);
+      }
+    }
+  }
+  .inline {
+    margin: 0 0 32px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    font-size: 14px;
+    & summary {
+      padding: 8px 12px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+    & ul {
+      padding: 0 12px 10px;
+    }
+    & a {
+      display: block;
+      padding: 3px 0;
+      color: var(--muted);
+      text-decoration: none;
+    }
+  }
+</style>

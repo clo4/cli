@@ -1,0 +1,25 @@
+---
+title: "Action()"
+---
+
+An action associated with a subcommand or option.
+
+Actions can be sync or async. Returning `undefined` is treated as exit code 0.
+
+```ts
+Action(init: ActionInit): number | void | Promise<number | void>;
+```
+
+An action associated with a subcommand or option.
+
+Actions can be sync or async. Returning `undefined` is treated as exit code 0.
+
+## Parameters
+
+### init
+
+[`ActionInit`](./ActionInit.mdx)
+
+## Returns
+
+`number` \| `void` \| `Promise`\<`number` \| `void`\>

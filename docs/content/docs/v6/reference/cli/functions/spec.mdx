@@ -1,0 +1,36 @@
+---
+title: "spec()"
+---
+
+```ts
+function spec<T>(spec: Tree<T, never, Spec>): Spec;
+```
+
+Define a CLI from a root [Spec](../interfaces/Spec.mdx) and return the same object unchanged.
+
+Each command's `action` receives `args` and `options` typed from that
+command, at any depth: the positional arguments as a tuple, and the names
+of the command's own options and of the persistent options above it.
+
+## Type Parameters
+
+### T
+
+`T`
+
+Inferred from the definition. Do not supply it explicitly.
+
+## Parameters
+
+### spec
+
+`Tree`\<`T`, `never`, [`Spec`](../interfaces/Spec.mdx)\>
+
+A root command definition. The internal `Tree` type checks its
+fields and infers action inputs. It adds no runtime behavior.
+
+## Returns
+
+[`Spec`](../interfaces/Spec.mdx)
+
+The original definition as a `Spec`.

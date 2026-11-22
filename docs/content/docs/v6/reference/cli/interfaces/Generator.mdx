@@ -1,0 +1,34 @@
+---
+title: "Generator"
+---
+
+Generates dynamic completion suggestions.
+
+`custom` runs inside the CLI when the shell asks it for completions. It only
+affects completion and has no effect on parsing.
+
+## Methods
+
+### custom()?
+
+```ts
+custom?(tokens: string[]):
+  | (string | Suggestion)[]
+| Promise<(string | Suggestion)[]>;
+```
+
+Produce suggestions synchronously or asynchronously. Tokens exclude the
+program name and end with the partial value. For an attached value such
+as `--target=prod`, the last token is `"prod"`. Completion does not run
+the selected command action.
+
+#### Parameters
+
+##### tokens
+
+`string`[]
+
+#### Returns
+
+\| (`string` \| [`Suggestion`](./Suggestion.mdx))[]
+\| `Promise`\<(`string` \| [`Suggestion`](./Suggestion.mdx))[]\>

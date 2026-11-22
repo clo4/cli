@@ -1,0 +1,32 @@
+---
+import Base from "@/layouts/Base.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { href } from "@/lib/shared";
+---
+
+<Base title={t("notFound.title")}>
+  <main>
+    <h1><T k="notFound.title" /></h1>
+    <p><T k="notFound.body" /></p>
+    <p><a href={href("docs")}><T k="notFound.home" /></a></p>
+  </main>
+</Base>
+
+<style>
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 96px 24px;
+  }
+  h1 {
+    margin: 0 0 12px;
+    font: 400 44px/1.1 var(--display);
+  }
+  p {
+    color: var(--muted);
+  }
+  a {
+    color: var(--fg);
+  }
+</style>

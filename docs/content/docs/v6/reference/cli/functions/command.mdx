@@ -1,0 +1,37 @@
+---
+title: "command()"
+---
+
+```ts
+function command<T>(command: Tree<T, never, Subcommand>): Subcommand;
+```
+
+Define a command outside the spec that uses it, to list among a command's
+`subcommands` or for a `loadSpec` to return. Takes the same object as
+`Subcommand` and returns it.
+
+Its actions are typed like the ones in [spec](./spec.mdx), except that they can't
+see the persistent options of the commands it is placed under.
+
+## Type Parameters
+
+### T
+
+`T`
+
+Inferred from the definition. Do not supply it explicitly.
+
+## Parameters
+
+### command
+
+`Tree`\<`T`, `never`, [`Subcommand`](../interfaces/Subcommand.mdx)\>
+
+A subcommand definition. The internal `Tree` type checks its
+fields and infers action inputs. It adds no runtime behavior.
+
+## Returns
+
+[`Subcommand`](../interfaces/Subcommand.mdx)
+
+The original definition as a `Subcommand`.

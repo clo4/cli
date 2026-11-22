@@ -1,0 +1,272 @@
+---
+title: "default"
+---
+
+```ts
+default: object;
+```
+
+## Type Declaration
+
+### choice
+
+```ts
+choice: <T>(values: T) => StandardSchemaV1<string, T[number]>;
+```
+
+A schema for an argument's `parse` that accepts one of `values` and
+rejects anything else. The action receives the value as one of them, so
+`choice(["debug", "release"])` gives `"debug" | "release"`.
+
+Help shows the values after the argument's description, and completion
+offers them unless the argument has suggestions of its own. A rejected
+value that's close to one of them gets a "Did you mean" line.
+
+#### Type Parameters
+
+##### T
+
+`T` _extends_ [`NonEmptyArray`](../type-aliases/NonEmptyArray.mdx)\<`string`\>
+
+Inferred from the values. Do not supply it explicitly.
+
+#### Parameters
+
+##### values
+
+`T`
+
+The values accepted, as the user types them.
+
+#### Returns
+
+[`StandardSchemaV1`](../interfaces/StandardSchemaV1.mdx)\<`string`, `T`\[`number`\]\>
+
+A Standard Schema that gives one of the values.
+
+### command
+
+```ts
+command: <T>(command: Tree<T, never, Subcommand>) => Subcommand;
+```
+
+Define a command outside the spec that uses it, to list among a command's
+`subcommands` or for a `loadSpec` to return. Takes the same object as
+`Subcommand` and returns it.
+
+Its actions are typed like the ones in [spec](../functions/spec.mdx), except that they can't
+see the persistent options of the commands it is placed under.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+Inferred from the definition. Do not supply it explicitly.
+
+#### Parameters
+
+##### command
+
+`Tree`\<`T`, `never`, [`Subcommand`](../interfaces/Subcommand.mdx)\>
+
+A subcommand definition. The internal `Tree` type checks its
+fields and infers action inputs. It adds no runtime behavior.
+
+#### Returns
+
+[`Subcommand`](../interfaces/Subcommand.mdx)
+
+The original definition as a `Subcommand`.
+
+### completion
+
+```ts
+completion: Subcommand;
+```
+
+Subcommand that prints an installation script for the requested shell.
+Without an argument, list supported shells. Add it to the root's `subcommands`.
+
+Generate and load the script at shell startup. The script and its internal
+completion protocol can change between releases.
+
+Each completion request starts a new CLI process. Scripts set
+`SHELL_COMPLETION_GENERATOR` to the shell name. Completion calls argument
+generators without running the selected command's action.
+
+### help
+
+```ts
+help: Option & object;
+```
+
+A persistent help option that prints help for the selected command. Its
+type says what its names are, so `spec` knows them in every command.
+
+#### Type Declaration
+
+##### isPersistent
+
+```ts
+readonly isPersistent: true;
+```
+
+##### name
+
+```ts
+readonly name: readonly ["-h", "--help"];
+```
+
+### helpCommand
+
+```ts
+helpCommand: Subcommand;
+```
+
+A subcommand that prints help for its parent, or for the command the names
+after it lead to from there, so `cli help a b` prints the help of `cli a b`.
+It reads the names the way the parser reads them in place of `help`. The
+first name that isn't a subcommand ends the names, so `cli help completion
+zsh` prints the help of `completion`. Help reports that name as an unknown
+command where the parser would. Add `{ ...helpCommand, isPersistent: true }`
+instead to make `cli a b help` work too.
+
+### number
+
+```ts
+number: (options: object) => StandardSchemaV1<string, number>;
+```
+
+A schema for an argument's `parse` that turns the value into a number.
+
+The value is written in decimal digits, with an optional minus sign and
+decimal point. It isn't read the way `Number` reads it, so an empty
+string, `0x1F`, `1e3` and a value with a space in it are rejected. So is
+a value with too many digits to be a finite number.
+
+Help shows the type and range after the argument's description, like
+`(integer from 1 to 65535)`.
+
+#### Parameters
+
+##### options?
+
+`min` and `max` are the least and greatest numbers
+accepted, each included. `int` accepts whole numbers only.
+
+###### int?
+
+`boolean`
+
+###### max?
+
+`number`
+
+###### min?
+
+`number`
+
+#### Returns
+
+[`StandardSchemaV1`](../interfaces/StandardSchemaV1.mdx)\<`string`, `number`\>
+
+A Standard Schema that gives a number.
+
+### printError
+
+```ts
+printError: (...strings: unknown[]) => void;
+```
+
+Print `Error:` and the given values to stderr, separated by spaces.
+
+#### Parameters
+
+##### strings
+
+...`unknown`[]
+
+#### Returns
+
+`void`
+
+### run
+
+```ts
+run: (spec: Spec, options?: RunOptions) => Promise<number>;
+```
+
+Parse a command line, run the selected action and resolve to its exit code.
+Set `process.exitCode` unless `options.setExitCode` is `false`. Never call
+`process.exit`.
+
+A command without an action prints help. The last supplied option action
+takes precedence over the command action and bypasses required-input checks.
+Sync and async actions are supported. Returning nothing means code 0.
+Numeric return values are limited to 0–255.
+
+Every `parse` on the command line runs before the action. Parse errors print
+a message and usage to stderr, with code 1. A command line with several
+problems, like a missing option and a value its `parse` rejected, prints a
+message for each. Errors thrown by actions or loaders print their message
+without a stack trace, with code 1.
+
+In a CLI entry file, call without top-level `await`. This lets a bundler keep
+the library in the entry chunk when loaded commands also import it.
+
+#### Parameters
+
+##### spec
+
+[`Spec`](../interfaces/Spec.mdx)
+
+The root command definition.
+
+##### options?
+
+[`RunOptions`](../interfaces/RunOptions.mdx)
+
+Command-line input and process exit-code behavior.
+
+#### Returns
+
+`Promise`\<`number`\>
+
+The selected action's exit code, or 1 on a reported error.
+
+### spec
+
+```ts
+spec: <T>(spec: Tree<T, never, Spec>) => Spec;
+```
+
+Define a CLI from a root [Spec](../interfaces/Spec.mdx) and return the same object unchanged.
+
+Each command's `action` receives `args` and `options` typed from that
+command, at any depth: the positional arguments as a tuple, and the names
+of the command's own options and of the persistent options above it.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+Inferred from the definition. Do not supply it explicitly.
+
+#### Parameters
+
+##### spec
+
+`Tree`\<`T`, `never`, [`Spec`](../interfaces/Spec.mdx)\>
+
+A root command definition. The internal `Tree` type checks its
+fields and infers action inputs. It adds no runtime behavior.
+
+#### Returns
+
+[`Spec`](../interfaces/Spec.mdx)
+
+The original definition as a `Spec`.

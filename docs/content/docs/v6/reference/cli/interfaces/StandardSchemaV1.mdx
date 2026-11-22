@@ -1,0 +1,103 @@
+---
+title: "StandardSchemaV1<Input = `unknown`, Output = `Input`>"
+---
+
+A [Standard Schema](https://standardschema.dev), as far as this library
+reads one. Schemas from Zod, Valibot, ArkType and others fit it.
+
+## Type Parameters
+
+### Input
+
+`Input` = `unknown`
+
+### Output
+
+`Output` = `Input`
+
+## Properties
+
+### ~standard
+
+```ts
+readonly "~standard": object;
+```
+
+#### jsonSchema?
+
+```ts
+readonly jsonSchema?: object;
+```
+
+Describes the schema as JSON Schema, for a schema that follows the
+Standard JSON Schema specification too. Help reads the type, range
+and `enum` of what the schema takes, and completion offers the `enum`.
+
+##### jsonSchema.input()
+
+```ts
+input(options: object): Record<string, unknown>;
+```
+
+###### Parameters
+
+###### options
+
+###### target
+
+`"draft-2020-12"`
+
+###### Returns
+
+`Record`\<`string`, `unknown`\>
+
+#### types?
+
+```ts
+readonly types?: object;
+```
+
+##### types.input
+
+```ts
+readonly input: Input;
+```
+
+##### types.output
+
+```ts
+readonly output: Output;
+```
+
+#### validate
+
+```ts
+readonly validate: (value: unknown) =>
+  | StandardResult<Output>
+| Promise<StandardResult<Output>>;
+```
+
+Gives the value, or what's wrong with the input as `issues`.
+
+##### Parameters
+
+###### value
+
+`unknown`
+
+##### Returns
+
+\| [`StandardResult`](../type-aliases/StandardResult.mdx)\<`Output`\>
+\| `Promise`\<[`StandardResult`](../type-aliases/StandardResult.mdx)\<`Output`\>\>
+
+#### vendor
+
+```ts
+readonly vendor: string;
+```
+
+#### version
+
+```ts
+readonly version: 1;
+```

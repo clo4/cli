@@ -1,0 +1,103 @@
+---
+title: "6.1.0"
+date: 2026-11-15T22:41:03Z
+---
+
+An argument can now have a `parse`: a schema that turns the string the user typed into the value your action receives, and rejects a string that isn't valid. `CLI.number` and `CLI.choice` are built in, and a schema from Zod, ArkType, Valibot or any other [Standard Schema](https://standardschema.dev) library works too. Every `parse` runs before the action, and the user sees every problem with their command line at once.
+
+```ts
+const spec = CLI.spec({
+  name: "serve",
+  args: { name: "root", description: "Folder to serve" },
+  options: [
+    CLI.help,
+    {
+      name: "--port",
+      description: "Listen on this port",
+      args: {
+        name: "port",
+        default: "8080",
+        parse: CLI.number({ min: 1, max: 65535, int: true }),
+      },
+    },
+    {
+      name: "--mode",
+      description: "Build mode",
+      isRequired: true,
+      args: {
+        name: "mode",
+        parse: CLI.choice(["debug", "release"]),
+      },
+    },
+  ],
+  action({ args: [root], options }) {
+    options.get("--port"); // number
+    options.get("--mode"); // "debug" | "release"
+  },
+});
+```
+
+This command line leaves out `root` and gets both values wrong:
+
+```console
+$ serve --port 70000 --mode fast
+Error: Expected 1 argument
+Error: Invalid value "70000" for --port: expected an integer from 1 to 65535
+Error: Invalid value "fast" for --mode: expected debug | release
+
+Usage:
+  serve --mode <mode> [flags] <root>
+
+Arguments:
+  root  Folder to serve
+
+Flags:
+  -h, --help     Print a help message
+  --port <port>  Listen on this port (integer from 1 to 65535, default: 8080)
+  --mode <mode>  Build mode (debug | release)
+```
+
+A CLI written for 6.0 runs unchanged. Two things in its tests can need a change: a test that compares error output for a command line with several problems, and a test that builds its own `CLI.OptionArgs` object. Both are under "Changed".
+
+## Added
+
+- `parse` on an argument takes a Standard Schema. Inside `CLI.spec` and `CLI.command`, the action reads the value with the schema's output type.
+  - A default goes through `parse` like a value the user typed.
+  - Each value of a variadic argument or a repeatable option is parsed on its own.
+  - A schema can be async. `CLI.run` already returned a promise, so nothing new needs awaiting.
+  - An option with an action, such as `--help`, runs without any `parse`, and its action reads the strings the user typed.
+- `CLI.number({ min, max, int })` is a schema for a number. All three options are optional, and `min` and `max` are themselves accepted. It reads decimal digits with an optional minus sign and decimal point, such as `42`, `-1.5` and `.5`. It rejects an empty string, `+7`, `0x1F`, `1e3` and a value with spaces around it.
+- `CLI.choice(["debug", "release"])` is a schema for one of a list of strings. The action reads the value as `"debug" | "release"`.
+- Help shows what a value can be after its description and before the default: a number's type and range, or a list of choices. Completion offers the choices when the argument has no `suggestions`, `generators` or `template`. Help and completion get this from a schema that can describe itself as JSON Schema. The built-in schemas can, and so can Zod and ArkType schemas. A Valibot schema parses values but adds nothing to help or completion.
+- In a spec annotated as `CLI.Spec`, which has no inferred types, `options.get<number>("--port")` and `options.all<number>("--port")` say what a parsed value is. TypeScript takes your word for the type. Without it, both return strings as before.
+- `testSpec` runs two new checks. `assertDefaultsPassTheirParse` fails a default that its own `parse` rejects. `assertRangesAreNotEmpty` fails a number range that accepts nothing, such as `CLI.number({ min: 10, max: 1 })`. A spec without a `parse` passes both.
+- New exported types: `StandardSchemaV1`, and `StandardResult` for what a schema's `validate` returns. `OptionArgs` and `ActionInit` take a type argument for what a value is, which defaults to `string`. A helper that takes `CLI.OptionArgs<unknown>` accepts the options of any action.
+
+## Changed
+
+- A command line now reports every problem together, one `Error:` line each, followed by the help once. That covers a missing or extra positional argument, a missing required option, an unmet `dependsOn`, a broken `exclusiveOn`, and a value its `parse` rejects. 6.0 printed only the first problem. The errors still go to stderr with exit code 1, and a command line with one problem prints what it did in 6.0. A token the parser can't read, such as an unknown option, is still reported alone, because the parser can't tell what the tokens after it mean.
+- Inside `CLI.spec`, the compile error for reading an option by a wrong name now starts with "No overload matches this call", followed by the same message as before. Code that compiled in 6.0 still compiles.
+- An object you build yourself as a `CLI.OptionArgs`, such as a test double, no longer compiles. Its `get` and `all` have to accept a type argument, as in `get<Read>(name: string): Read | undefined`. To test a command without a double, call `CLI.run(spec, { argv, setExitCode: false })`.
+
+## Performance
+
+These are medians over 500 runs on an Apple M3 Pro with Node 26.3.0. The CLI has no `parse` in its spec and imports the published `dist/index.js` without bundling it.
+
+|                                                       | 6.0.0   | 6.1.0   |
+| ----------------------------------------------------- | ------- | ------- |
+| Importing the library                                 | 0.96 ms | 1.05 ms |
+| Reading the first command line and running its action | 0.41 ms | 0.43 ms |
+
+The published bundle grew from 33.5 kB to 39.2 kB. Type-checking a spec of 800 commands takes 2.6 seconds, against 2.8 seconds in 6.0.
+
+## Documentation and development
+
+- The docs site has two versions. https://clo4.net/cli/v6 describes the latest release. https://clo4.net/cli/next describes the `main` branch, and each of its pages has a banner that links to the released page. Search covers the version you're reading.
+- The docs site has a blog at https://clo4.net/cli/blog, with a post for each release.
+- The Arguments page has a new section, "Parsing values".
+- The performance page measures Node's compile cache. Enabling it from an entry file saved 0.59 ms for a 95 kB bundle and cost 0.16 ms for a 38 kB one.
+- The docs recommend adding `CLI.help`, `CLI.helpCommand` and `CLI.completion` to every CLI, and writing a description as a phrase without a closing period.
+- For maintainers: `pnpm version` releases the docs with the package and names the commit `Release <version>`. The README published to npm links to the docs of its release.
+- For maintainers: Zod, ArkType and Valibot are development dependencies, with tests for parsing, action types, help and completion against each.
+
+**Full changelog:** [v6.0.0...v6.1.0](https://github.com/clo4/cli/compare/v6.0.0...v6.1.0)

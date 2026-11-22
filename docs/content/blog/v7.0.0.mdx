@@ -213,7 +213,7 @@ One of the things I've tried hard to do with this library is to continue using t
 
 However, coupling those same constraints with Fig's different execution environment and focus resulted in a suggestion generator interface that is suboptimal for this library's use-case.
 
-To start with, if you know modern JavaScript, you probably have an idea in your head of what a "generator" is. Fig's generators are specifically *suggestion* generators. Generator are objects that contain declarative definitions that simply don't apply to us:
+To start with, if you know modern JavaScript, you probably have an idea in your head of what a "generator" is. Fig's generators are specifically _suggestion_ generators. Generator are objects that contain declarative definitions that simply don't apply to us:
 
 - Either a script + postprocessor or a custom function with access to raw tokens, a function to run arbitrary commands, and a bag of context
   - In our case, we only want only custom functions, and raw tokens are not powerful enough
@@ -236,7 +236,7 @@ So, new solution: an argument's `generators` is now `suggest`. Instead of the ra
 }
 ```
 
-A suggester that depends on another option reads it with `options.get`, the same way the action does. An argument can have several suggesters, as in `suggest: [targets, recentTargets]`. They run at the same time, and their values are offered in order. The [suggester guide](https://clo4.net/cli/next/suggest-values) shows how to test one without a shell.
+A suggester that depends on another option reads it with `options.get`, the same way the action does. An argument can have several suggesters, as in `suggest: [targets, recentTargets]`. They run at the same time, and their values are offered in order. The [suggester guide](https://clo4.net/cli/docs/guides/suggest-values) shows how to test one without a shell.
 
 ### Completion implemented in terms of primitives
 

@@ -1,0 +1,45 @@
+---
+title: "run()"
+---
+
+```ts
+function run(spec: Spec, options?: RunOptions): Promise<number>;
+```
+
+Parse a command line, run the selected action and resolve to its exit code.
+Set `process.exitCode` unless `options.setExitCode` is `false`. Never call
+`process.exit`.
+
+A command without an action prints help. The last supplied option action
+takes precedence over the command action and bypasses required-input checks.
+Sync and async actions are supported. Returning nothing means code 0.
+Numeric return values are limited to 0–255.
+
+Every `parse` on the command line runs before the action. Parse errors print
+a message and usage to stderr, with code 1. A command line with several
+problems, like a missing option and a value its `parse` rejected, prints a
+message for each. Errors thrown by actions or loaders print their message
+without a stack trace, with code 1.
+
+In a CLI entry file, call without top-level `await`. This lets a bundler keep
+the library in the entry chunk when loaded commands also import it.
+
+## Parameters
+
+### spec
+
+[`Spec`](../interfaces/Spec.mdx)
+
+The root command definition.
+
+### options?
+
+[`RunOptions`](../interfaces/RunOptions.mdx)
+
+Command-line input and process exit-code behavior.
+
+## Returns
+
+`Promise`\<`number`\>
+
+The selected action's exit code, or 1 on a reported error.

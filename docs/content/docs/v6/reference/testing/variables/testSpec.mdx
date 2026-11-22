@@ -1,0 +1,37 @@
+---
+title: "testSpec"
+---
+
+```ts
+const testSpec: (spec: Subcommand, options: TestOptions) => (t?: TestContextLike) => Promise<void> = test;
+```
+
+Alias of [test](../functions/test.mdx).
+
+Return an async function that validates a spec and throws on failure.
+
+Call the returned function from a test and await or return its promise.
+It loads every command, including commands behind `loadSpec`, and checks
+names, argument order, defaults, option relationships and references.
+Persistent subcommands are also checked where descendants inherit them.
+Paths entering multiple inherited subcommands in succession are not checked.
+
+## Parameters
+
+### spec
+
+[`Subcommand`](../../cli/interfaces/Subcommand.mdx)
+
+The root command to validate. Import it without running the CLI.
+
+### options?
+
+[`TestOptions`](../interfaces/TestOptions.mdx) = `{}`
+
+Validation relaxations and step naming.
+
+## Returns
+
+A function that runs the checks, optionally in named test-runner steps.
+
+(`t?`: [`TestContextLike`](../interfaces/TestContextLike.mdx)) => `Promise`\<`void`\>

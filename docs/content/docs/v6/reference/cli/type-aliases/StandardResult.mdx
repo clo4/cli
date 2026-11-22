@@ -1,0 +1,22 @@
+---
+title: "StandardResult<Output>"
+---
+
+```ts
+type StandardResult<Output> =
+  | {
+      issues?: undefined;
+      value: Output;
+    }
+  | {
+      issues: readonly object[];
+    };
+```
+
+What a Standard Schema's `validate` gives: the value, or what's wrong with the input.
+
+## Type Parameters
+
+### Output
+
+`Output`

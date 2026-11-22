@@ -1,0 +1,239 @@
+---
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { githubUrl, href, version } from "@/lib/shared";
+
+interface Props {
+  current?: "home" | "docs" | "blog" | "changelog";
+}
+
+const { current } = Astro.props;
+const links = [
+  { key: "nav.docs", path: "docs", current: current === "docs" },
+  { key: "nav.blog", path: "blog", current: current === "blog" },
+] as const;
+---
+
+<header class="header">
+  <a class="wordmark" href={href()}><span>@clo4/</span>cli</a>
+  <nav aria-label={t("nav.label")}>
+    {
+      links.map((link) => (
+        <a href={href(link.path)} aria-current={link.current ? "page" : undefined}>
+          <T k={link.key} />
+        </a>
+      ))
+    }
+  </nav>
+  <div class="end">
+    <a
+      class="version"
+      href={href("changelog")}
+      aria-label={t("nav.version", { version })}
+      aria-current={current === "changelog" ? "page" : undefined}>v{version}</a
+    >
+    <a class="icon-button github" href={githubUrl} aria-label={t("nav.github")}><Icon name="github" size={18} /></a>
+    {
+      current === "docs" && (
+        <button class="icon-button search" aria-label={t("search.open")} data-open-search>
+          <Icon name="search" size={18} />
+        </button>
+      )
+    }
+    <button
+      class="icon-button"
+      data-theme-button
+      aria-label={t("theme.label", { theme: t("theme.system") })}
+      data-system={t("theme.label", { theme: t("theme.system") })}
+      data-light={t("theme.label", { theme: t("theme.light") })}
+      data-dark={t("theme.label", { theme: t("theme.dark") })}
+    >
+      <Icon name="system" size={18} class="system" />
+      <Icon name="light" size={18} class="light" />
+      <Icon name="dark" size={18} class="dark" />
+    </button>
+    <button class="icon-button menu" popovertarget="menu" aria-label={t("nav.menu")}>
+      <Icon name="menu" size={18} class="open" />
+      <Icon name="close" size={18} class="close" />
+    </button>
+  </div>
+</header>
+
+<div id="menu" class="sheet" popover>
+  <details class:list={["site", { docs: current === "docs" }]} open={current !== "docs"}>
+    <summary><Icon name="menu" /><T k="nav.menu" /></summary>
+    <nav aria-label={t("nav.label")}>
+      {
+        links.map((link) => (
+          <a href={href(link.path)} aria-current={link.current ? "page" : undefined}>
+            <T k={link.key} />
+          </a>
+        ))
+      }
+      <a href={href("changelog")} aria-current={current === "changelog" ? "page" : undefined}><T k="nav.changelog" /></a>
+      <a href={githubUrl}><T k="nav.github" /></a>
+    </nav>
+  </details>
+  <slot />
+</div>
+
+<script>
+  const order = ["system", "light", "dark"] as const;
+  type Theme = (typeof order)[number];
+  const root = document.documentElement;
+  const button = document.querySelector<HTMLButtonElement>("[data-theme-button]")!;
+
+  const current = () => (root.dataset.theme as Theme | undefined) ?? "system";
+  const show = (theme: Theme) => button.setAttribute("aria-label", button.dataset[theme]!);
+
+  show(current());
+  button.addEventListener("click", () => {
+    const theme = order[(order.indexOf(current()) + 1) % order.length];
+    if (theme === "system") {delete root.dataset.theme;}
+    else {root.dataset.theme = theme;}
+    try {
+      if (theme === "system") {localStorage.removeItem("theme");}
+      else {localStorage.setItem("theme", theme);}
+    } catch {}
+    show(theme);
+  });
+</script>
+
+<style>
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: var(--header);
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 0 20px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .wordmark {
+    font: 500 15px var(--mono);
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    & span {
+      color: var(--faint);
+    }
+  }
+  nav {
+    display: flex;
+    gap: 4px;
+    & a {
+      padding: 6px 10px;
+      border-radius: var(--radius-inner);
+      font-size: 14.5px;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color var(--ease);
+      &:hover,
+      &[aria-current] {
+        color: var(--fg);
+      }
+    }
+  }
+  .end {
+    margin-inline-start: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .version {
+    padding: 6px 8px;
+    border-radius: var(--radius-inner);
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    text-decoration: none;
+    &:hover,
+    &[aria-current] {
+      color: var(--fg);
+    }
+  }
+  [data-theme-button] :global(.icon),
+  .menu :global(.close),
+  .header:has(~ .sheet:popover-open) .menu :global(.open) {
+    display: none;
+  }
+  :global(:root:not([data-theme])) [data-theme-button] :global(.system),
+  :global(:root[data-theme="light"]) [data-theme-button] :global(.light),
+  :global(:root[data-theme="dark"]) [data-theme-button] :global(.dark),
+  .header:has(~ .sheet:popover-open) .menu :global(.close) {
+    display: block;
+  }
+  .menu,
+  .search {
+    display: none;
+  }
+  @media (width < 860px) {
+    .header {
+      padding: 0 12px 0 16px;
+    }
+    .header > nav,
+    .version,
+    .github {
+      display: none;
+    }
+    .menu,
+    .search {
+      display: inline-grid;
+    }
+  }
+
+  .sheet {
+    inset: var(--header) 0 0;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 8px 16px 32px;
+    border: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg);
+    color: var(--fg);
+    &:popover-open {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+  }
+  .site {
+    border-bottom: 1px solid var(--line);
+    & summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 10px;
+      list-style: none;
+      cursor: pointer;
+      font: 13px var(--mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      &::-webkit-details-marker {
+        display: none;
+      }
+    }
+    &:not(.docs) summary {
+      display: none;
+    }
+    & nav {
+      display: grid;
+      gap: 0;
+    }
+    & a {
+      padding: 12px 10px;
+      border-radius: 0;
+      font-size: 16px;
+    }
+    & a + a {
+      border-top: 1px solid var(--line);
+    }
+  }
+</style>

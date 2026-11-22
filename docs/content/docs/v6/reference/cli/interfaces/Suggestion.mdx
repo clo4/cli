@@ -1,0 +1,29 @@
+---
+title: "Suggestion"
+---
+
+A single completion suggestion.
+
+This is a deliberately small subset of the Fig `Suggestion` shape — just the
+fields the completion engine uses. Presentational fields (icon, priority,
+displayName, insertValue, type) are intentionally omitted.
+
+## Properties
+
+### description?
+
+```ts
+description?: string;
+```
+
+Additional information shown next to the suggestion.
+
+---
+
+### name
+
+```ts
+name: SingleOrArray<string>;
+```
+
+Value(s) inserted when the suggestion is accepted.

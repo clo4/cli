@@ -1,0 +1,24 @@
+---
+title: "6.1.1"
+date: 2026-11-16T10:03:16Z
+---
+
+When a `parse` rejects a value, the error now suggests the closest value the schema accepts:
+
+```console
+$ serve public --mode relese
+Error: Invalid value "relese" for --mode: expected debug | release
+
+    Did you mean 'release'?
+```
+
+`CLI.choice` gets the suggestion, and so do Zod and ArkType enums. A Valibot picklist doesn't, because Valibot schemas don't list their values in a form the library can read.
+
+## `CLI.completion`
+
+`CLI.completion` now checks its `shell` argument with `CLI.choice`, which changes what your users see:
+
+- An unknown shell prints `Invalid value "zhs" for <shell>: expected bash | zsh | fish | powershell | nushell` in place of `Unsupported shell 'zhs'`. The `Did you mean 'zsh'?` line follows it, as it did in 6.1.0.
+- Help for `completion` describes the argument as `Shell to print the script for (bash | zsh | fish | powershell | nushell)` in place of `One of: bash, zsh, fish, powershell, nushell`.
+
+**Full changelog:** [v6.1.0...v6.1.1](https://github.com/clo4/cli/compare/v6.1.0...v6.1.1)

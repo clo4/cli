@@ -1,16 +1,5 @@
-// Make the working docs the released docs of the current major, and save the
-// API model they're released with. Run it when tagging a release:
-//
-//   pnpm --filter docs release
-//
-// The working docs are in content/docs/next and describe the main branch. A
-// released version is in content/docs/v<major>, and its reference renders
-// from api-models/v<major>.json, so both stay as they were at the release
-// until this runs again.
-import { execFile } from "node:child_process";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 process.chdir(fileURLToPath(new URL("..", import.meta.url)));
 const { version } = JSON.parse(await readFile("../package.json", "utf8"));
@@ -20,30 +9,65 @@ if (!/^\d+$/.test(major)) {
 }
 const released = `content/docs/v${major}`;
 
-// Replace the released pages with the working ones. The reference is
-// generated, so it isn't copied.
+await rm(released, { recursive: true, force: true });
 await mkdir(released, { recursive: true });
-for (const entry of await readdir(released)) {
-  if (entry !== "reference") {
-    await rm(`${released}/${entry}`, { recursive: true });
-  }
-}
-for (const entry of await readdir("content/docs/next")) {
-  if (entry !== "reference") {
-    await cp(`content/docs/next/${entry}`, `${released}/${entry}`, { recursive: true });
-  }
-}
+await cp("content/docs/next", released, { recursive: true });
 
-// The released version has its own name in the version menu.
 const meta = JSON.parse(await readFile(`${released}/meta.json`, "utf8"));
 meta.title = `v${major}`;
 meta.description = `Version ${major}`;
 await writeFile(`${released}/meta.json`, `${JSON.stringify(meta, null, 2)}\n`);
 
-// The site's root goes to the newest released version.
-await writeFile("_redirects", `/cli /cli/v${major} 301\n/cli/ /cli/v${major} 301\n`);
+const majors = (await readdir("content/docs"))
+  .filter((dir) => /^v\d+$/.test(dir))
+  .map((dir) => Number(dir.slice(1)))
+  .sort((a, b) => b - a);
+// Pages of next that moved into groups in 7.0. Links to the old paths are out
+// there, such as in the v7 blog post.
+const moved = {
+  actions: "concepts/actions",
+  arguments: "concepts/arguments",
+  "choosing-a-cli-library": "introduction/choosing-a-cli-library",
+  compatibility: "reference/compatibility",
+  "completion-generators": "guides/suggest-values",
+  "help-and-completion": "concepts/help-and-completion",
+  "install-completion": "guides/install-completion",
+  "loading-commands": "guides/loading-commands",
+  options: "concepts/options",
+  "organizing-commands": "guides/organizing-commands",
+  "parser-settings": "concepts/parser-settings",
+  parsers: "concepts/parsers",
+  "parsing-behavior": "reference/parsing-behavior",
+  performance: "introduction/performance",
+  subcommands: "concepts/subcommands",
+  "suggest-values": "guides/suggest-values",
+  testing: "guides/testing",
+  "testing-commands": "guides/testing-commands",
+  "wrapping-commands": "guides/wrapping-commands",
+};
+const redirects = [];
+for (const [from, to] of Object.entries(moved)) {
+  redirects.push(
+    `/cli/next/${from} /cli/docs/next/${to} 301`,
+    `/cli/docs/next/${from} /cli/docs/next/${to} 301`,
+  );
+}
+redirects.push("/cli/next /cli/docs/next 301", "/cli/next/* /cli/docs/next/:splat 301");
+for (const n of majors) {
+  const to = n === majors[0] ? "/cli/docs" : `/cli/docs/v${n}`;
+  redirects.push(`/cli/v${n} ${to} 301`, `/cli/v${n}/* ${to}/:splat 301`);
+  if (n === majors[0]) {
+    redirects.push(`/cli/docs/v${n} /cli/docs 302`, `/cli/docs/v${n}/* /cli/docs/:splat 302`);
+  }
+}
+await writeFile("_redirects", `${redirects.join("\n")}\n`);
 
-const script = fileURLToPath(new URL("generate-reference.mjs", import.meta.url));
-const { stdout } = await promisify(execFile)(process.execPath, [script, "--freeze"]);
-process.stdout.write(stdout);
-console.log(`Released the docs for ${version} as v${major}`);
+const unreleased = await readFile("content/changelog/unreleased.mdx", "utf8");
+const notes = unreleased.replace(/^---\n[\s\S]*?\n---\n/, "");
+await writeFile(
+  `content/changelog/${version}.mdx`,
+  `---\ntitle: "${version}"\ndate: ${new Date().toISOString()}\n---\n${notes}`,
+);
+await writeFile("content/changelog/unreleased.mdx", '---\ntitle: "Unreleased"\n---\n');
+
+console.log(`Released the docs and changelog for ${version}, as v${major}`);

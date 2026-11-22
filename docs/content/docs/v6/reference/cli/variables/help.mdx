@@ -1,0 +1,24 @@
+---
+title: "help"
+---
+
+```ts
+const help: Option & object;
+```
+
+A persistent help option that prints help for the selected command. Its
+type says what its names are, so `spec` knows them in every command.
+
+## Type Declaration
+
+### isPersistent
+
+```ts
+readonly isPersistent: true;
+```
+
+### name
+
+```ts
+readonly name: readonly ["-h", "--help"];
+```

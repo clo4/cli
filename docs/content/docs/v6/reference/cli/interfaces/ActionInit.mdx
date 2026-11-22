@@ -1,0 +1,118 @@
+---
+title: "ActionInit<Value = `string`>"
+---
+
+Input for an action.
+
+`spec` and `command` infer more specific argument and option types for
+command actions. Option actions use broader types because they can run
+without satisfying required inputs.
+
+`Value` is what a value is. It's a string, unless the action is in a `spec`
+or `command` whose `parse` gives something else. An action written as
+`(init: ActionInit<unknown>) => ...` fits any command.
+
+## Type Parameters
+
+### Value
+
+`Value` = `string`
+
+## Properties
+
+### args
+
+```ts
+args: Value[];
+```
+
+Positional arguments found for the selected command.
+
+---
+
+### argSeparatorIndex
+
+```ts
+argSeparatorIndex: number;
+```
+
+Index of the `--` argument separator, or -1 if it was not supplied.
+
+---
+
+### options
+
+```ts
+options: OptionArgs<Value>;
+```
+
+Options found for this invocation.
+
+---
+
+### path
+
+```ts
+path: CommandPath;
+```
+
+Commands from the root to the selected command. A loaded command can be
+a copy of its definition. Do not rely on object identity.
+
+## Methods
+
+### help()
+
+```ts
+help(config?: object): string;
+```
+
+Return help text for the selected command, or for `config.path`.
+
+This method is synchronous. An alternative path with an unloaded async
+`loadSpec` throws an error. The action's own path is already loaded.
+
+#### Parameters
+
+##### config?
+
+###### description?
+
+`boolean`
+
+Include the command description? Default: true.
+
+###### didYouMean?
+
+\{
+`choices`: readonly (`string` \| readonly `string`[])[];
+`input`: `string`;
+\}
+
+Suggest the closest choice for an incorrect input.
+
+###### didYouMean.choices
+
+readonly (`string` \| readonly `string`[])[]
+
+Names to suggest. The names in one array are one command or option.
+
+###### didYouMean.input
+
+`string`
+
+###### path?
+
+[`NonEmptyArray`](../type-aliases/NonEmptyArray.mdx)\<[`Subcommand`](./Subcommand.mdx)\>
+
+Alternative command path to render help for.
+
+###### usage?
+
+`boolean`
+
+Include the usage summary? Default: true.
+
+#### Returns
+
+`string`

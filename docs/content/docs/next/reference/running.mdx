@@ -1,0 +1,112 @@
+---
+title: Running
+description: Parse a command line, run its action, and print.
+---
+
+[`run`](#run) is the whole runtime of a CLI: it reads the command line against the spec, runs the selected action with what it read, and resolves to the exit code. [Actions](../concepts/actions.mdx) covers errors and exit codes with examples.
+
+## `run(spec, options?)` [#run]
+
+```ts
+function run(spec: Spec, options?: RunOptions): Promise<number>;
+```
+
+Parse the command line, run the selected [action](#action), and resolve to its exit code. It sets `process.exitCode` to the same number, and never calls `process.exit`.
+
+- A command without an action prints its help.
+- The last option with an action, like `--help`, runs in place of the command's action, and skips argument counts, required options and option rules.
+- Every argument's parser runs before the action. A command line that's wrong prints every problem, then the command's usage, to stderr, with code 1.
+- An error thrown by an action or a `loadSpec` prints its message without a stack trace, with code 1.
+- Returning nothing means code 0. A number is limited to 0–255.
+
+In a CLI's entry file, call it without top-level `await`. That lets a bundler keep the library in the entry chunk when loaded commands import it too.
+
+### `RunOptions` [#runoptions]
+
+| Field         | Type                | Default                 | Meaning                                                                        |
+| ------------- | ------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `argv`        | `readonly string[]` | `process.argv.slice(2)` | The command line, without the program's name.                                  |
+| `setExitCode` | `boolean`           | `true`                  | Set `process.exitCode`. With `false`, the code is only what `run` resolves to. |
+
+## `Action` [#action]
+
+```ts
+type Action = (init: ActionInit) => Promise<number | void> | number | void;
+```
+
+What a command or an option runs. It can be async. Returning nothing means exit code 0.
+
+## `ActionInit` [#actioninit]
+
+What an action receives. In a [`spec`](./specs-and-commands.mdx#spec-function) or [`command`](./specs-and-commands.mdx#command-function), `args` and `options` are typed from the command. Anywhere else, a value is a string unless the reader says otherwise.
+
+### `args` [#actioninit-args]
+
+The positional arguments of the selected command, with defaults filled in. A value is the string that was typed, or what its argument's parser gave.
+
+### `options` [#actioninit-options]
+
+An [`OptionArgs`](#optionargs) for the options used, and the defaults of those that weren't.
+
+### `path` [#actioninit-path]
+
+`readonly [Spec, ...Subcommand[]]`
+
+The commands from the root to the selected one. A loaded command can be a copy of its definition, so don't rely on identity.
+
+### `argSeparatorIndex` [#actioninit-argseparatorindex]
+
+`number`
+
+Where `--` was among `args`, or -1 if it wasn't used.
+
+### `help(config?)` [#actioninit-help]
+
+Returns the help of the selected command, or of `config.path`, as a string.
+
+| Field         | Type                            | Default           | Meaning                                                                                     |
+| ------------- | ------------------------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| `description` | `boolean`                       | `true`            | Include the command's description.                                                          |
+| `usage`       | `boolean`                       | `true`            | Include the usage line.                                                                     |
+| `path`        | `[Subcommand, ...Subcommand[]]` | the action's path | Another command to show help for. A command on it with an unloaded async `loadSpec` throws. |
+| `didYouMean`  | `{ input, choices }`            | none              | Suggest the closest of `choices` for `input`.                                               |
+
+## `OptionArgs` [#optionargs]
+
+How an action reads options, by any of their names or by their [`ref`](./specs-and-commands.mdx#option-ref).
+
+### `has(name)` [#optionargs-has]
+
+Whether the option was used. Defaults don't count.
+
+### `get(name)` [#optionargs-get]
+
+The option's first value. For an option that wasn't used, its first argument's default if that argument is required, and otherwise `undefined`.
+
+### `all(name)` [#optionargs-all]
+
+Every value of the option, in order, including every use of a repeatable option. For an option that wasn't used, the defaults of its arguments from the first one on, or an empty array.
+
+### `count(name)` [#optionargs-count]
+
+How many values were given, or for a repeatable flag, how many times it was used. An option that wasn't used counts 0, whatever its defaults.
+
+### `options` [#optionargs-options]
+
+`Map<string, unknown[]>`
+
+The map underneath, from each name used to its values.
+
+Outside a spec, say what a value is when reading it: `options.get<number>("--port")`. A function that takes `OptionArgs<unknown>` accepts the options of any action.
+
+## `print(...values)` [#print]
+
+Print the values to stdout, separated by spaces, then a line break. It writes to the file descriptor directly, without the stream that the first `console.log` of a process builds, which takes 1–3 ms.
+
+## `printError(...values)` [#printerror]
+
+Print `Error:` and the values to stderr, separated by spaces, the way `run` prints problems.
+
+## `CommandPath` [#commandpath]
+
+`readonly [Spec, ...Subcommand[]]`: the commands from the root to one below it.

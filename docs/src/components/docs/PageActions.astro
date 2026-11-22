@@ -1,0 +1,62 @@
+---
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+
+interface Props {
+  markdownUrl: string;
+  editUrl: string;
+}
+
+const { markdownUrl, editUrl } = Astro.props;
+---
+
+<div class="actions">
+  <button data-copy-markdown={markdownUrl} data-copied={t("docs.copied")}>
+    <Icon name="copy" />
+    <span><T k="docs.copyMarkdown" /></span>
+  </button>
+  <a href={editUrl}><Icon name="pen" /><T k="docs.edit" /></a>
+</div>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-markdown]")) {
+    button.addEventListener("click", async () => {
+      const label = button.querySelector("span")!;
+      const was = label.innerHTML;
+      const markdown = await (await fetch(button.dataset.copyMarkdown!)).text();
+      await navigator.clipboard.writeText(markdown);
+      label.textContent = button.dataset.copied!;
+      setTimeout(() => (label.innerHTML = was), 1200);
+    });
+  }
+</script>
+
+<style>
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 24px 0 32px;
+    & :is(a, button) {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      font-size: 13.5px;
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
+      background: none;
+      cursor: pointer;
+      transition:
+        color var(--ease),
+        background-color var(--ease);
+      &:hover {
+        color: var(--fg);
+        background: var(--hl);
+      }
+    }
+  }
+</style>

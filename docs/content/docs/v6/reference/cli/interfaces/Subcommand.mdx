@@ -1,0 +1,180 @@
+---
+title: "Subcommand"
+---
+
+A command definition. Commands can nest through `subcommands`.
+
+Use `command` for a separately defined command with inferred action types.
+A parent action does not run when a child command is selected.
+
+## Properties
+
+### action?
+
+```ts
+action?: Action;
+```
+
+Action to run when this command is selected. A command without an action
+prints its help.
+
+---
+
+### args?
+
+```ts
+args?: SingleOrArray<Arg>;
+```
+
+Positional arguments, in order. Use an object for one or an array for two or more.
+
+---
+
+### description?
+
+```ts
+description?: string;
+```
+
+Description shown in help.
+
+---
+
+### hidden?
+
+```ts
+hidden?: true;
+```
+
+Omit this command from help and completion. Its exact names still work.
+
+---
+
+### isPersistent?
+
+```ts
+isPersistent?: true;
+```
+
+Allow descendant commands to use this command as a subcommand too, like
+`{ ...helpCommand, isPersistent: true }`. There it only matches its exact
+name, a descendant's own subcommand with the same name wins, and help
+doesn't list it. Where a descendant takes positional arguments, its first
+argument can't be this command's name without `--` before it.
+
+---
+
+### loadSpec?
+
+```ts
+loadSpec?: () => Subcommand | Promise<Subcommand>;
+```
+
+Give this command in full when a command line enters it, so a large CLI
+only builds the commands it uses. The parser, help and completion carry
+on with the loaded command in place of this one. Neither object is
+changed, and `loadSpec` is called once for each command line that enters
+the command.
+
+Return the command itself to stay synchronous, or a promise of it to
+load it from another file with `import()`. Parsing only waits when a
+command on the command line returns a promise.
+
+A command with a `loadSpec` sets only what its parent reads before then:
+its `name`, `description`, `hidden` and `isPersistent`. Those are used
+as they are here. The loaded command has the same name, and the spec
+checks report one that sets any of the others differently.
+
+#### Returns
+
+`Subcommand` \| `Promise`\<`Subcommand`\>
+
+---
+
+### name
+
+```ts
+name: SingleOrArray<string>;
+```
+
+A case-sensitive name or list of aliases. Use a string for one name and
+an array for two or more.
+
+---
+
+### options?
+
+```ts
+options?: NonEmptyArray<Option>;
+```
+
+Options accepted by this command.
+
+---
+
+### parserDirectives?
+
+```ts
+parserDirectives?: object;
+```
+
+Parsing rules for this command. Each field is inherited independently.
+A descendant can override a boolean with `false` or replace the separator list.
+
+#### flagsArePosixNoncompliant?
+
+```ts
+flagsArePosixNoncompliant?: boolean;
+```
+
+Read option names literally instead of chaining short names. Unknown
+option-like tokens become positional arguments. Default: `false`.
+
+#### optionArgSeparators?
+
+```ts
+optionArgSeparators?: SingleOrArrayOrEmpty<string>;
+```
+
+Separators for attached option values. Default: `"="`. A child
+replaces the inherited list. An empty array disables separators,
+but short attached forms such as `-p3000` still work.
+
+#### optionsMustPrecedeArguments?
+
+```ts
+optionsMustPrecedeArguments?: boolean;
+```
+
+Stop option parsing after the first positional argument. Later tokens,
+including `--`, are positional values. Default: `false`.
+
+#### subcommandsMatchUniquePrefix?
+
+```ts
+subcommandsMatchUniquePrefix?: boolean;
+```
+
+Accept an unambiguous prefix of a visible local subcommand name.
+Hidden and inherited subcommands require exact names. Default: `false`.
+
+---
+
+### requiresSubcommand?
+
+```ts
+requiresSubcommand?: true;
+```
+
+Disallow positional arguments on this command. Omitting a subcommand
+still runs this command's action, or prints help when it has no action.
+
+---
+
+### subcommands?
+
+```ts
+subcommands?: NonEmptyArray<Subcommand>;
+```
+
+Subcommands of this command.

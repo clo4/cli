@@ -1,39 +1,118 @@
 ---
-import Layout from "@/layouts/Layout.astro";
-import { Blog } from "@/components/blog";
+import Base from "@/layouts/Base.astro";
+import Icon from "@/components/Icon.astro";
 import InlineCode from "@/components/InlineCode.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
 import { formatDate, getPosts } from "@/lib/blog";
-import { appName } from "@/lib/shared";
+import { href } from "@/lib/shared";
 
 export const prerender = true;
 
 const posts = getPosts();
 ---
 
-<Layout title={`Blog · ${appName}`} description={`Release announcements and articles about ${appName}`}>
-  <Blog client:load transition:persist="blog" pathname={Astro.url.pathname} params={Astro.params}>
-    <h1 class="text-3xl font-semibold mb-2">Blog</h1>
-    <p class="text-fd-muted-foreground mb-10">Updates and articles about the library.</p>
-    <ul class="flex flex-col gap-8">
+<Base title={t("blog.title")} description={t("blog.description")} image={href("og/blog.png")} current="blog">
+  <main class="page">
+    <div class="head">
+      <h1><T k="blog.title" /></h1>
+      <a href={href("blog/rss.xml")}><Icon name="rss" /><T k="blog.rss" /></a>
+    </div>
+    <ul>
       {
         posts.map((post) => (
           <li>
-            <a href={post.url} class="group block">
-              <time class="text-sm text-fd-muted-foreground" datetime={post.data.date.toISOString()}>
-                {formatDate(post.data.date)}
-              </time>
-              <h2 class="text-xl font-medium group-hover:underline">{post.data.title}</h2>
-              {
-                post.data.description && (
-                  <p class="text-fd-muted-foreground">
-                    <InlineCode text={post.data.description} />
-                  </p>
-                )
-              }
+            <a href={post.url}>
+              <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date, "short")}</time>
+              <h2>{post.data.title}</h2>
+              {post.data.description && (
+                <p>
+                  <InlineCode text={post.data.description} />
+                </p>
+              )}
             </a>
           </li>
         ))
       }
     </ul>
-  </Blog>
-</Layout>
+  </main>
+</Base>
+
+<style>
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+  .head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    & h1 {
+      margin: 0;
+      font: 400 44px/1.1 var(--display);
+      letter-spacing: -0.015em;
+    }
+    & a {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13.5px;
+      color: var(--muted);
+      text-decoration: none;
+      &:hover {
+        color: var(--fg);
+      }
+    }
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    border-bottom: 1px solid var(--line);
+  }
+  li a {
+    display: grid;
+    grid-template-columns: 7.5rem 1fr;
+    gap: 4px 24px;
+    padding: 22px 0;
+    text-decoration: none;
+    &:hover h2 {
+      color: var(--muted);
+    }
+  }
+  time {
+    padding-top: 4px;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  h2 {
+    margin: 0;
+    font: 400 24px/1.25 var(--display);
+    transition: color var(--ease);
+  }
+  p {
+    grid-column: 2;
+    margin: 0;
+    font-size: 15px;
+    color: var(--muted);
+    & :global(code) {
+      font-size: 0.88em;
+    }
+  }
+  @media (width < 640px) {
+    li a {
+      grid-template-columns: 1fr;
+    }
+    p {
+      grid-column: 1;
+    }
+  }
+</style>

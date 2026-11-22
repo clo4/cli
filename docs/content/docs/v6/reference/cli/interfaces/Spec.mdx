@@ -1,0 +1,192 @@
+---
+title: "Spec"
+---
+
+The root command of a CLI. Its name is a single string.
+
+It accepts the fields of a subcommand except `loadSpec`. Use `spec` to
+infer action types from a root definition.
+
+## Extends
+
+- `Omit`\<[`Subcommand`](./Subcommand.mdx), `"name"` \| `"loadSpec"`\>
+
+## Properties
+
+### action?
+
+```ts
+action?: Action;
+```
+
+Action to run when this command is selected. A command without an action
+prints its help.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`action`](./Subcommand.mdx#action)
+
+---
+
+### args?
+
+```ts
+args?: SingleOrArray<Arg>;
+```
+
+Positional arguments, in order. Use an object for one or an array for two or more.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`args`](./Subcommand.mdx#args)
+
+---
+
+### description?
+
+```ts
+description?: string;
+```
+
+Description shown in help.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`description`](./Subcommand.mdx#description)
+
+---
+
+### hidden?
+
+```ts
+hidden?: true;
+```
+
+Omit this command from help and completion. Its exact names still work.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`hidden`](./Subcommand.mdx#hidden)
+
+---
+
+### isPersistent?
+
+```ts
+isPersistent?: true;
+```
+
+Allow descendant commands to use this command as a subcommand too, like
+`{ ...helpCommand, isPersistent: true }`. There it only matches its exact
+name, a descendant's own subcommand with the same name wins, and help
+doesn't list it. Where a descendant takes positional arguments, its first
+argument can't be this command's name without `--` before it.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`isPersistent`](./Subcommand.mdx#ispersistent)
+
+---
+
+### name
+
+```ts
+name: string;
+```
+
+Name of the CLI.
+
+---
+
+### options?
+
+```ts
+options?: NonEmptyArray<Option>;
+```
+
+Options accepted by this command.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`options`](./Subcommand.mdx#options)
+
+---
+
+### parserDirectives?
+
+```ts
+parserDirectives?: object;
+```
+
+Parsing rules for this command. Each field is inherited independently.
+A descendant can override a boolean with `false` or replace the separator list.
+
+#### flagsArePosixNoncompliant?
+
+```ts
+flagsArePosixNoncompliant?: boolean;
+```
+
+Read option names literally instead of chaining short names. Unknown
+option-like tokens become positional arguments. Default: `false`.
+
+#### optionArgSeparators?
+
+```ts
+optionArgSeparators?: SingleOrArrayOrEmpty<string>;
+```
+
+Separators for attached option values. Default: `"="`. A child
+replaces the inherited list. An empty array disables separators,
+but short attached forms such as `-p3000` still work.
+
+#### optionsMustPrecedeArguments?
+
+```ts
+optionsMustPrecedeArguments?: boolean;
+```
+
+Stop option parsing after the first positional argument. Later tokens,
+including `--`, are positional values. Default: `false`.
+
+#### subcommandsMatchUniquePrefix?
+
+```ts
+subcommandsMatchUniquePrefix?: boolean;
+```
+
+Accept an unambiguous prefix of a visible local subcommand name.
+Hidden and inherited subcommands require exact names. Default: `false`.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`parserDirectives`](./Subcommand.mdx#parserdirectives)
+
+---
+
+### requiresSubcommand?
+
+```ts
+requiresSubcommand?: true;
+```
+
+Disallow positional arguments on this command. Omitting a subcommand
+still runs this command's action, or prints help when it has no action.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`requiresSubcommand`](./Subcommand.mdx#requiressubcommand)
+
+---
+
+### subcommands?
+
+```ts
+subcommands?: NonEmptyArray<Subcommand>;
+```
+
+Subcommands of this command.
+
+#### Inherited from
+
+[`Subcommand`](./Subcommand.mdx).[`subcommands`](./Subcommand.mdx#subcommands)

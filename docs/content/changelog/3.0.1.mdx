@@ -1,0 +1,37 @@
+---
+title: "3.0.1"
+date: 2026-11-08T13:41:42Z
+---
+
+This release fixes cases where help and completion disagreed with the parser, and makes one spec-check error clearer. The public API is unchanged.
+
+## Changed
+
+- `assertNamesReadBack` now explains when an option requires a separator that `parserDirectives.optionArgSeparators` doesn't enable, and lists the enabled ones. It used to report that the parser read the option, written with that separator, as an unknown option.
+
+## Completion improvements
+
+- With `--gate-options`, a dashed word that the parser reads as a value or an argument now completes values as well as options. For example, an argument whose suggestions include `-` now has `-` offered, and after a variadic option's first value, typing `-` offers that option's suggestions.
+- With `--gate-options`, a subcommand whose name starts with a dash, such as `--version`, is now offered when you type the start of its name, such as `--v`. It used to be left out.
+
+## Fixed
+
+- Help no longer lists an option name under Flags when the parser would read that name as a subcommand, which can happen with `flagsArePosixNoncompliant` or unique-prefix matching. Completion already left these names out.
+
+## Performance
+
+- Completion reads the command line once instead of twice, so its parser query takes 23–40% less time. A whole completion run takes the same time, since Node startup and loading the bundle dominate it.
+- Spec validation reads each written option form in a single pass and walks the spec with one walker, making `test(spec)` about 5% faster on a spec with 259 commands.
+
+## Architecture
+
+- The internal `OptionScope` is now `CommandScope`. It also matches subcommands, lists the subcommands the next token can match and holds argument limits, so the parser, help and `helpCommand` share one rule for what a name means at a command.
+- Splitting a token into an option name and an attached value moved into the scope, next to the code that writes option forms for help and completion, so both use the same separators.
+- Each token handler in the `Scanner` returns what it read the token as. Parsing and completion share one lenient read, and parsing throws the first problem it finds. An internal `tokenReader` reads a line one token at a time.
+- Spec validation uses one walker for every check.
+
+## Documentation and development
+
+- Added `GLOSSARY.md`, which defines the terms the codebase uses for specs, commands, options and scopes.
+
+**Full changelog:** [v3.0.0...v3.0.1](https://github.com/clo4/cli/compare/v3.0.0...v3.0.1)

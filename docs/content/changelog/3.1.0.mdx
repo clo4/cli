@@ -1,0 +1,50 @@
+---
+title: "3.1.0"
+date: 2026-11-10T23:11:42Z
+---
+
+This release adds shell completion for the names after `help`, and an environment variable set only in a completion context to allow the running program to skip unnecessary work.
+Help and usage errors run 25% faster, completion 21% faster and commands 14–15% faster. The public API is unchanged.
+
+## Added
+
+- Shell completion offers subcommand names after `help`. `demo help remote <Tab>` lists the subcommands of `remote` with their descriptions, and leaves out hidden ones. A persistent help command offers the subcommands of the command it's used in, so `demo remote help <Tab>` lists them too.
+- The completion scripts set `SHELL_COMPLETION_GENERATOR` to the shell's name, such as `bash` or `nushell`, while the CLI answers a completion request. You don't set it yourself. Your CLI's startup code can check it before calling `CLI.run`, and skip work that completion doesn't need, such as loading plugins.
+
+## Fixed
+
+- Completion and typo suggestions offer an inherited persistent subcommand by every alias that the current command's own subcommands don't use. For example, take a command with its own subcommand `x` that inherits a persistent subcommand with the aliases `x` and `y`. Completion used to offer only `x`, although the parser already accepted `y`.
+
+## Performance
+
+These are median times over 200 runs of the 7-command benchmark CLI on an Apple M3 Pro with Node 26.3.0. The CLI imports the published `dist/index.js` without bundling it, and each run is timed from that import to process exit.
+
+| Scenario                 | v3.0.1  | v3.1.0  | Change |
+| ------------------------ | ------- | ------- | ------ |
+| top-level `--help`       | 3.12 ms | 2.35 ms | −25%   |
+| nested help              | 3.24 ms | 2.45 ms | −25%   |
+| unknown option           | 3.43 ms | 2.58 ms | −25%   |
+| completion               | 3.21 ms | 2.54 ms | −21%   |
+| nested dispatch          | 3.80 ms | 3.23 ms | −15%   |
+| build variadic + options | 3.96 ms | 3.41 ms | −14%   |
+
+- The main bundle is minified, which halves it from 61 KB to 31 KB. Node reads and compiles the whole bundle on every run. The package ships source maps, so stack traces from inside the library show the original names when Node runs with `--enable-source-maps`. The `@clo4/cli/testing` bundle isn't minified, so spec-check failures stay readable.
+- The parser looks up each token's meaning once.
+- Help builds its output with plain loops, so V8 compiles fewer functions before printing.
+- A usage error no longer builds a stack trace, because `run` prints only the message. It also no longer compiles the code that runs actions.
+
+### Benchmark system
+
+- Reports group scenarios by the work they do: running a command, printing help, usage errors, and running a command in a large CLI.
+- Added large-CLI scenarios with 100 and 1,000 generated commands. The cost of building a spec grows with the CLI, and the 7-command CLI unintentionally hid this.
+- Every adapter is bundled and minified before timing, as a CLI shipped to users should be.
+- Only the completion scenario's bundle includes completion's code, so completion no longer adds to `@clo4/cli`'s times in the other scenarios.
+- CI queues benchmark runs in order, so a new push no longer cancels a running benchmark. CI records each run as one line of JSON in `history.jsonl`.
+
+## Documentation and development
+
+- The README covers completion after `help` and `SHELL_COMPLETION_GENERATOR`.
+- Fuzzing covers persistent and hidden subcommands.
+- Vitest skips tests under hidden directories, such as `.claude`.
+
+**Full changelog:** [v3.0.1...v3.1.0](https://github.com/clo4/cli/compare/v3.0.1...v3.1.0)

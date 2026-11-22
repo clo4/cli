@@ -1,0 +1,58 @@
+---
+title: "2.0.0"
+date: 2026-11-06T13:30:23Z
+---
+
+This release reworks parsing, completion and output handling to reduce CLI startup overhead, improves typo suggestions, and fixes option and subcommand handling. The major version reflects removed completion modes and a removed testing helper.
+
+## Breaking changes
+
+- Removed `assertRepeatableOptionsHaveNoArguments` from `@clo4/cli/testing`. Repeatable options can now take arguments.
+- Removed the `--shell` and `--runtime` completion flags and the hidden `completion generate-suggestions` command. Completion scripts now always resolve candidates by calling the CLI at runtime.
+
+## Added
+
+- Repeatable options can collect argument values from every occurrence, in order. Numeric repeat limits count occurrences, and each occurrence still requires its own mandatory values.
+- Added `assertOptionsHaveDifferentNamesFromParents` to spec validation, detecting distinct parent and child options with identical names that make the parent's value unreadable. Identical option definitions remain valid.
+
+## Changed
+
+- Repeating a non-repeatable option now uses its last value instead of producing an error, allowing command-line arguments to override values supplied by shell aliases.
+- Replaced `fastest-levenshtein` with an internal similarity implementation. Suggestions prefer a unique prefix, then a unique abbreviation, then a close edit-distance match. Adjacent transpositions count as one edit, leading dashes are ignored for edit distance, and unrelated inputs no longer receive arbitrary suggestions.
+- Option aliases are joined with `/` in dependency and exclusion errors.
+
+## Completion improvements
+
+- Runtime completion reads the shared parser's scan results instead of reconstructing state from a separate token analysis.
+- Variadic options keep using their argument's suggestions beyond the first value while also offering eligible options and respecting the shell's option-gating behavior.
+- Subcommands remain available after non-persistent parent options and after an option's value has been consumed.
+- `--` closes a pending option value and switches completion to positional arguments. A descendant can turn off inherited `optionsMustPrecedeArguments` behavior.
+- Simplified Bash, Zsh and Fish completion to small runtime scripts, removing the separate static script renderers and encoded generator-location callbacks.
+
+## Fixed
+
+- Non-persistent parent options can appear before a subcommand without preventing that subcommand from matching. Their values remain available after entering the child command.
+- Consuming an option's value no longer counts as consuming a positional argument, so subcommands still match afterward and `optionsMustPrecedeArguments` applies at the correct point.
+- A required option value can equal a subcommand's name. An exact subcommand name can end an option with a missing optional value, while an abbreviated name remains an option value until that option is complete.
+- A parent's required non-persistent options are no longer required by its descendants. Required options belonging to the selected command and inherited persistent options remain enforced.
+- Long options split at the first separator in the token, preserving later separators in the value. When separators start at the same position, the longer one wins.
+- Exact subcommand names and aliases take precedence over prefix matches. Empty arguments no longer prefix-match subcommands.
+- Descendants can explicitly disable inherited boolean parser directives, including unique-prefix matching and options-before-arguments behavior.
+- Parent and child options sharing a short alias retain their separate values under distinct long names. Repeat counts continue across identical option names without merging options that have distinct aliases.
+- Unknown options following an option that requires an attached value are reported as unknown options.
+
+## Architecture and performance
+
+- Replaced the separate analysis and parsing stages with a single-pass scanner that reads tokens directly, removing the intermediate token tree and duplicated command-line interpretation.
+- Shared strict parsing and lenient completion scanning, including option values, command paths and active option scopes.
+- Changed library output to write directly to stdout and stderr file descriptors where supported, avoiding Node's initial console stream setup cost. Full non-blocking pipes fall back to queued stream writes, and unsupported environments retain console output.
+- Kept the suggestion implementation small and dependency-free, with edit-distance searches stopping early when a candidate exceeds the allowed distance.
+- Avoided normalizing single argument definitions into arrays when calculating argument limits.
+
+## Documentation and development
+
+- Updated the README to describe runtime-only completion and in-process custom generators.
+- Expanded regression coverage for parser state, option values, subcommand boundaries, inherited directives, completion and typo suggestions.
+- Set the formatter's line width to 110 characters and applied consistent formatting across the codebase.
+
+**Full changelog:** [7be7e35...v2.0.0](https://github.com/clo4/cli/compare/7be7e35301cf00734974ea3ba3465e8d01255293...v2.0.0)

@@ -1,0 +1,147 @@
+---
+title: "Option"
+---
+
+A named input. Without `args`, the option is a flag.
+
+Use `has` to read flags and `get` or `all` to read values. Without
+`isRepeatable`, each use replaces the option's previous values.
+
+## Properties
+
+### action?
+
+```ts
+action?: Action;
+```
+
+Action performed when this option is provided.
+
+The last supplied option with an action replaces the command action.
+It bypasses positional counts, required options and option relationships,
+and no `parse` runs, so it reads every value as the string that was typed.
+Unknown options and malformed option values still fail parsing.
+
+---
+
+### args?
+
+```ts
+args?: SingleOrArray<Arg>;
+```
+
+Arguments this option accepts.
+
+---
+
+### dependsOn?
+
+```ts
+dependsOn?: NonEmptyArray<string>;
+```
+
+Names of options that must also be supplied. Names include prefixes and
+resolve in the scope of this option's use. Defaults do not count.
+Option actions bypass this check.
+
+---
+
+### description?
+
+```ts
+description?: string;
+```
+
+Description shown in help.
+
+---
+
+### exclusiveOn?
+
+```ts
+exclusiveOn?: NonEmptyArray<string>;
+```
+
+Names of options that cannot be supplied with this option, in either
+order. Names include prefixes and resolve in the scope of this option's
+use. Defaults do not count. Option actions bypass this check.
+
+---
+
+### hidden?
+
+```ts
+hidden?: true;
+```
+
+Omit this option from help and completion. Its names still work.
+
+---
+
+### isPersistent?
+
+```ts
+isPersistent?: true;
+```
+
+Allow this option to be used by descendant subcommands.
+
+---
+
+### isRepeatable?
+
+```ts
+isRepeatable?: number | true;
+```
+
+Allow this option to be supplied multiple times. `true` allows any number
+of uses, and a number is the most uses allowed. An option with arguments
+collects the values from every use, in order. Without arguments, each use
+adds an empty string, so `count()` returns the number of uses.
+
+---
+
+### isRequired?
+
+```ts
+isRequired?: true;
+```
+
+Require an explicit use of this option. Defaults do not satisfy it.
+A selected option action bypasses this check.
+
+---
+
+### name
+
+```ts
+name: SingleOrArray<string>;
+```
+
+Name or aliases, including any desired prefix such as `-`, `--`, or `/`.
+
+---
+
+### ref?
+
+```ts
+ref?: string;
+```
+
+A second key to read this option by in an action, for an option that
+shares a name with a different option on a command above or below it.
+Reading by that name gives whichever of the two was used last, and
+reading by the ref always gives this option. The spec checks require a
+ref on both options, and allow one nowhere else.
+
+---
+
+### requiresSeparator?
+
+```ts
+requiresSeparator?: string | true;
+```
+
+Require a value attached with an enabled option argument separator.
+`true` accepts any enabled separator. A string requires that separator.
+The separator must be enabled in `parserDirectives.optionArgSeparators`.

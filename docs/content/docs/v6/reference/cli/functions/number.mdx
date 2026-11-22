@@ -1,0 +1,42 @@
+---
+title: "number()"
+---
+
+```ts
+function number(options?: object): StandardSchemaV1<string, number>;
+```
+
+A schema for an argument's `parse` that turns the value into a number.
+
+The value is written in decimal digits, with an optional minus sign and
+decimal point. It isn't read the way `Number` reads it, so an empty
+string, `0x1F`, `1e3` and a value with a space in it are rejected. So is
+a value with too many digits to be a finite number.
+
+Help shows the type and range after the argument's description, like
+`(integer from 1 to 65535)`.
+
+## Parameters
+
+### options?
+
+`min` and `max` are the least and greatest numbers
+accepted, each included. `int` accepts whole numbers only.
+
+#### int?
+
+`boolean`
+
+#### max?
+
+`number`
+
+#### min?
+
+`number`
+
+## Returns
+
+[`StandardSchemaV1`](../interfaces/StandardSchemaV1.mdx)\<`string`, `number`\>
+
+A Standard Schema that gives a number.

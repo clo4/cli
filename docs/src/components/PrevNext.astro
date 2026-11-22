@@ -1,0 +1,91 @@
+---
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import type { Key } from "@/i18n";
+
+interface Link {
+  url: string;
+  name: unknown;
+}
+
+interface Props {
+  previous?: Link;
+  next?: Link;
+  previousLabel: Key;
+  nextLabel: Key;
+}
+
+const { previous, next, previousLabel, nextLabel } = Astro.props;
+---
+
+{
+  (previous || next) && (
+    <nav class="prev-next">
+      {previous ? (
+        <a href={previous.url}>
+          <small>
+            <Icon name="left" />
+            <T k={previousLabel} />
+          </small>
+          <span>{String(previous.name)}</span>
+        </a>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <a class="next" href={next.url}>
+          <small>
+            <T k={nextLabel} />
+            <Icon name="right" />
+          </small>
+          <span>{String(next.name)}</span>
+        </a>
+      )}
+    </nav>
+  )
+}
+
+<style>
+  .prev-next {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 64px;
+    & a {
+      display: grid;
+      gap: 2px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
+      text-decoration: none;
+      transition:
+        background-color var(--ease),
+        border-color var(--ease);
+      &:hover {
+        background: var(--hl);
+        border-color: var(--line-strong);
+      }
+    }
+    & small {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    & span {
+      font-weight: 500;
+    }
+    & .next {
+      text-align: end;
+      & small {
+        justify-content: flex-end;
+      }
+    }
+  }
+  @media (width < 640px) {
+    .prev-next {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

@@ -1,0 +1,10 @@
+---
+title: "6.1.2"
+date: 2026-11-16T10:26:44Z
+---
+
+`CLI.number` now rejects a value with too many digits to be a finite number. Before, a value such as 400 nines in a row reached the action as `Infinity`, unless `min` or `max` rejected it. `CLI.number({ int: true })` already rejected these values.
+
+The documentation's introduction now says that an action receives the result of an argument's `parse`. The introduction used to say every value arrives as a string, which stopped being true in 6.1.0.
+
+**Full changelog:** [v6.1.1...v6.1.2](https://github.com/clo4/cli/compare/v6.1.1...v6.1.2)

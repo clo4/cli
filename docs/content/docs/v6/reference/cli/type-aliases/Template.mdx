@@ -1,0 +1,12 @@
+---
+title: "Template"
+---
+
+```ts
+type Template = "filepaths" | "folders" | ["folders", "filepaths"] | ["filepaths", "folders"];
+```
+
+A built-in completion template.
+
+Resolves to the shell's native path completion. Completions only — no effect
+on parsing.

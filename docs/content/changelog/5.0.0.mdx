@@ -1,0 +1,123 @@
+---
+title: "5.0.0"
+date: 2026-11-13T14:05:49Z
+---
+
+This is the release I've wanted to make since I started this library in 2022.
+
+A spec has always been one plain object. You describe a command's arguments and options once, and the parser, help and completion all read that description. The action was the one part that didn't. It received `args: string[]` and an `options` that took any name, so you knew what your command accepted and TypeScript didn't.
+
+Now TypeScript knows too. Change `const spec: CLI.Spec = { ... }` to `const spec = CLI.spec({ ... })`, and every action is typed from the command it sits in:
+
+```ts
+action({ args: [source, destination], options }) {
+  source; // string
+  destination; // string | undefined
+  options.get("--output"); // string, because its argument has a default
+  options.has("--outptu"); // compile error
+}
+```
+
+Nothing else about the spec changes. It's the same object. There's no builder to chain, no second schema to keep in step, and no annotation to write. The types come from what you already wrote, in subcommands at any depth, and your editor suggests the option names as you type them.
+
+And it's as fast as it was. `CLI.spec` returns the object it's given, and startup time is the same as 4.0 to within what the benchmark can measure.
+
+Three changes make this a major version. `run` takes its command line as an option and sets the exit code itself. `options.all()` returns an empty list where it returned `undefined`. `testSpec` no longer takes `allowShadowingPersistentOptions`. If none of the three touches your CLI, it needs no changes.
+
+## Breaking changes
+
+- `run` takes an options object as its second argument. `CLI.run(spec, ["build", "src"])` becomes `CLI.run(spec, { argv: ["build", "src"] })`. In JavaScript, an array passed the old way is ignored and `run` reads `process.argv`, with no error.
+- `run` sets `process.exitCode` to the exit code. An entry file is now one line:
+
+  ```ts
+  CLI.run(spec);
+  ```
+
+  `process.exitCode = await CLI.run(spec)` still works. Pass `setExitCode: false` to leave `process.exitCode` alone, such as when a test calls `run`.
+
+- `options.all()` returns `[]` for an option that wasn't used and has no defaults. It returned `undefined`. Code written as `options.all("--tag") ?? []` keeps working, and a check like `options.all("--tag") === undefined` needs to become `options.all("--tag").length === 0`.
+- `testSpec` no longer takes `allowShadowingPersistentOptions`. That option let a subcommand's option reuse a name of a persistent option on a command above it. A spec that passed it now needs a `ref` on each of those two options, as described below. Reading an option by its name works as before. With `namingStyle: "function"`, the check shows as `assertShadowingOptionsHaveRefs`. It was `assertOptionsDoNotShadowPersistentOptions`.
+
+## Added
+
+- `CLI.spec` takes the same object as the `CLI.Spec` type and returns it. Each action in it receives `args` and `options` typed from its own command, at any depth.
+
+  ```ts
+  const spec = CLI.spec({
+    name: "demo",
+    options: [CLI.help, { name: "--verbose", isPersistent: true }],
+    subcommands: [
+      {
+        name: "build",
+        args: [{ name: "source" }, { name: "destination", isOptional: true }],
+        options: [{ name: "--output", args: { name: "dir", default: "dist" } }],
+        action({ args: [source, destination], options }) {
+          source; // string
+          destination; // string | undefined
+          options.get("--output"); // string, because the argument has a default
+          options.has("--verbose"); // a persistent option of demo
+          options.has("--outptu"); // compile error
+        },
+      },
+    ],
+  });
+
+  CLI.run(spec);
+  ```
+
+- `args` is a tuple with one entry for each positional argument. An optional argument without a default can be `undefined`, and a variadic argument is the rest of the tuple.
+- `options` accepts the names of the command's own options and of the persistent options of the commands above it. Your editor suggests them.
+- `options.get()` returns `string` where a value is certain: the option is required, or its argument has a default. For any other option with an argument it returns `string | undefined`.
+- `options.get()` and `options.all()` take only an option that is defined with an argument. Passing one defined without, such as `--watch`, is a compile error that says to read it with `options.has()` or `options.count()`.
+- An option's `dependsOn` and `exclusiveOn` take only the names of options the command can use. A misspelled one is a compile error, and your editor suggests the real ones.
+- An option can have an `action` of its own, as `--help` does. In that action a misspelled option name is a compile error too. It runs in place of the command's action, before the checks for argument counts and required options, so its `args` is `string[]` and `options.get()` returns `string | undefined`.
+- `CLI.command` gives the actions of one command the same types, for a command written outside the spec. Use it for the part of a command that 4.0's `loadSpec` loads from another file, which has no `name` because its parent already has it. An action in it can read that command's own options only. The commands above it aren't part of the object `CLI.command` receives, so their persistent options are a compile error there.
+
+  ```ts
+  // remote.ts
+  import * as CLI from "@clo4/cli";
+
+  export default CLI.command({
+    requiresSubcommand: true,
+    subcommands: [{ name: "add", args: { name: "url" }, action: ({ args: [url] }) => addRemote(url) }],
+  });
+  ```
+
+- A mistake in the spec is a compile error on the field that's wrong, and the error gives the reason. A misspelled field reads `'isRepeatble' isn't a field of an option. Check its spelling.` `isOptional: "yes"` reads `not assignable to type '"yes" & Expected<true>'`.
+- Hovering over `options` in an editor shows the names it can read and what `get` returns for each one.
+- An option or argument that several commands share can be written once, outside the spec. Mark it `as const`, so that its name and fields keep their exact types. Without it, the actions of a command that uses the option stop catching misspelled option names.
+- The new types need TypeScript 6.0 or later, and nothing else in this release does. A spec annotated as `CLI.Spec` type-checks as it did in 4.0, with `args: string[]` in its actions.
+- An option can have a `ref`, a second key an action reads it by. It's for an option that shares a name with a different option on a command above it, like `-v` below. Both options store their values under `-v`, so `options.has("-v")` is true when either was used. `options.has("verbose")` is true only when the `--verbose` option of `demo` was used.
+
+  ```ts
+  options: [{ name: ["-v", "--verbose"], isPersistent: true, ref: "verbose" }],
+  subcommands: [
+    {
+      name: "build",
+      options: [{ name: ["-v", "--version"], ref: "version" }],
+      action({ options }) {
+        console.log(options.has("verbose"), options.has("version"));
+      },
+    },
+  ],
+  ```
+
+- `testSpec` has two new checks for refs. `assertRefsAreNeeded` rejects a `ref` on an option that shares no name with an option on a command above or below it. `assertRefsAreUnique` compares an option with the other options on its command and on the commands above it. It rejects a ref that one of them also has as its ref, or as a name. Two subcommands of the same command can each have an option with the same ref, because one run of the CLI never uses both.
+- `RunOptions` is the type of the second argument of `run`.
+
+## Performance
+
+These were measured on an Apple M3 Pro with Node 26.3.0.
+
+- `CLI.spec` and `CLI.command` return their argument. In 200 runs each of a 100-command and a 1,000-command CLI bundled into one file, the two calls made no measurable difference to startup. The 95% interval of each difference included zero.
+- TypeScript 7.0 checks a spec of 1,000 commands, each with 6 options and an inline action, in 3.5 s. `node bench/check-time.mjs` measures this as a spec grows.
+- Call `CLI.run(spec)` without `await` in the entry file. It matters when a `loadSpec` imports a command's file and that file uses `CLI.command`. With a top-level `await` in the entry, the bundler rolldown moved the library into a file of its own, and every run took 0.24 ms longer to load it. Without the `await`, the bundle has no extra file.
+
+## Documentation and development
+
+- Every README example uses `CLI.spec`, `CLI.command` and `CLI.run(spec)`. The README has new sections on types in actions and on options that share a name.
+- The README's performance tables were measured again with the examples written the new way. The comparison table has an Apple M3 Pro column only, until the other machines are measured again.
+- `GLOSSARY.md` defines a ref.
+- The benchmark's @clo4/cli adapters use `CLI.spec` and `CLI.command`.
+
+**Full changelog:** [v4.0.0...v5.0.0](https://github.com/clo4/cli/compare/v4.0.0...v5.0.0)

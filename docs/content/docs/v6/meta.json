@@ -4,6 +4,9 @@
   "root": true,
   "pages": [
     "index",
+    "choosing-a-cli-library",
+    "performance",
+    "compatibility",
     "---Concepts---",
     "options",
     "arguments",
@@ -25,10 +28,6 @@
     "reference/execution",
     "reference/completion",
     "reference/testing",
-    "reference/utilities",
-    "---Background---",
-    "choosing-a-cli-library",
-    "performance",
-    "compatibility"
+    "reference/utilities"
   ]
 }

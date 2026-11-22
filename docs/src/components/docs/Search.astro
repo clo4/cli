@@ -1,0 +1,218 @@
+---
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { href } from "@/lib/shared";
+
+interface Props {
+  version: string;
+}
+
+const { version } = Astro.props;
+---
+
+<dialog class="search" aria-label={t("search.open")} data-search data-from={href("api/search")} data-tag={version}>
+  <div class="field">
+    <Icon name="search" />
+    <input type="search" placeholder={t("search.placeholder")} aria-label={t("search.placeholder")} autocomplete="off" spellcheck="false" />
+    <kbd><T k="search.close" /></kbd>
+  </div>
+  <div class="results" role="listbox"></div>
+  <template data-empty><p class="empty"><T k="search.empty" /></p></template>
+</dialog>
+
+<script>
+  import type { SortedResult } from "fumadocs-core/search";
+
+  const dialog = document.querySelector<HTMLDialogElement>("[data-search]")!;
+  const input = dialog.querySelector("input")!;
+  const results = dialog.querySelector<HTMLElement>(".results")!;
+  const empty = dialog.querySelector<HTMLTemplateElement>("[data-empty]")!;
+  let client: Promise<{ search: (query: string) => Promise<SortedResult[]> }> | undefined;
+  const loadClient = () =>
+    (client ??= import("fumadocs-core/search/client/orama-static").then(({ staticClient }) =>
+      staticClient({ from: dialog.dataset.from, tag: dialog.dataset.tag }),
+    ));
+  let hits: SortedResult[] = [];
+  let selected = 0;
+  let run = 0;
+
+  const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  function mark(text: string, query: string) {
+    const words = query.trim().split(/\s+/).filter(Boolean).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const matched = words.length ? new RegExp(`(${words.join("|")})`, "gi") : null;
+    return escape(text)
+      .split("`")
+      .map((part, i) => {
+        const marked = matched ? part.replace(matched, "<mark>$1</mark>") : part;
+        return i % 2 === 1 ? `<code>${marked}</code>` : marked;
+      })
+      .join("");
+  }
+
+  function rowCells(markdown: string) {
+    const row = markdown.trim().split("\n").at(-1) ?? "";
+    return row
+      .split(/(?<!\\)\|/)
+      .map((cell) => cell.trim().replaceAll("\\|", "|"))
+      .filter(Boolean)
+      .join("  ·  ");
+  }
+
+  function render(query: string) {
+    if (!query.trim()) {
+      results.replaceChildren();
+      return;
+    }
+    if (!hits.length) {
+      results.replaceChildren(empty.content.cloneNode(true));
+      return;
+    }
+    results.innerHTML = hits
+      .map((hit, i) => {
+        const category = hit.breadcrumbs?.at(-1);
+        const crumbs = hit.type === "page" && category ? `<small>${escape(category)}</small>` : "";
+        const content = hit.table ? rowCells(hit.content) : hit.content;
+        return `<a href="${hit.url}" role="option" class="${hit.type}" aria-selected="${i === selected}">${crumbs}<span>${mark(content, query)}</span></a>`;
+      })
+      .join("");
+  }
+
+  async function search() {
+    const mine = ++run;
+    const query = input.value;
+    const found = query.trim() ? await (await loadClient()).search(query) : [];
+    if (mine !== run) {return;}
+    hits = found.slice(0, 20);
+    selected = 0;
+    render(query);
+  }
+
+  function move(by: number) {
+    if (!hits.length) {return;}
+    selected = (selected + by + hits.length) % hits.length;
+    results.querySelectorAll("a").forEach((a, i) => a.setAttribute("aria-selected", String(i === selected)));
+    results.querySelectorAll("a")[selected]?.scrollIntoView({ block: "nearest" });
+  }
+
+  function open() {
+    document.querySelector<HTMLElement>(".sheet:popover-open")?.hidePopover();
+    void loadClient();
+    dialog.showModal();
+    input.select();
+  }
+
+  input.addEventListener("input", search);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      move(-1);
+    } else if (event.key === "Enter" && hits[selected]) {
+      location.href = hits[selected].url;
+    }
+  });
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) {dialog.close();}
+  });
+  document.addEventListener("click", (event) => {
+    if ((event.target as Element).closest("[data-open-search]")) {open();}
+  });
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "k") {
+      event.preventDefault();
+      open();
+    }
+  });
+  if (/Mac|iP/.test(navigator.platform)) {
+    for (const kbd of document.querySelectorAll("[data-shortcut]")) {kbd.textContent = "⌘K";}
+  }
+</script>
+
+<style>
+  .search {
+    width: min(640px, calc(100vw - 32px));
+    max-height: min(560px, 80dvh);
+    margin: 12vh auto auto;
+    padding: 0;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: 0 24px 64px rgb(0 0 0 / 0.28);
+    &::backdrop {
+      background: rgb(0 0 0 / 0.4);
+    }
+    &[open] {
+      display: flex;
+      flex-direction: column;
+      animation: pop-in var(--ease);
+    }
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    color: var(--muted);
+    & input {
+      flex: 1;
+      border: 0;
+      outline: 0;
+      background: none;
+      font: inherit;
+      font-size: 16px;
+      color: var(--fg);
+      &::-webkit-search-cancel-button {
+        display: none;
+      }
+    }
+  }
+  .results {
+    overflow-y: auto;
+    &:not(:empty) {
+      padding: var(--gap);
+      border-top: 1px solid var(--line);
+    }
+    & :global(a) {
+      display: grid;
+      gap: 1px;
+      padding: 8px 10px;
+      border-radius: var(--radius-inner);
+      text-decoration: none;
+      line-height: 1.45;
+    }
+    & :global(a.text) {
+      font-size: 14px;
+      color: var(--muted);
+    }
+    & :global(a[aria-selected="true"]) {
+      background: var(--hl-strong);
+      color: var(--fg);
+    }
+    & :global(small) {
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    & :global(code) {
+      font-size: 0.88em;
+      padding: 0 4px;
+      background: var(--hl);
+      border-radius: 4px;
+    }
+    & :global(mark) {
+      background: none;
+      color: var(--fg);
+      font-weight: 600;
+    }
+  }
+  .empty {
+    margin: 0;
+    padding: 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+</style>

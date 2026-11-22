@@ -10,4 +10,8 @@ export const collections = {
     loader: pageLoader("blog"),
     schema: pageSchema.extend({ date: z.coerce.date(), draft: z.boolean().optional() }),
   }),
+  changelog: defineCollection({
+    loader: pageLoader("changelog"),
+    schema: pageSchema.extend({ date: z.coerce.date().optional() }),
+  }),
 };

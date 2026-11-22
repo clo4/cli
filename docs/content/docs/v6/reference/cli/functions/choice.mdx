@@ -1,0 +1,37 @@
+---
+title: "choice()"
+---
+
+```ts
+function choice<T extends NonEmptyArray<string>>(values: T): StandardSchemaV1<string, T[number]>;
+```
+
+A schema for an argument's `parse` that accepts one of `values` and
+rejects anything else. The action receives the value as one of them, so
+`choice(["debug", "release"])` gives `"debug" | "release"`.
+
+Help shows the values after the argument's description, and completion
+offers them unless the argument has suggestions of its own. A rejected
+value that's close to one of them gets a "Did you mean" line.
+
+## Type Parameters
+
+### T
+
+`T` _extends_ [`NonEmptyArray`](../type-aliases/NonEmptyArray.mdx)\<`string`\>
+
+Inferred from the values. Do not supply it explicitly.
+
+## Parameters
+
+### values
+
+`T`
+
+The values accepted, as the user types them.
+
+## Returns
+
+[`StandardSchemaV1`](../interfaces/StandardSchemaV1.mdx)\<`string`, `T`\[`number`\]\>
+
+A Standard Schema that gives one of the values.

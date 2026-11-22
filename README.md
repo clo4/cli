@@ -102,26 +102,26 @@ Attach a suggester to the argument it completes. This option asks application co
 
 `listTargets` is your function. It receives the value being typed and returns strings or `{ name, description }` objects. The library selects the argument and formats suggestions for the shell.
 
-Add `CLI.completion` to the root's subcommands. Generate and load its script at shell startup so completion stays matched to the installed CLI. See [Install shell completion](https://clo4.net/cli/next/install-completion) for shell configuration and [Help and completion](https://clo4.net/cli/next/help-and-completion) for suggester details.
+Add `CLI.completion` to the root's subcommands. Generate and load its script at shell startup so completion stays matched to the installed CLI. See [Install shell completion](https://clo4.net/cli/docs/next/guides/install-completion) for shell configuration and [Help and completion](https://clo4.net/cli/docs/next/concepts/help-and-completion) for suggester details.
 
 ## Documentation
 
-Read the [introduction](https://clo4.net/cli/next) or go directly to a topic:
+Read the [introduction](https://clo4.net/cli/docs/next) or go directly to a topic:
 
-- [Options](https://clo4.net/cli/next/options): names, values, defaults, repetition and relationships.
-- [Arguments](https://clo4.net/cli/next/arguments): positional and variadic inputs, and parsing values into numbers and choices.
-- [Parsers](https://clo4.net/cli/next/parsers): combine small parsers to turn text into typed values, objects and arrays.
-- [Subcommands](https://clo4.net/cli/next/subcommands): command trees and persistent options.
-- [Actions](https://clo4.net/cli/next/actions): input types, errors and exit codes.
-- [Help and completion](https://clo4.net/cli/next/help-and-completion): built-ins, suggestions and shell setup.
-- [Testing](https://clo4.net/cli/next/testing): validate a spec against the parser's rules.
-- [Parser settings](https://clo4.net/cli/next/parser-settings): token parsing, abbreviations and separators.
-- [Performance](https://clo4.net/cli/next/performance): benchmarks and loading commands on demand.
-- [Choosing a CLI library](https://clo4.net/cli/next/choosing-a-cli-library): features and application responsibilities.
+- [Options](https://clo4.net/cli/docs/next/concepts/options): names, values, defaults, repetition and relationships.
+- [Arguments](https://clo4.net/cli/docs/next/concepts/arguments): positional and variadic inputs, and parsing values into numbers and choices.
+- [Parsers](https://clo4.net/cli/docs/next/concepts/parsers): combine small parsers to turn text into typed values, objects and arrays.
+- [Subcommands](https://clo4.net/cli/docs/next/concepts/subcommands): command trees and persistent options.
+- [Actions](https://clo4.net/cli/docs/next/concepts/actions): input types, errors and exit codes.
+- [Help and completion](https://clo4.net/cli/docs/next/concepts/help-and-completion): built-ins, suggestions and shell setup.
+- [Testing](https://clo4.net/cli/docs/next/guides/testing): validate a spec against the parser's rules.
+- [Parser settings](https://clo4.net/cli/docs/next/concepts/parser-settings): token parsing, abbreviations and separators.
+- [Performance](https://clo4.net/cli/docs/next/introduction/performance): benchmarks and loading commands on demand.
+- [Choosing a CLI library](https://clo4.net/cli/docs/next/introduction/choosing-a-cli-library): features and application responsibilities.
 
 ## Performance
 
-The [benchmarks](https://clo4.net/cli/next/performance) measure bundled CLI startup and command execution, excluding Node startup. For the measured workload, Commander takes 3.4–4.4 times as long as `@clo4/cli`, and Yargs takes 18.0–20.7 times as long.
+The [benchmarks](https://clo4.net/cli/docs/next/introduction/performance) measure bundled CLI startup and command execution, excluding Node startup. For the measured workload, Commander takes 3.4–4.4 times as long as `@clo4/cli`, and Yargs takes 18.0–20.7 times as long.
 
 ## License
 

@@ -1,10 +1,12 @@
 ---
 import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
-import Layout from "@/layouts/Layout.astro";
-import { Blog } from "@/components/blog";
+import Base from "@/layouts/Base.astro";
+import Icon from "@/components/Icon.astro";
 import InlineCode from "@/components/InlineCode.astro";
-import { blog, formatDate } from "@/lib/blog";
-import { appName, base } from "@/lib/shared";
+import PrevNext from "@/components/PrevNext.astro";
+import T from "@/components/T.astro";
+import { blog, formatDate, getPosts } from "@/lib/blog";
+import { href, site } from "@/lib/shared";
 
 export const prerender = true;
 
@@ -19,24 +21,97 @@ type Props = InferGetStaticPropsType<typeof getStaticPaths>;
 
 const { post } = Astro.props;
 const { body: Content } = await post.data.load();
+const posts = getPosts();
+const at = posts.findIndex((other) => other.url === post.url);
+const older = posts[at + 1];
+const newer = posts[at - 1];
 ---
 
-<Layout title={`${post.data.title} · ${appName}`} description={post.data.description?.replaceAll("`", "")}>
-  <Blog client:load transition:persist="blog" pathname={post.url} params={Astro.params}>
-    <a href={`${base}/blog`} class="text-sm text-fd-muted-foreground hover:underline">
-      ← Blog
-    </a>
-    <time class="block mt-8 text-sm text-fd-muted-foreground" datetime={post.data.date.toISOString()}>
-      {formatDate(post.data.date)}
-    </time>
-    <h1 class="text-3xl font-semibold mt-1 mb-2">{post.data.title}</h1>
-    {
-      post.data.description && (
-        <p class="text-lg text-fd-muted-foreground mb-8">
-          <InlineCode text={post.data.description} />
-        </p>
-      )
+<Base
+  title={post.data.title}
+  description={post.data.description?.replaceAll("`", "")}
+  image={href(`og/blog/${post.slugs.join("/")}.png`)}
+  type="article"
+  current="blog"
+>
+  <script
+    slot="head"
+    type="application/ld+json"
+    set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: post.data.title,
+      description: post.data.description?.replaceAll("`", ""),
+      datePublished: post.data.date.toISOString(),
+      url: new URL(post.url, site).href,
+      image: new URL(href(`og/blog/${post.slugs.join("/")}.png`), site).href,
+    })}
+  />
+  <main class="page">
+    <header>
+      <a class="back" href={href("blog")}><Icon name="left" /><T k="blog.back" /></a>
+      <h1>{post.data.title}</h1>
+      {
+        post.data.description && (
+          <p class="lead">
+            <InlineCode text={post.data.description} />
+          </p>
+        )
+      }
+      <p class="meta"><time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time></p>
+    </header>
+    <article class="prose" data-copy-label="Copy" data-copied-label="Copied">
+      <Content />
+    </article>
+    <PrevNext
+      previous={older && { url: older.url, name: older.data.title }}
+      next={newer && { url: newer.url, name: newer.data.title }}
+      previousLabel="blog.older"
+      nextLabel="blog.newer"
+    />
+  </main>
+</Base>
+
+<script>
+  import { addCopyButtons } from "@/lib/copy";
+  addCopyButtons();
+</script>
+
+<style>
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+  header {
+    margin-bottom: 32px;
+  }
+  .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 28px;
+    font-size: 14px;
+    color: var(--muted);
+    text-decoration: none;
+    &:hover {
+      color: var(--fg);
     }
-    <Content />
-  </Blog>
-</Layout>
+  }
+  h1 {
+    margin: 0;
+    font: 400 46px/1.1 var(--display);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  .lead {
+    margin: 12px 0 0;
+    font-size: 18px;
+    color: var(--muted);
+  }
+  .meta {
+    margin: 14px 0 0;
+    font-size: 14.5px;
+    color: var(--muted);
+  }
+</style>

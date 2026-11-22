@@ -1,0 +1,67 @@
+---
+import { Font } from "astro:assets";
+import Header from "@/components/Header.astro";
+import { t } from "@/i18n";
+import { appName, href, site } from "@/lib/shared";
+import "@/styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+  canonical?: string;
+  image?: string;
+  type?: "website" | "article";
+  current?: "home" | "docs" | "blog" | "changelog";
+}
+
+const {
+  title,
+  description = t("site.description"),
+  canonical = Astro.url.pathname,
+  image = href("og/index.png"),
+  type = "website",
+  current,
+} = Astro.props;
+const fullTitle = title ? `${title} · ${appName}` : appName;
+const canonicalUrl = new URL(canonical, site).href;
+const imageUrl = new URL(image, site).href;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={appName} />
+    <meta property="og:title" content={title ?? appName} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={imageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="alternate" type="application/rss+xml" title={`${appName} · ${t("blog.title")}`} href={href("blog/rss.xml")} />
+    <link rel="alternate" type="application/rss+xml" title={`${appName} · ${t("changelog.title")}`} href={href("changelog/rss.xml")} />
+    <link rel="sitemap" href={href("sitemap.xml")} />
+    <Font cssVariable="--font-sans" preload />
+    <Font cssVariable="--font-mono" />
+    <Font cssVariable="--font-display" preload />
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem("theme");
+        if (theme === "light" || theme === "dark") {document.documentElement.dataset.theme = theme;}
+      } catch {}
+    </script>
+    <slot name="head" />
+  </head>
+  <body>
+    <Header current={current}>
+      <slot name="sheet" />
+    </Header>
+    <slot />
+  </body>
+</html>

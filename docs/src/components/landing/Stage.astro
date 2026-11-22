@@ -1,0 +1,427 @@
+---
+import { codeToHtml, createCssVariablesTheme } from "shiki";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { scenarios } from "@/playground/scenarios";
+import { specRanges } from "@/playground/ranges";
+import greet from "@/playground/scenarios/greet.ts?raw";
+import wait from "@/playground/scenarios/wait.ts?raw";
+import build from "@/playground/scenarios/build.ts?raw";
+import resize from "@/playground/scenarios/resize.ts?raw";
+import serve from "@/playground/scenarios/serve.ts?raw";
+
+const sources: Record<string, string> = { greet, wait, build, resize, serve };
+const theme = createCssVariablesTheme({ name: "tokens", variablePrefix: "--shiki-" });
+const panels = await Promise.all(
+  scenarios.map(async (scenario) => ({
+    ...scenario,
+    html: await codeToHtml(sources[scenario.id].trimEnd(), { lang: "ts", theme }),
+    ranges: specRanges(sources[scenario.id]),
+  })),
+);
+const copy = {
+  result: t("stage.result"),
+  problems: t("stage.problems"),
+  output: t("stage.output"),
+  notFound: t("stage.notFound"),
+  program: t("stage.kind.program"),
+  subcommand: t("stage.kind.subcommand"),
+  option: t("stage.kind.option"),
+  value: t("stage.kind.value"),
+  argument: t("stage.kind.argument"),
+  separator: t("stage.kind.separator"),
+  optionAction: t("stage.optionAction"),
+};
+---
+
+<section class="stage" aria-label={t("stage.label")} data-stage data-copy={JSON.stringify(copy)}>
+  <div class="tabs" role="tablist">
+    {
+      panels.map((panel, i) => (
+        <button role="tab" aria-selected={i === 0 ? "true" : "false"} data-scenario={panel.id} data-line={panel.line}>
+          <T k={panel.tab} />
+        </button>
+      ))
+    }
+  </div>
+  <div class="prompt">
+    <div class="cmd" data-cmd>
+      <div class="mirror" aria-hidden="true" data-mirror></div>
+      <input value={panels[0].line} spellcheck="false" autocomplete="off" autocapitalize="off" aria-label={t("stage.input")} data-input />
+    </div>
+    {
+      panels.map((panel, i) => (
+        <div class="tries" data-tries={panel.id} hidden={i !== 0}>
+          {panel.tries.map((line) => (
+            <button data-try={line}>
+              <code>{line}</code>
+            </button>
+          ))}
+        </div>
+      ))
+    }
+  </div>
+  <div class="cols">
+    <div class="code-stack">
+      {
+        panels.map((panel, i) => (
+          <div class="code" data-code={panel.id} data-ranges={JSON.stringify(panel.ranges)} hidden={i !== 0}>
+            <div class="file">{`${panel.id}.ts`}</div>
+            <Fragment set:html={panel.html} />
+          </div>
+        ))
+      }
+    </div>
+    <div class="side">
+      <section>
+        <h2><T k="stage.output" /></h2>
+        <pre class="terminal" data-terminal></pre>
+      </section>
+      <section>
+        <h2 data-out-title></h2>
+        <div class="out" data-out></div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { start } from "@/playground/playground";
+  start(document.querySelector<HTMLElement>("[data-stage]")!);
+</script>
+
+<style>
+  .stage {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--sunken);
+    text-align: start;
+  }
+  .tabs {
+    display: flex;
+    gap: 24px;
+    padding: 0 20px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-bottom: 1px solid var(--line);
+    & button {
+      all: unset;
+      cursor: pointer;
+      padding: 12px 0;
+      font-size: 14px;
+      color: var(--muted);
+      white-space: nowrap;
+      transition:
+        color var(--ease),
+        box-shadow var(--ease);
+      &:hover,
+      &[aria-selected="true"] {
+        color: var(--fg);
+      }
+      &[aria-selected="true"] {
+        box-shadow: inset 0 -2px 0 var(--fg);
+      }
+      &:focus-visible {
+        outline: 2px solid var(--fg);
+      }
+    }
+  }
+
+  .prompt {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px 20px;
+    background: var(--surface);
+  }
+  .cmd {
+    position: relative;
+    z-index: 1;
+    &[data-more-text] .mirror {
+      mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    }
+    font: 20px/1.6 var(--mono);
+    & .mirror,
+    & input {
+      padding: 8px 0 10px 2ch;
+      white-space: pre;
+    }
+    & .mirror {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    & input {
+      position: relative;
+      width: 100%;
+      border: 0;
+      outline: 0;
+      background: none;
+      font: inherit;
+      color: transparent;
+      caret-color: var(--fg);
+    }
+    &::before {
+      content: "$";
+      position: absolute;
+      left: 0;
+      top: 8px;
+      color: var(--faint);
+    }
+  }
+  .cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border-top: 1px solid var(--line);
+  }
+  .code-stack {
+    min-width: 0;
+  }
+  .code {
+    min-width: 0;
+    & .file {
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    & :global(pre) {
+      margin: 0;
+      padding: 10px 0;
+      overflow-x: auto;
+      border: 0;
+      border-radius: 0;
+      background: none !important;
+      font: 13px/1.75 var(--mono);
+      counter-reset: line;
+    }
+    & :global(pre code) {
+      display: block;
+      width: max-content;
+      min-width: 100%;
+    }
+    & :global(.line) {
+      display: inline-block;
+      width: 100%;
+      padding-inline-end: 16px;
+      transition:
+        background-color var(--ease),
+        box-shadow var(--ease);
+    }
+    & :global(.line::before) {
+      counter-increment: line;
+      content: counter(line);
+      display: inline-block;
+      width: 3em;
+      padding-inline-end: 1.2em;
+      text-align: end;
+      color: var(--faint);
+    }
+    & :global(.line[data-active]) {
+      background: var(--hl);
+      box-shadow: inset 2px 0 0 var(--hl-strong);
+    }
+  }
+  .side {
+    min-width: 0;
+    border-inline-start: 1px solid var(--line);
+    & section + section {
+      border-top: 1px solid var(--line);
+    }
+    & h2 {
+      margin: 0;
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+  }
+  .out,
+  .terminal {
+    overflow: auto;
+    padding: 12px 16px;
+    font: 13px/1.7 var(--mono);
+  }
+  .terminal {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre;
+    & :global(.stderr) {
+      color: var(--err);
+    }
+  }
+  .tries {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    &[hidden] {
+      display: none;
+    }
+    & button {
+      padding: 3px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-inner);
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      transition:
+        color var(--ease),
+        border-color var(--ease);
+      &:hover {
+        color: var(--fg);
+        border-color: var(--line-strong);
+      }
+      & code {
+        font-size: 12.5px;
+      }
+    }
+  }
+  .stage :global(.tk) {
+    position: relative;
+    &::before {
+      content: "";
+      position: absolute;
+      inset: -3px -0.5ch;
+      z-index: -1;
+      border-radius: var(--radius-inner);
+      background: var(--hl);
+      opacity: 0;
+      transition: opacity var(--ease);
+    }
+    &[data-active]::before {
+      opacity: 1;
+    }
+  }
+  .stage :global([data-problem]) {
+    text-decoration: underline wavy 1.5px var(--err);
+    text-underline-offset: 6px;
+  }
+  .stage :global(.pop) {
+    position: absolute;
+    z-index: 3;
+    top: calc(100% - 4px);
+    min-width: 240px;
+    max-width: min(400px, 90vw);
+    border: 1px solid var(--line-strong);
+    border-radius: calc(var(--radius-inner) + 4px);
+    background: var(--surface);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.18);
+    font: 13.5px/1.5 var(--sans);
+    animation: pop-in var(--ease);
+  }
+  .stage :global(.completions) {
+    padding: 4px;
+    & :global(div) {
+      display: grid;
+      gap: 1px;
+      padding: 5px 8px;
+      border-radius: var(--radius-inner);
+      cursor: pointer;
+    }
+    & :global(div[aria-selected="true"]) {
+      background: var(--hl);
+    }
+    & :global(span) {
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+  }
+  .stage :global(.card) {
+    display: grid;
+    gap: 2px;
+    padding: 10px 12px;
+    & :global(.kind) {
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    & :global(.kind:not(:first-child)) {
+      margin-top: 10px;
+    }
+    & :global(.problem-text) {
+      color: var(--err);
+    }
+    & > :global(code) {
+      display: block;
+    }
+  }
+  .stage :global(.kv) {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0 16px;
+    margin: 0;
+    & :global(dt) {
+      color: var(--muted);
+    }
+    & :global(dd) {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+    & :global(.ty),
+    & :global(.default) {
+      color: var(--faint);
+    }
+  }
+  .stage :global(.note) {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .stage :global(.problem) {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0 12px;
+    & :global(b) {
+      color: var(--err);
+      font-weight: 500;
+    }
+    & + :global(.problem) {
+      margin-top: 6px;
+    }
+  }
+  @media (width < 960px) {
+    .stage {
+      border-inline: 0;
+      border-radius: 0;
+    }
+    .tabs {
+      padding: 0 16px;
+    }
+    .prompt {
+      padding: 12px 16px;
+    }
+    .cmd {
+      font-size: 16px;
+    }
+    .tries {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      margin-inline: -16px;
+      padding-inline: 16px;
+      & button {
+        flex: none;
+      }
+    }
+    .cols {
+      display: flex;
+      flex-direction: column;
+    }
+    .side {
+      order: -1;
+      border-inline-start: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .terminal {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .code :global(pre) {
+      font-size: 12px;
+    }
+  }
+</style>

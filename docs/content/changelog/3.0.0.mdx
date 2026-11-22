@@ -1,0 +1,75 @@
+---
+title: "3.0.0"
+date: 2026-11-08T10:01:29Z
+---
+
+The bump to v3 is purely for semantic versioning, reflecting a few technically breaking changes.
+
+This release adds argument defaults, PowerShell and Nushell completion, and persistent subcommands, with substantial completion improvements and a reworked parser architecture shared by help, completion and spec validation.
+
+## Breaking changes
+
+- Removed three exports from `@clo4/cli/testing`: `assertLongOptionNamesDoNotStartWithSingleDash`, `assertOptionNamesStartWithDashes` and `assertNothingIsNamedDashDash`.
+- A command without an `action` now prints its own help and exits successfully after validation. It no longer runs an ancestor's action or silently returns an error.
+- An attached option value is now that occurrence's only value, including for variadic options.
+- `requiresSeparator: true` now enforces a separator for short attached values too. Hidden subcommands now require an exact name, even when unique-prefix matching is enabled.
+
+## Added
+
+- **Argument defaults** through `Arg.default`. Optional positional arguments receive their default when omitted. An option's optional argument receives its default when the option is supplied without a value; defaults on required option arguments are returned by `options.get()` and `options.all()` when the option is omitted. Defaults do not mark an omitted option as present or satisfy option dependencies.
+- **PowerShell and Nushell completion**, alongside Bash, Zsh and Fish, with shell quoting support and Windows path completion using backslashes.
+- **Persistent subcommands** through `Subcommand.isPersistent`. Descendants can use inherited commands by exact name, and their own subcommands take precedence.
+- **More informative help** with positional argument descriptions and defaults, option defaults, and the effective separator for options that require one.
+- **Parser-backed spec validation** with `assertNamesReadBack`, plus `assertDefaultsCanBeUsed` for defaults the parser cannot use.
+
+## Changed
+
+- `help({ didYouMean })` accepts groups of aliases as suggestion choices, treating the names of one command or option as one choice.
+- Objects thrown by actions are formatted as JSON where possible, rather than as `[object Object]`.
+- Deprecated `assertPlusMinusOptionsTakeOneArg` and `assertRequiresSeparatorTakesOneArg`; both remain exported. Their checks are included in `assertNamesReadBack`.
+
+## Completion improvements
+
+- Completion now asks the parser what can come next, including which argument is being completed, which options remain usable and whether the current word contains an attached value.
+- Improved attached-value completion for short options, chained short options and POSIX-noncompliant option names, respecting configured and required separators.
+- Later option arguments use their own suggestions. Optional option values are offered alongside other valid candidates, and an attached variadic value ends that option's values just as it does during parsing.
+- Shadowed options and aliases are omitted, including names the parser would match as subcommands. An identical option repeated in a descendant is recognized as already used.
+- Repeat limits carry across parent and child commands, and exclusions from options used in a parent command filter descendant completions.
+- Inherited parser directives and descendant overrides apply consistently. Dashed words complete as argument values after `--` or once options must precede arguments; attached option values are no longer offered where options cannot be used.
+- Added handling for empty words and quoted command paths and arguments in the new PowerShell and Nushell completion scripts.
+
+## Fixed
+
+- `helpCommand` follows nested command paths such as `cli help a b` and honors unique-prefix matching and command aliases.
+- Help omits shadowed options and aliases, so the names shown refer to the option the parser will select.
+- Repeatable options count uses by their complete set of names, preserving limits across parent and child commands without merging distinct options that share only some aliases.
+- Option actions such as `--help` bypass argument-count, required-option and option-relationship checks. Commands showing usage for a missing subcommand also skip required-option checks.
+- `--` is treated as a literal argument once option parsing has already stopped. Attached values on short flags that take no arguments are rejected.
+- Unknown and ambiguous commands produce contextual errors and suggestions. Missing option-value errors name the option, and aliases of one command or option no longer make suggestions ambiguous.
+- Spec validation checks inherited options in every command where they apply, respects directives overridden by descendants, and catches parent/child option names that make values indistinguishable. Validation errors identify the affected command or option more consistently.
+
+## Architecture
+
+- Moved parser state into a `Scanner` class, with strict parsing and lenient completion queries using the same token-reading logic.
+- Added a shared `OptionScope` for option resolution, shadowing, inherited options and subcommands, parser directives, and option/value forms. Parsing, help, completion and validation use the same rules.
+- Extracted subcommand matching into its own module, sharing exact-name, unique-prefix, hidden-command and persistent-command behavior. Matching also supplies the reason a command was rejected.
+- Moved action selection into the parser and centralized usage errors, suggestions and error output.
+- Consolidated spec validation into a table of checks and a shared option walker that visits every command where an option applies. Name validation reads tokens back through the parser, including the option forms displayed by help.
+- Added checks that pin the runtime and testing entrypoints' exported values and types.
+
+## Benchmark system
+
+- Expanded coverage to 16 CLI libraries plus Node's built-in `parseArgs`, with separate completion measurements for `@clo4/cli`.
+- Moved timing into a shared entry point that starts before the bundled CLI is imported, capturing bundle loading, compilation and imported Node built-ins. Reports distinguish this time from total process time, which includes Node startup.
+- Added configurable parallel execution through `--concurrency`, including automatic CPU-based concurrency, separate timing files per worker and interruption handling for all active processes.
+- Added checks for expected exit codes and output before timing scenarios, so broken adapters fail the run. The unknown-option scenario now supplies required options so their validation doesn't mask the error being measured.
+- Randomized the order of libraries and scenarios each round and increased the default sample count from 25 to 50. Normalized environment variables that affect development mode, logging and colors, and captured output through pipes to include stream setup costs.
+- Added 95% bootstrap intervals for comparison results and baseline-adjusted speed ratios. Differences below 0.25 ms or without a clear statistical difference are reported accordingly. Per-scenario reports now show the 10th and 90th percentiles instead of minimum and maximum times.
+- Added CPU, Node version and concurrency details to benchmark reports, and concurrency metadata to CSV results. CI uses a separate history file for the new timing methodology, supports appended CSV columns and rejects incompatible column changes.
+
+## Documentation and development
+
+- Rewrote the README with examples, API guidance, shell setup instructions, parser settings and benchmark methodology.
+- Expanded regression coverage and added randomized parser-invariant fuzzing and optional differential fuzzing against another Git ref (`FUZZ_AGAINST`).
+
+**Full changelog:** [v2.0.0...v3.0.0](https://github.com/clo4/cli/compare/v2.0.0...v3.0.0)

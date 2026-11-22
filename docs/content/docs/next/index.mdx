@@ -5,7 +5,7 @@ description: Define a CLI with plain TypeScript objects.
 
 `@clo4/cli` builds command-line tools from plain objects. A command definition describes its arguments, options and subcommands. The library uses that definition to parse input, infer TypeScript types, print help and answer shell completion requests.
 
-An action is the function that runs a command. It receives each value as a string, or as the result of the argument's [parser](./arguments.mdx#parsing-values) when the argument has one. Your code decides what work to do with those values.
+An action is the function that runs a command. It receives each value as a string, or as the result of the argument's [parser](./concepts/arguments.mdx#parsing-values) when the argument has one. Your code decides what work to do with those values.
 
 ## Install
 
@@ -102,12 +102,12 @@ The `template: "folders"` fields tell completion to suggest directories. They do
 
 ## Where to go next
 
-[Options](./options.mdx) explains named inputs and how an action reads them. [Arguments](./arguments.mdx) covers positional inputs, and how a parser turns a typed value into a number or one of a few choices. [Commands](./subcommands.mdx) explains command trees and inherited options.
+[Options](./concepts/options.mdx) explains named inputs and how an action reads them. [Arguments](./concepts/arguments.mdx) covers positional inputs, and how a parser turns a typed value into a number or one of a few choices. [Commands](./concepts/subcommands.mdx) explains command trees and inherited options.
 
-[Parsers](./parsers.mdx) introduces parser combinators, the functions that combine small parsers into larger ones. Use them to turn text such as `30s` or `1920x1080` into values that your action can use directly.
+[Parsers](./concepts/parsers.mdx) introduces parser combinators, the functions that combine small parsers into larger ones. Use them to turn text such as `30s` or `1920x1080` into values that your action can use directly.
 
-[Actions](./actions.mdx) covers errors and exit codes. [Help and completion](./help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
+[Actions](./concepts/actions.mdx) covers errors and exit codes. [Help and completion](./concepts/help-and-completion.mdx) covers the built-ins and custom suggestions. Use [Testing](./guides/testing.mdx) to catch mistakes in a spec that TypeScript cannot detect.
 
-The [API reference](./reference/index.mdx) is generated from the library's doc comments. [Parsing behavior](./parsing-behavior.mdx) collects rules that involve several fields.
+The [reference](./reference/specs-and-commands.mdx) describes every field and function. [Parsing behavior](./reference/parsing-behavior.mdx) collects rules that involve several fields.
 
-The guides cover [organizing command modules](./organizing-commands.mdx), [loading commands on demand](./loading-commands.mdx), [testing invocations](./testing-commands.mdx) and [installing completion](./install-completion.mdx).
+The guides cover [organizing command modules](./guides/organizing-commands.mdx), [loading commands on demand](./guides/loading-commands.mdx), [testing invocations](./guides/testing-commands.mdx) and [installing completion](./guides/install-completion.mdx).

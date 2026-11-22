@@ -1,0 +1,50 @@
+---
+title: "TestOptions"
+---
+
+Configuration for `testSpec`. All validation relaxations default to `false`.
+
+## Properties
+
+### allowLongDescriptionLines?
+
+```ts
+allowLongDescriptionLines?: boolean;
+```
+
+Permit description lines longer than 68 characters. Default: `false`.
+This includes positional argument descriptions.
+
+---
+
+### allowMatchingSubcommandPrefixAndArgs?
+
+```ts
+allowMatchingSubcommandPrefixAndArgs?: boolean;
+```
+
+Permit positional arguments on commands with prefix matching enabled.
+A word can then be an argument or a subcommand prefix. Default: `false`.
+
+---
+
+### allowNoDescription?
+
+```ts
+allowNoDescription?: boolean;
+```
+
+Permit commands and options without descriptions. Default: `false`.
+
+---
+
+### namingStyle?
+
+```ts
+namingStyle?: TestNamingStyle;
+```
+
+Change the naming style of the tests.
+
+- `sentence`: Describe each check in a sentence. This is the default.
+- `function`: Use the assertion function name.

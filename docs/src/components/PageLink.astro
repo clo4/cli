@@ -1,8 +1,8 @@
 ---
-import { source } from "@/lib/source";
+import { pageAt, source } from "@/lib/source";
 
 const { href, ...rest } = Astro.props;
-const page = source.getPage((Astro.params.slug ?? "").split("/"));
+const page = pageAt(Astro.params.slug);
 const resolved = typeof href === "string" && page ? source.resolveHref(href, page) : href;
 ---
 

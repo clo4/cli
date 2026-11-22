@@ -1,0 +1,134 @@
+---
+title: "OptionArgs<Value = `string`>"
+---
+
+Access parsed options.
+
+`spec` and `command` give an action the type of each value. Anywhere else
+a value is read as a string. For an option whose `parse` gives something
+else, say what when reading it: `options.get<number>("--port")`.
+
+`Value` is what a value is when the reader doesn't say. A function that
+takes `OptionArgs<unknown>` accepts the options of any action.
+
+`get` and `all` return `NoInfer<Read>`, so that only a type written at the
+call sets `Read`. Without it, `const port: number = options.get("--port")`
+would set it from the variable's type, and compile for any option.
+
+## Type Parameters
+
+### Value
+
+`Value` = `string`
+
+## Properties
+
+### options
+
+```ts
+readonly options: Map<string, Value[]>;
+```
+
+Escape hatch: the underlying map of option names to values.
+
+## Methods
+
+### all()
+
+```ts
+all<Read = Value>(name: string): NoInfer<Read>[];
+```
+
+Read all values collected for an option, in order.
+
+For an omitted option, return consecutive argument defaults from the
+first argument. Return an empty array if the first argument is optional
+or has no default. A repeatable option collects values from every use.
+
+#### Type Parameters
+
+##### Read
+
+`Read` = `Value`
+
+#### Parameters
+
+##### name
+
+`string`
+
+#### Returns
+
+`NoInfer`\<`Read`\>[]
+
+---
+
+### count()
+
+```ts
+count(name: string): number;
+```
+
+Count supplied values. For a repeatable flag, count occurrences instead.
+
+An option with multiple arguments can contribute several values per use.
+An omitted option returns 0, even when it has defaults.
+
+#### Parameters
+
+##### name
+
+`string`
+
+#### Returns
+
+`number`
+
+---
+
+### get()
+
+```ts
+get<Read = Value>(name: string): NoInfer<Read> | undefined;
+```
+
+Read the first value of an option.
+
+For an omitted option, return its first argument's default only when
+that argument is required. Otherwise return `undefined`.
+
+#### Type Parameters
+
+##### Read
+
+`Read` = `Value`
+
+#### Parameters
+
+##### name
+
+`string`
+
+#### Returns
+
+`NoInfer`\<`Read`\> \| `undefined`
+
+---
+
+### has()
+
+```ts
+has(name: string): boolean;
+```
+
+Return whether the option was supplied. Defaults do not count.
+
+#### Parameters
+
+##### name
+
+`string`
+
+#### Returns
+
+`boolean`

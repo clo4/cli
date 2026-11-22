@@ -1,0 +1,12 @@
+{
+  "title": "Help and completion",
+  "pages": [
+    "../cli/variables/help",
+    "../cli/variables/helpCommand",
+    "../cli/variables/completion",
+    "../cli/interfaces/Generator",
+    "../cli/interfaces/Suggestion",
+    "../cli/type-aliases/Template",
+    "../cli/type-aliases/Shell"
+  ]
+}

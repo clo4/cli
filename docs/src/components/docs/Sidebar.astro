@@ -1,0 +1,254 @@
+---
+import Icon, { type IconName } from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { categories, latest, sameTopic, source, versionOf, versions, type Page } from "@/lib/source";
+import { version as packageVersion } from "@/lib/shared";
+
+interface Props {
+  page: Page;
+  id: string;
+}
+
+const { page, id } = Astro.props;
+const version = versionOf(page);
+const icons: Record<string, IconName> = {
+  introduction: "introduction",
+  concepts: "concepts",
+  guides: "guides",
+  reference: "reference",
+};
+const options = ["next", ...versions].map((v) => ({
+  version: v,
+  url: (sameTopic(page, v) ?? source.getPage([v]))?.url,
+  name: v === "next" ? t("docs.version.next") : v === latest ? t("docs.version.latest") : t("docs.version.major", { major: v.slice(1) }),
+  note: v === "next" ? t("docs.version.nextNote") : v === latest ? packageVersion : undefined,
+}));
+const selected = options.find((option) => option.version === version)!;
+const open = categories(version).find((category) => category.items.some((item) => item.url === page.url))?.name;
+---
+
+<button class="switcher" popovertarget={`${id}-versions`} style={`anchor-name: --${id}-switcher`}>
+  <span class="label"><small><T k="docs.version" /></small><span>{selected.name}</span></span>
+  <Icon name="updown" />
+</button>
+<div id={`${id}-versions`} class="versions" popover style={`position-anchor: --${id}-switcher`}>
+  {
+    options.map((option) => (
+      <a href={option.url} aria-current={option.version === version ? "page" : undefined}>
+        <span>{option.name}</span>
+        {option.note && <small>{option.note}</small>}
+      </a>
+    ))
+  }
+</div>
+
+{
+  id === "side" && (
+    <button class="search-button" data-open-search>
+      <Icon name="search" />
+      <T k="search.open" />
+      <kbd data-shortcut>Ctrl K</kbd>
+    </button>
+  )
+}
+
+<nav class:list={["categories", id]}>
+  {
+    categories(version).map((category) => (
+      <details name={`${id}-categories`} open={category.name === open}>
+        <summary>
+          <Icon name={icons[category.name.toLowerCase()] ?? "reference"} />
+          {category.name}
+          <Icon name="chevron" class="chevron" />
+        </summary>
+        <ul>
+          {category.items.map((item) => (
+            <li>
+              <a href={item.url} aria-current={item.url === page.url ? "page" : undefined}>
+                {item.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </details>
+    ))
+  }
+</nav>
+
+<style>
+  .switcher {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    text-align: start;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    background: var(--surface);
+    cursor: pointer;
+    & .label {
+      display: grid;
+      line-height: 1.3;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    & small {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    & :global(.icon) {
+      margin-inline-start: auto;
+      color: var(--muted);
+    }
+  }
+  .versions {
+    inset: auto;
+    top: anchor(bottom);
+    left: anchor(left);
+    width: anchor-size(width);
+    margin: 4px 0 0;
+    padding: 4px;
+    border: 1px solid var(--line-strong);
+    border-radius: calc(var(--radius-inner) + 4px);
+    background: var(--surface);
+    color: var(--fg);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.16);
+    & a {
+      display: grid;
+      padding: 6px 8px;
+      border-radius: var(--radius-inner);
+      line-height: 1.35;
+      font-size: 14px;
+      text-decoration: none;
+      &:hover,
+      &[aria-current] {
+        background: var(--hl);
+      }
+    }
+    & small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+  }
+  .search-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    transition: color var(--ease);
+    &:hover {
+      color: var(--fg);
+    }
+    & kbd {
+      margin-inline-start: auto;
+    }
+  }
+  .categories {
+    display: flex;
+    flex-direction: column;
+  }
+  /* Animating grid rows from 0fr to 1fr works in browsers without interpolate-size, like Firefox. */
+  details::details-content {
+    display: grid;
+    grid-template-rows: minmax(0, 0fr);
+    overflow: clip;
+    transition:
+      grid-template-rows var(--ease),
+      content-visibility var(--ease) allow-discrete;
+  }
+  details[open]::details-content {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-inner);
+    list-style: none;
+    cursor: pointer;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--muted);
+    transition:
+      color var(--ease),
+      background-color var(--ease);
+    &::-webkit-details-marker {
+      display: none;
+    }
+    &:hover {
+      color: var(--fg);
+      background: var(--hl);
+    }
+    & :global(.chevron) {
+      margin-inline-start: auto;
+      transition: rotate var(--ease);
+    }
+  }
+  details[open] summary {
+    color: var(--fg);
+    & :global(.chevron) {
+      rotate: 180deg;
+    }
+  }
+  ul {
+    list-style: none;
+    margin: 2px 0 10px;
+    padding: 0;
+  }
+  li a {
+    position: relative;
+    display: block;
+    padding: 5px 10px 5px 36px;
+    border-radius: var(--radius-inner);
+    font-size: 14px;
+    color: var(--muted);
+    text-decoration: none;
+    transition:
+      color var(--ease),
+      background-color var(--ease);
+    &::before {
+      content: "";
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      width: 4px;
+      height: 4px;
+      margin-top: -2px;
+      border-radius: 50%;
+      background: var(--fg);
+      opacity: 0;
+      transition: opacity var(--ease);
+    }
+    &:hover {
+      color: var(--fg);
+    }
+    &[aria-current] {
+      color: var(--fg);
+      background: var(--hl);
+      &::before {
+        opacity: 1;
+      }
+    }
+  }
+  .sheet {
+    & details {
+      border-bottom: 1px solid var(--line);
+    }
+    & summary {
+      padding: 14px 10px;
+      border-radius: 0;
+      font-size: 16px;
+    }
+  }
+</style>

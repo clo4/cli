@@ -1,0 +1,15 @@
+---
+title: "SingleOrArrayOrEmpty<T>"
+---
+
+```ts
+type SingleOrArrayOrEmpty<T> = T | [] | readonly [T, T, ...T[]];
+```
+
+A single value, or an array with either zero or at least two values.
+
+## Type Parameters
+
+### T
+
+`T`

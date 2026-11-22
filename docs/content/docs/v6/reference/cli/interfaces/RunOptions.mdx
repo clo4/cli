@@ -1,0 +1,26 @@
+---
+title: "RunOptions"
+---
+
+How [run](../functions/run.mdx) reads the command line and reports the exit code.
+
+## Properties
+
+### argv?
+
+```ts
+argv?: readonly string[];
+```
+
+The command line to parse. Default: `process.argv.slice(2)`.
+
+---
+
+### setExitCode?
+
+```ts
+setExitCode?: boolean;
+```
+
+Set `process.exitCode` to the exit code once the action has finished.
+Default: true. With false, the code is only the value `run` resolves to.

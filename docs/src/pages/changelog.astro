@@ -1,0 +1,149 @@
+---
+import Base from "@/layouts/Base.astro";
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import { t } from "@/i18n";
+import { blog, formatDate } from "@/lib/blog";
+import { getReleases, getUnreleased } from "@/lib/changelog";
+import { href } from "@/lib/shared";
+
+export const prerender = true;
+
+const unreleased = getUnreleased();
+const pending = unreleased && (await unreleased.data.load());
+const hasPending = Boolean(pending?.structuredData.contents.length || pending?.structuredData.headings.length);
+const releases = await Promise.all(
+  getReleases().map(async (release) => ({
+    version: release.data.title,
+    date: release.data.date,
+    Content: (await release.data.load()).body,
+    post: blog.getPage([`v${release.data.title}`]),
+  })),
+);
+---
+
+<Base title={t("changelog.title")} description={t("changelog.description")} image={href("og/changelog.png")} current="changelog">
+  <main class="page">
+    <div class="head">
+      <h1><T k="changelog.title" /></h1>
+      <a href={href("changelog/rss.xml")}><Icon name="rss" /><T k="blog.rss" /></a>
+    </div>
+    {
+      hasPending && pending && (
+        <section class="release" id="unreleased">
+          <div class="when">
+            <h2>
+              <a href="#unreleased">
+                <T k="changelog.unreleased" />
+              </a>
+            </h2>
+            <span>
+              <T k="changelog.onMain" />
+            </span>
+          </div>
+          <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
+            <pending.body />
+          </div>
+        </section>
+      )
+    }
+    {
+      releases.map(({ version, date, Content, post }) => (
+        <section class="release" id={`v${version}`}>
+          <div class="when">
+            <h2>
+              <a href={`#v${version}`}>{version}</a>
+            </h2>
+            {date && <time datetime={date.toISOString()}>{formatDate(date, "short")}</time>}
+          </div>
+          <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
+            <Content />
+            {post && (
+              <p>
+                <a href={post.url}>
+                  <T k="changelog.post" />
+                </a>
+              </p>
+            )}
+          </div>
+        </section>
+      ))
+    }
+  </main>
+</Base>
+
+<script>
+  import { addCopyButtons } from "@/lib/copy";
+  addCopyButtons();
+</script>
+
+<style>
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+  .head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+    & h1 {
+      margin: 0;
+      font: 400 44px/1.1 var(--display);
+      letter-spacing: -0.015em;
+    }
+    & a {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13.5px;
+      color: var(--muted);
+      text-decoration: none;
+      &:hover {
+        color: var(--fg);
+      }
+    }
+  }
+  .release {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr);
+    gap: 24px;
+    padding: 36px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .when {
+    position: sticky;
+    top: calc(var(--header) + 24px);
+    align-self: start;
+    & h2 {
+      margin: 0;
+      font: 400 24px/1.2 var(--display);
+      & a {
+        text-decoration: none;
+      }
+    }
+    & :is(time, span) {
+      font-size: 14px;
+      color: var(--muted);
+    }
+  }
+  .release .prose :global(h2) {
+    margin-top: 32px;
+    font-size: 20px;
+  }
+  .release .prose :global(h3) {
+    font-size: 16px;
+  }
+  @media (width < 640px) {
+    .release {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+    }
+    .when {
+      position: static;
+    }
+  }
+</style>

@@ -1,0 +1,49 @@
+---
+title: "6.0.0"
+date: 2026-11-14T00:41:20Z
+---
+
+`loadSpec` now returns a whole command, with its `name`, and loading a command no longer changes your spec. If no command in your CLI has a `loadSpec`, your CLI's code needs no changes. `testSpec` checks more of a spec, so it can fail a spec that passed under 5.0.
+
+## Breaking changes
+
+- `loadSpec` returns a whole command, and the `CommandBody` type is gone. Add the command's `name` to the object that `loadSpec` returns. A call to `CLI.command` without a `name` is now a compile error.
+
+  ```ts
+  // remote.ts
+  export default CLI.command({
+    name: "remote", // new in 6.0
+    requiresSubcommand: true,
+    subcommands: [/* ... */],
+  });
+  ```
+
+- Loading leaves your spec as you wrote it. The parser, help and completion use a copy of the loaded command, with the `name`, `description`, `hidden` and `isPersistent` of the command that has the `loadSpec`. In 5.0, loading merged the loaded fields into the command in your spec.
+- Each call to `run` that enters a command calls its `loadSpec`. In 5.0, `loadSpec` ran only the first time.
+- In an action's `path`, the entry for a command with a `loadSpec` is a copy. Read its fields, and don't compare it with a command object by identity.
+
+## Changed
+
+- `testSpec` has a new check, `assertLoadedCommandsMatch`. It fails when:
+  - a command with a `loadSpec` sets anything other than `name`, `description`, `hidden` and `isPersistent`. Move those fields to the loaded command.
+  - the loaded command has a different `name`.
+  - the loaded command sets `description`, `hidden` or `isPersistent` to a different value from the command with the `loadSpec`.
+  - the loaded command has a `loadSpec` of its own. Nothing calls it.
+- `testSpec` checks a persistent subcommand under each command that inherits it as well as under its parent. Each of those commands can have different options and parser settings.
+- When a command lists the same option object as a persistent option it inherits, `assertShadowingOptionsHaveRefs` says to remove the option from that command. It used to ask for a `ref`.
+
+## Fixed
+
+- A subcommand's `dependsOn` and `exclusiveOn` count only the options the subcommand can use. A parent's option that isn't persistent no longer satisfies a subcommand's `dependsOn` or breaks its `exclusiveOn`. `CLI.spec` already made such a name a compile error, so this affects specs typed as `CLI.Spec`.
+- An option's `dependsOn` and `exclusiveOn` refer to the options of the command that defines it. In `cli --a sub -v`, where `sub` defines its own `-v`, that `-v` no longer satisfies `dependsOn: ["-v"]` on the root's `--a`.
+- `help({ path })` in an action loads the commands on the path before it reads them. It used to leave out the subcommands of a command that hadn't loaded, and printed only the usage line when that command's `loadSpec` returned a promise. When a `loadSpec` on the path returns a promise, `help` throws an error with the command's name, because `help` returns a string and can't wait. The commands on the action's own `path` are already loaded.
+
+## Documentation and development
+
+- The README shows `loadSpec` returning whole commands and says what an action's `path` holds.
+- The README says which commands `testSpec` checks a persistent subcommand under.
+- `GLOSSARY.md` replaces "command body" with "loaded command".
+- New tests run actions from `CLI.spec` on real command lines and check that the parser gives each one what its type promises.
+- Differential fuzzing with `FUZZ_AGAINST` compares against a bundle of what the other Git ref exports.
+
+**Full changelog:** [v5.0.0...v6.0.0](https://github.com/clo4/cli/compare/v5.0.0...v6.0.0)

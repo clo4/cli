@@ -1,0 +1,15 @@
+---
+title: "helpCommand"
+---
+
+```ts
+const helpCommand: Subcommand;
+```
+
+A subcommand that prints help for its parent, or for the command the names
+after it lead to from there, so `cli help a b` prints the help of `cli a b`.
+It reads the names the way the parser reads them in place of `help`. The
+first name that isn't a subcommand ends the names, so `cli help completion
+zsh` prints the help of `completion`. Help reports that name as an unknown
+command where the parser would. Add `{ ...helpCommand, isPersistent: true }`
+instead to make `cli a b help` work too.

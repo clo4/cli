@@ -1,0 +1,20 @@
+---
+import { isSuggested, t, type Key } from "@/i18n";
+
+interface Props {
+  k: Key;
+  vars?: Record<string, string | number>;
+}
+
+const { k, vars } = Astro.props;
+const parts = t(k, vars).split("`");
+const marked = import.meta.env.DEV && isSuggested(k);
+---
+
+{
+  marked ? (
+    <span data-suggested>{parts.map((part, i) => (i % 2 === 1 ? <code>{part}</code> : part))}</span>
+  ) : (
+    parts.map((part, i) => (i % 2 === 1 ? <code>{part}</code> : part))
+  )
+}
