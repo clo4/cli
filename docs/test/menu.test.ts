@@ -4,7 +4,7 @@ import { accept, move, offersMore, preview, suggest, tab } from "@/playground/me
 import { spec as greet } from "@/playground/scenarios/greet";
 
 test("an option's names are one item, which inserts the longest that fits the word", async () => {
-  const menu = await suggest(greet, "greet -", 7);
+  const menu = await suggest(greet, "greet --", 8);
   expect(menu.items.map((item) => [item.names, item.insert])).toEqual([
     [["-t", "--times"], "--times"],
     [["-s", "--shout"], "--shout"],
@@ -57,4 +57,25 @@ test("an item that's typed already offers nothing more on its own", async () => 
 test("an incomplete item is accepted with no space after it", async () => {
   const size = CLI.spec({ name: "size", args: { name: "size", parse: CLI.seq(CLI.uint, "x", CLI.uint) } });
   expect(accept("size 1920", 9, await suggest(size, "size 1920", 9)).line).toBe("size 1920x");
+});
+
+test("text typed for an argument that takes any text comes first, and accepting keeps it", async () => {
+  const menu = await suggest(greet, "greet c", 7);
+  expect(menu.items.map((item) => [item.insert, item.typed])).toEqual([
+    ["c", "name"],
+    ["completion", undefined],
+  ]);
+  expect(preview(menu)).toBe("");
+  expect(accept("greet c", 7, menu)).toEqual({ line: "greet c ", caret: 8 });
+  // Tab is asked to complete, so it takes the suggestion.
+  expect(tab("greet c", 7, menu)).toEqual({ line: "greet completion ", caret: 17 });
+});
+
+test("text typed for an argument with a parser, or that reads as an option, isn't kept first", async () => {
+  expect((await suggest(greet, "greet --times 2", 15)).items.some((item) => item.typed)).toBe(false);
+  expect((await suggest(greet, "greet --t", 9)).items.some((item) => item.typed)).toBe(false);
+});
+
+test("a lone dash is an argument, so it's kept first too", async () => {
+  expect((await suggest(greet, "greet -", 7)).items[0]).toMatchObject({ insert: "-", typed: "name" });
 });

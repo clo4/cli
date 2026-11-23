@@ -16,8 +16,11 @@ export function Menu(props: { menu: MenuState; onAccept: (index: number) => void
             }}
           >
             <code>{item.names.join(", ")}</code>
-            <Show when={item.description}>
-              <span>{item.description}</span>
+            <Show
+              when={item.typed}
+              fallback={<Show when={item.description}>{(text) => <span>{text()}</span>}</Show>}
+            >
+              {(arg) => <span>&lt;{arg()}&gt;</span>}
             </Show>
           </div>
         )}

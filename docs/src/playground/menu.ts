@@ -5,7 +5,8 @@
  */
 
 import * as CLI from "@clo4/cli";
-import type { Spec } from "@clo4/cli";
+import type { Arg, Spec } from "@clo4/cli";
+import { readNext } from "@clo4/cli/unstable";
 import { asArray } from "./util";
 import { wordAt, type Word } from "./words";
 
@@ -18,6 +19,8 @@ export interface Item {
   description?: string;
   /** No space follows it. */
   incomplete?: boolean;
+  /** It's the word as typed, kept for the argument named here, which takes any text. */
+  typed?: string;
 }
 
 export interface Menu {
@@ -36,17 +39,14 @@ export interface Edit {
 /** What the word at `caret` can become, as `spec` completes it. The first word is the program. */
 export async function suggest(spec: Spec, line: string, caret: number): Promise<Menu> {
   const { before, word } = wordAt(line, caret);
-  let found: CLI.Suggestion[];
+  let found: CLI.Suggestion[] = [];
+  let free: Arg | undefined;
   if (before.length === 0) {
     found = [{ name: spec.name }];
-  } else if (before[0].text !== spec.name) {
-    found = [];
-  } else {
-    found = await CLI.complete(
-      spec,
-      before.slice(1).map((w) => w.text),
-      word.text,
-    );
+  } else if (before[0].text === spec.name) {
+    const argv = before.slice(1).map((w) => w.text);
+    found = await CLI.complete(spec, argv, word.text);
+    free = freeArgument(await readNext(spec, argv, word.text));
   }
   const items: Item[] = [];
   for (const { name, description, incomplete } of found) {
@@ -57,7 +57,21 @@ export async function suggest(spec: Spec, line: string, caret: number): Promise<
       items.push({ names, insert, description, incomplete });
     }
   }
+  // Text typed for an argument that takes any text is meant, so it comes
+  // first, and accepting keeps it. Tab still completes from the rest.
+  if (free && word.text !== "" && !items.some((item) => item.insert === word.text)) {
+    items.unshift({ names: [word.text], insert: word.text, typed: free.name ?? "value" });
+  }
   return { word, items, selected: -1 };
+}
+
+/** The argument the word fills, if it takes any text: one with no parser. */
+function freeArgument(next: Awaited<ReturnType<typeof readNext>>): Arg | undefined {
+  if (next.partialIsOption && !next.attached) {
+    return undefined;
+  }
+  const arg = next.attached ? next.attached.arg : next.value ? next.value.arg : next.arg;
+  return arg && arg.parse === undefined ? arg : undefined;
 }
 
 /** The item that accepting takes: the selected one, or else the first. */
@@ -102,15 +116,20 @@ function sharedStart(items: Item[]): string {
 }
 
 /**
- * What Tab does. With one item, it's accepted. Before an item is selected, the
- * word is completed as far as the items agree, like bash and zsh do. Once that
- * adds nothing, Tab moves to the next item, like fish.
+ * What Tab does. With one item, or one suggested besides the word as typed,
+ * it's accepted. Before an item is selected, the word is completed as far as
+ * the suggestions agree, like bash and zsh do. Once that adds nothing, Tab
+ * moves to the next item, like fish.
  */
 export function tab(line: string, caret: number, menu: Menu): Edit | Menu {
   if (menu.items.length === 1) {
     return accept(line, caret, menu);
   }
-  const shared = sharedStart(menu.items);
+  const suggested = menu.items.filter((item) => item.typed === undefined);
+  if (menu.selected < 0 && suggested.length === 1) {
+    return accept(line, caret, menu, suggested[0]);
+  }
+  const shared = sharedStart(suggested);
   if (menu.selected < 0 && shared.length > menu.word.text.length) {
     return {
       line: line.slice(0, menu.word.start) + shared + line.slice(caret),
