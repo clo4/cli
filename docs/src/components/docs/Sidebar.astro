@@ -2,8 +2,8 @@
 import Icon, { type IconName } from "@/components/Icon.astro";
 import T from "@/components/T.astro";
 import { t } from "@/i18n";
-import { categories, latest, sameTopic, source, versionOf, versions, type Page } from "@/lib/source";
-import { version as packageVersion } from "@/lib/shared";
+import { categories, categoryOf, counterpart, versionOf, type Page } from "@/lib/source";
+import { versionLabel, versions } from "@/lib/versions";
 
 interface Props {
   page: Page;
@@ -18,26 +18,28 @@ const icons: Record<string, IconName> = {
   guides: "guides",
   reference: "reference",
 };
-const options = ["next", ...versions].map((v) => ({
-  version: v,
-  url: (sameTopic(page, v) ?? source.getPage([v]))?.url,
-  name: v === "next" ? t("docs.version.next") : v === latest ? t("docs.version.latest") : t("docs.version.major", { major: v.slice(1) }),
-  note: v === "next" ? t("docs.version.nextNote") : v === latest ? packageVersion : undefined,
-}));
-const selected = options.find((option) => option.version === version)!;
-const open = categories(version).find((category) => category.items.some((item) => item.url === page.url))?.name;
+const options = versions.map((v) => ({ ...versionLabel(v), url: counterpart(page, v).url, current: v === version }));
+const selected = versionLabel(version);
+const open = categoryOf(page);
 ---
 
-<button class="switcher" popovertarget={`${id}-versions`} style={`anchor-name: --${id}-switcher`}>
-  <span class="label"><small><T k="docs.version" /></small><span>{selected.name}</span></span>
+<button
+  class="switcher"
+  popovertarget={`${id}-versions`}
+  style={`anchor-name: --${id}-switcher`}
+  aria-label={`${t("docs.version")}: ${[selected.name, selected.note].filter(Boolean).join(" ")}`}
+>
+  <span>{selected.name}</span>
+  {selected.note && <small>({selected.note})</small>}
   <Icon name="updown" />
 </button>
 <div id={`${id}-versions`} class="versions surface enters" popover style={`position-anchor: --${id}-switcher`}>
   {
     options.map((option) => (
-      <a href={option.url} aria-current={option.version === version ? "page" : undefined}>
+      <a href={option.url} aria-current={option.current ? "page" : undefined}>
         <span>{option.name}</span>
-        {option.note && <small>{option.note}</small>}
+        {option.note && <small>({option.note})</small>}
+        {option.current && <Icon name="check" />}
       </a>
     ))
   }
@@ -77,31 +79,38 @@ const open = categories(version).find((category) => category.items.some((item) =
 </nav>
 
 <style>
-  .switcher {
+  .switcher,
+  .versions a {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 14px;
+    line-height: 1.3;
+    & small {
+      color: var(--muted);
+      font-size: var(--text-sm);
+    }
+    & :global(.icon) {
+      align-self: center;
+      margin-inline-start: auto;
+      color: var(--muted);
+    }
+  }
+  .switcher {
     width: 100%;
-    padding: 8px 10px;
+    padding: 9px 10px;
     text-align: start;
     border: 1px solid var(--line);
     border-radius: var(--radius-inner);
     background: var(--surface);
+    font-weight: 500;
     cursor: pointer;
-    & .label {
-      display: grid;
-      line-height: 1.3;
-      font-size: 14px;
-      font-weight: 500;
+    transition: border-color var(--ease);
+    &:hover {
+      border-color: var(--line-strong);
     }
     & small {
-      color: var(--muted);
-      font-size: 12px;
       font-weight: 400;
-    }
-    & :global(.icon) {
-      margin-inline-start: auto;
-      color: var(--muted);
     }
   }
   .versions {
@@ -113,20 +122,13 @@ const open = categories(version).find((category) => category.items.some((item) =
     padding: 4px;
     transform-origin: top;
     & a {
-      display: grid;
-      padding: 6px 8px;
+      padding: 7px 8px;
       border-radius: var(--radius-inner);
-      line-height: 1.35;
-      font-size: 14px;
       text-decoration: none;
-      &:hover,
-      &[aria-current] {
+      transition: background-color var(--ease);
+      &:hover {
         background: var(--hl);
       }
-    }
-    & small {
-      color: var(--muted);
-      font-size: 12px;
     }
   }
   .search-button {

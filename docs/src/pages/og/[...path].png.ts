@@ -2,7 +2,7 @@ import type { APIRoute, GetStaticPaths, InferGetStaticPropsType } from "astro";
 import { t } from "@/i18n";
 import { formatDate, getPosts } from "@/lib/blog";
 import { socialImage, type Card } from "@/lib/og";
-import { categories, routeOf, source, versionOf } from "@/lib/source";
+import { categoryOf, routeOf, source } from "@/lib/source";
 
 export const prerender = true;
 
@@ -13,9 +13,7 @@ export const getStaticPaths = (() => {
     { path: "changelog", card: { title: t("changelog.title"), description: t("changelog.description") } },
   ];
   for (const page of source.getPages()) {
-    const category = categories(versionOf(page)).find((c) =>
-      c.items.some((item) => item.url === page.url),
-    )?.name;
+    const category = categoryOf(page);
     cards.push({
       path: `docs/${routeOf(page) || "index"}`,
       card: {

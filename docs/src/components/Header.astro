@@ -10,8 +10,9 @@ interface Props {
 
 const { current } = Astro.props;
 const links = [
-  { key: "nav.docs", path: "docs", current: current === "docs" },
-  { key: "nav.blog", path: "blog", current: current === "blog" },
+  { key: "nav.docs", path: "docs" },
+  { key: "nav.blog", path: "blog" },
+  { key: "nav.changelog", path: "changelog", badge: t("docs.version.release", { release: version }) },
 ] as const;
 ---
 
@@ -20,19 +21,14 @@ const links = [
   <nav aria-label={t("nav.label")}>
     {
       links.map((link) => (
-        <a href={href(link.path)} aria-current={link.current ? "page" : undefined}>
+        <a href={href(link.path)} aria-current={current === link.path ? "page" : undefined}>
           <T k={link.key} />
+          {"badge" in link && <span class="badge">{link.badge}</span>}
         </a>
       ))
     }
   </nav>
   <div class="end">
-    <a
-      class="version"
-      href={href("changelog")}
-      aria-label={t("nav.version", { version })}
-      aria-current={current === "changelog" ? "page" : undefined}>v{version}</a
-    >
     <a class="icon-button github" href={githubUrl} aria-label={t("nav.github")}><Icon name="github" size={18} /></a>
     {
       current === "docs" && (
@@ -60,18 +56,18 @@ const links = [
   </div>
 </header>
 
-<div id="menu" class="sheet" popover>
+<div id="menu" class="sheet enters" popover>
   <details class:list={["site", { docs: current === "docs" }]} open={current !== "docs"}>
     <summary><Icon name="menu" /><T k="nav.menu" /></summary>
     <nav aria-label={t("nav.label")}>
       {
         links.map((link) => (
-          <a href={href(link.path)} aria-current={link.current ? "page" : undefined}>
+          <a href={href(link.path)} aria-current={current === link.path ? "page" : undefined}>
             <T k={link.key} />
+            {"badge" in link && <span class="badge">{link.badge}</span>}
           </a>
         ))
       }
-      <a href={href("changelog")} aria-current={current === "changelog" ? "page" : undefined}><T k="nav.changelog" /></a>
       <a href={githubUrl}><T k="nav.github" /></a>
     </nav>
   </details>
@@ -125,6 +121,9 @@ const links = [
     display: flex;
     gap: 4px;
     & a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       padding: 6px 10px;
       border-radius: var(--radius-inner);
       font-size: var(--text-ui);
@@ -143,17 +142,14 @@ const links = [
     align-items: center;
     gap: 4px;
   }
-  .version {
-    padding: 6px 8px;
-    border-radius: var(--radius-inner);
-    font-size: var(--text-sm);
+  .badge {
+    padding: 0 6px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 18px;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
-    text-decoration: none;
-    &:hover,
-    &[aria-current] {
-      color: var(--fg);
-    }
   }
   [data-theme-button] :global(.icon),
   .menu :global(.close),
@@ -175,7 +171,6 @@ const links = [
       padding: 0 12px 0 16px;
     }
     .header > nav,
-    .version,
     .github {
       display: none;
     }
@@ -196,6 +191,7 @@ const links = [
     overscroll-behavior: contain;
     background: var(--bg);
     color: var(--fg);
+    transform-origin: top;
     &:popover-open {
       display: flex;
       flex-direction: column;

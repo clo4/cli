@@ -9,7 +9,8 @@ import Toc from "@/components/docs/Toc.astro";
 import Search from "@/components/docs/Search.astro";
 import PageActions from "@/components/docs/PageActions.astro";
 import { t } from "@/i18n";
-import { categories, latest, neighbours, routeOf, sameTopic, source, versionOf } from "@/lib/source";
+import { categoryOf, counterpart, neighbours, routeOf, sameTopic, source, versionOf } from "@/lib/source";
+import { latest } from "@/lib/versions";
 import { gitConfig, githubUrl, href } from "@/lib/shared";
 
 export const prerender = true;
@@ -26,17 +27,16 @@ type Props = InferGetStaticPropsType<typeof getStaticPaths>;
 const { page } = Astro.props;
 const { body: Content, toc } = await page.data.load();
 const version = versionOf(page);
-const latestPage = version === latest ? page : (sameTopic(page, latest) ?? source.getPage([latest]));
-const category = categories(version).find((c) => c.items.some((item) => item.url === page.url))?.name;
+const category = categoryOf(page);
 const { previous, next } = neighbours(page);
-const markdownUrl = `${page.url || "/cli/docs"}${routeOf(page) ? "" : "/index"}.md`;
+const markdownUrl = `${page.url}${routeOf(page) ? "" : "/index"}.md`;
 const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.path}`;
 ---
 
 <Base
   title={page.data.title}
   description={page.data.description}
-  canonical={(version === latest ? page : sameTopic(page, latest))?.url ?? page.url}
+  canonical={(sameTopic(page, latest) ?? page).url}
   image={href(`og/docs/${routeOf(page) || "index"}.png`)}
   current="docs"
 >
@@ -47,11 +47,11 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
     </aside>
     <main class="article">
       {
-        version !== latest && latestPage && (
+        version.status !== "latest" && (
           <p class="notice">
-            {version === "next" ? <T k="docs.unreleased" /> : <T k="docs.old" vars={{ major: version.slice(1) }} />}{" "}
-            <a href={latestPage.url}>
-              <T k={version === "next" ? "docs.unreleased.link" : "docs.old.link"} />
+            {version.status === "next" ? <T k="docs.unreleased" /> : <T k="docs.old" vars={{ release: version.release ?? version.id }} />}{" "}
+            <a href={counterpart(page, latest).url}>
+              <T k={version.status === "next" ? "docs.unreleased.link" : "docs.old.link"} />
             </a>
           </p>
         )
@@ -66,7 +66,7 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
     </main>
     <div class="toc"><Toc toc={toc} /></div>
   </div>
-  <Search version={version} />
+  <Search version={version.id} />
 </Base>
 
 <style>

@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { getPosts } from "@/lib/blog";
 import { href, site } from "@/lib/shared";
-import { latest, source, versionOf } from "@/lib/source";
+import { source, versionOf } from "@/lib/source";
 
 export const prerender = true;
 
@@ -12,7 +12,7 @@ export const GET: APIRoute = () => {
     href("changelog"),
     ...source
       .getPages()
-      .filter((page) => versionOf(page) === latest)
+      .filter((page) => versionOf(page).status === "latest")
       .map((page) => page.url),
     ...getPosts().map((post) => post.url),
   ];
