@@ -17,4 +17,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm verify
       - run: pnpm --filter docs check
+      - run: pnpm --filter docs test
       - run: pnpm --filter docs build

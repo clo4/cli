@@ -38,7 +38,7 @@ const copy = {
   <div class="tabs" role="tablist">
     {
       panels.map((panel, i) => (
-        <button role="tab" aria-selected={i === 0 ? "true" : "false"} data-scenario={panel.id} data-line={panel.line}>
+        <button role="tab" aria-selected={i === 0 ? "true" : "false"} data-scenario={panel.id}>
           <T k={panel.tab} />
         </button>
       ))
