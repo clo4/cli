@@ -8,7 +8,7 @@ import * as CLI from "@clo4/cli";
 import type { Arg, Spec } from "@clo4/cli";
 import { readNext } from "@clo4/cli/unstable";
 import { asArray } from "./util";
-import { wordAt, type Word } from "./words";
+import { wordAt, words, type Word } from "./words";
 
 /** A suggestion in the menu. */
 export interface Item {
@@ -24,7 +24,12 @@ export interface Item {
 }
 
 export interface Menu {
+  /** The word, as far as the caret. Items are what that can become. */
   word: Word;
+  /** Where the word ends, past the caret if it's inside it. Accepting replaces it all. */
+  end: number;
+  /** The whole word. */
+  whole: string;
   items: Item[];
   /** The selected item, or -1 before one is. */
   selected: number;
@@ -59,10 +64,11 @@ export async function suggest(spec: Spec, line: string, caret: number): Promise<
   }
   // Text typed for an argument that takes any text is meant, so it comes
   // first, and accepting keeps it. Tab still completes from the rest.
-  if (free && word.text !== "" && !items.some((item) => item.insert === word.text)) {
-    items.unshift({ names: [word.text], insert: word.text, typed: free.name ?? "value" });
+  const whole = words(line).find((w) => w.start === word.start && w.end >= caret) ?? word;
+  if (free && whole.text !== "" && !items.some((item) => item.insert === whole.text)) {
+    items.unshift({ names: [whole.text], insert: whole.text, typed: free.name ?? "value" });
   }
-  return { word, items, selected: -1 };
+  return { word, end: whole.end, whole: whole.text, items, selected: -1 };
 }
 
 /** The argument the word fills, if it takes any text: one with no parser. */
@@ -92,15 +98,16 @@ export function move(menu: Menu, by: number): Menu {
   return { ...menu, selected: (from + by + count) % count };
 }
 
-/** `line` with the word replaced by `item`, followed by a space unless it's incomplete. */
-export function accept(line: string, caret: number, menu: Menu, item = current(menu)): Edit {
+/** `line` with the whole word replaced by `item`, followed by a space unless it's incomplete. */
+export function accept(line: string, menu: Menu, item = current(menu)): Edit {
   if (!item) {
-    return { line, caret };
+    return { line, caret: menu.end };
   }
-  const insert = item.insert + (item.incomplete ? "" : " ");
+  // The caret goes past a space after it, which is added unless one follows already.
+  const space = item.incomplete || line[menu.end] === " " ? "" : " ";
   return {
-    line: line.slice(0, menu.word.start) + insert + line.slice(caret),
-    caret: menu.word.start + insert.length,
+    line: line.slice(0, menu.word.start) + item.insert + space + line.slice(menu.end),
+    caret: menu.word.start + item.insert.length + (item.incomplete ? 0 : 1),
   };
 }
 
@@ -121,18 +128,18 @@ function sharedStart(items: Item[]): string {
  * the suggestions agree, like bash and zsh do. Once that adds nothing, Tab
  * moves to the next item, like fish.
  */
-export function tab(line: string, caret: number, menu: Menu): Edit | Menu {
+export function tab(line: string, menu: Menu): Edit | Menu {
   if (menu.items.length === 1) {
-    return accept(line, caret, menu);
+    return accept(line, menu);
   }
   const suggested = menu.items.filter((item) => item.typed === undefined);
   if (menu.selected < 0 && suggested.length === 1) {
-    return accept(line, caret, menu, suggested[0]);
+    return accept(line, menu, suggested[0]);
   }
   const shared = sharedStart(suggested);
   if (menu.selected < 0 && shared.length > menu.word.text.length) {
     return {
-      line: line.slice(0, menu.word.start) + shared + line.slice(caret),
+      line: line.slice(0, menu.word.start) + shared + line.slice(menu.end),
       caret: menu.word.start + shared.length,
     };
   }
@@ -141,5 +148,5 @@ export function tab(line: string, caret: number, menu: Menu): Edit | Menu {
 
 /** Whether the menu offers anything that isn't typed already. */
 export function offersMore(menu: Menu): boolean {
-  return menu.items.length > 1 || (menu.items.length === 1 && menu.items[0].insert !== menu.word.text);
+  return menu.items.length > 1 || (menu.items.length === 1 && menu.items[0].insert !== menu.whole);
 }

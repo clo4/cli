@@ -66,6 +66,7 @@ export const en = {
   "stage.build": { text: "Help" },
   "stage.resize": { text: "Completion" },
   "stage.serve": { text: "Errors" },
+  "stage.loading": { text: "Loading" },
   "stage.input": { text: "Command line" },
   "stage.result": { text: "Action input" },
   "stage.problems": { text: "Problems" },

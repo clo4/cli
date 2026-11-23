@@ -4,13 +4,14 @@ import type { Token } from "../analyse";
 import type { Copy } from "../copy";
 import type { Piece, SpecTree } from "../tree";
 import { asArray, keyOf, names } from "../util";
+import { fileName } from "./Code";
 import { Fill } from "./Fill";
 
 /** What a word is, where it's declared, and what's wrong with it. */
-export function Card(props: { token: Token; tree: SpecTree; file: string; copy: Copy }) {
+export function Card(props: { token: Token; tree: SpecTree; copy: Copy }) {
   const where = (piece: Piece) => {
-    const lines = props.tree.node(piece)?.lines;
-    return lines ? ` · ${props.file}:${lines[0]}` : "";
+    const node = props.tree.nodes(piece)[0];
+    return node?.lines ? ` · ${fileName(node.file)}:${node.lines[0]}` : "";
   };
   const description = (piece: Piece) => ("description" in piece ? piece.description : undefined);
   const piece = () => props.token.pieces[0];

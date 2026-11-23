@@ -220,11 +220,49 @@
 .stage .code {
   min-width: 0;
   animation: fade-in var(--ease-slow);
-  & .file {
-    padding: 9px 16px;
+  & .files {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
     border-bottom: 1px solid var(--line);
+  }
+  & .files button {
+    all: unset;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
     font-size: 13px;
     color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      color var(--ease),
+      background-color var(--ease);
+    &:hover {
+      color: var(--fg);
+    }
+    &[aria-selected="true"] {
+      color: var(--fg);
+      background: var(--hl);
+    }
+    &:only-child {
+      cursor: default;
+      background: none;
+      color: var(--muted);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--fg);
+      outline-offset: -2px;
+    }
+    /* Another file has lines lit. */
+    &.lit::after {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--kind);
+    }
   }
   & pre {
     margin: 0;

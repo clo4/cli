@@ -9,15 +9,15 @@ import { actionInput } from "./inputs";
 import * as menus from "./menu";
 import type { Ranges } from "./ranges";
 import { scenarios } from "./scenarios";
-import { specTree } from "./tree";
+import { specTree, type Node } from "./tree";
 import { words } from "./words";
 
 export type Playground = ReturnType<typeof createPlayground>;
 
-/** What lights up: words of the line, lines of source, and the word whose card is open. */
+/** What lights up: words of the line, lines of each file, and the word whose card is open. */
 export interface Highlight {
   tokens: Set<number>;
-  lines: Set<number>;
+  lines: Map<string, Set<number>>;
   card: number;
   /** What the word in focus is, which the lines it lights take the colour of. */
   kind?: Kind;
@@ -36,10 +36,17 @@ function matches(query: string) {
 const unread = (line: string): Token[] =>
   words(line).map((word) => ({ ...word, kind: "unread", pieces: [], problems: [] }));
 
+/**
+ * The playground for `scenarios`. `ranges` are the lines of the pieces of
+ * each file, by its path, and `notFound` says that a program isn't the
+ * scenario's, at `{name}`.
+ */
 export function createPlayground(ranges: Record<string, Ranges>, notFound: string) {
   const [id, setId] = createSignal(scenarios[0].id);
   const scenario = createMemo(() => scenarios.find((s) => s.id === id())!);
-  const tree = createMemo(() => specTree(scenario().spec, ranges[id()]));
+  const tree = createMemo(() =>
+    specTree(scenario().files.map(({ path, root }) => ({ file: path, piece: root, ranges: ranges[path] }))),
+  );
 
   const [line, setLine] = createSignal(scenario().line);
   const [caret, setCaret] = createSignal(line().length);
@@ -49,7 +56,7 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
   /** The word under the pointer, or -1. */
   const [hovered, setHovered] = createSignal(-1);
   /** The line of source under the pointer. */
-  const [hoveredLine, setHoveredLine] = createSignal<number | null>(null);
+  const [hoveredLine, setHoveredLine] = createSignal<{ file: string; line: number } | null>(null);
   /** On a touch screen, the card opens once the line is tapped. */
   const [tapped, setTapped] = createSignal(false);
   const coarse = matches("(pointer: coarse)");
@@ -96,21 +103,28 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
   });
 
   const highlight = createMemo((): Highlight => {
-    const lit: Highlight = { tokens: new Set(), lines: new Set(), card: -1 };
-    const addLines = (lines: [number, number] | undefined) => {
+    const lit: Highlight = { tokens: new Set(), lines: new Map(), card: -1 };
+    const light = ({ file, lines }: Node) => {
+      const set = lit.lines.get(file) ?? new Set();
       for (let l = lines?.[0] ?? 1; lines && l <= lines[1]; l++) {
-        lit.lines.add(l);
+        set.add(l);
       }
+      lit.lines.set(file, set);
     };
     const all = tokens();
     const source = hoveredLine();
     if (source !== null) {
       // A piece that no word is, like an argument not typed yet, lights up as
       // the piece it's declared in.
-      for (let node = tree().at(source); node && lit.tokens.size === 0; node = node.parent) {
-        all.forEach((t, i) => t.pieces.includes(node!.piece) && lit.tokens.add(i));
+      for (
+        let node = tree().at(source.file, source.line);
+        node && lit.tokens.size === 0;
+        node = node.parent
+      ) {
+        const at = node;
+        all.forEach((t, i) => t.pieces.some((p) => tree().nodes(p).includes(at)) && lit.tokens.add(i));
         if (lit.tokens.size) {
-          addLines(node.lines);
+          light(node);
           lit.kind = all[[...lit.tokens][0]].kind;
         }
       }
@@ -125,11 +139,30 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
     lit.tokens.add(i);
     lit.kind = all[i].kind;
     for (const piece of all[i].pieces) {
-      addLines(tree().node(piece)?.lines);
+      tree().nodes(piece).forEach(light);
     }
     const quiet = coarse() && !tapped() && hovered() < 0;
     lit.card = quiet || shownMenu() ? -1 : i;
     return lit;
+  });
+
+  /** The file of the piece the word at the caret is, if it's declared in one. */
+  const caretFile = createMemo(() => {
+    if (!focused()) {
+      return undefined;
+    }
+    const at = caret();
+    const token = tokens().find((t) => t.start <= at && at <= t.end);
+    return token?.pieces.flatMap((piece) => tree().nodes(piece))[0]?.file;
+  });
+  /** The file the source shows: the one the caret's word is in, or the one chosen. */
+  const [file, setFile] = createSignal<string>((prev) => {
+    const files = scenario().files;
+    const follow = caretFile();
+    if (follow) {
+      return follow;
+    }
+    return prev && files.some((f) => f.path === prev) ? prev : files[0].path;
   });
 
   /** Puts `edit` on the line, as if typed. */
@@ -158,6 +191,7 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
     tokens,
     analysis,
     input,
+    file,
     menu: shownMenu,
     preview,
     highlight,
@@ -187,8 +221,11 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
     hover(index: number) {
       setHovered(index);
     },
-    hoverLine(n: number | null) {
-      setHoveredLine(n);
+    hoverLine(at: { file: string; line: number } | null) {
+      setHoveredLine(at);
+    },
+    showFile(path: string) {
+      setFile(path);
     },
 
     /** Tab: completes as far as the items agree, then moves through them. */
@@ -198,7 +235,7 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
         return false;
       }
       setDismissed(false);
-      const done = menus.tab(line(), caret(), m);
+      const done = menus.tab(line(), m);
       if ("items" in done) {
         setSelected(done.selected);
       } else {
@@ -221,7 +258,7 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
       if (!m || !shownMenu()) {
         return false;
       }
-      edit(menus.accept(line(), caret(), m, index === undefined ? undefined : m.items[index]));
+      edit(menus.accept(line(), m, index === undefined ? undefined : m.items[index]));
       return true;
     },
     dismiss(): boolean {

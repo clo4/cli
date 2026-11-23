@@ -2,6 +2,7 @@ import ts from "typescript";
 
 export type Ranges = Record<string, [from: number, to: number]>;
 
+/** The lines of each piece of the spec or command a file defines with `CLI.spec` or `CLI.command`, by its path in it. */
 export function specRanges(source: string): Ranges {
   const file = ts.createSourceFile("spec.ts", source, ts.ScriptTarget.Latest, true);
   const ranges: Ranges = {};
@@ -32,7 +33,7 @@ export function specRanges(source: string): Ranges {
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === "spec" &&
+      (node.expression.name.text === "spec" || node.expression.name.text === "command") &&
       node.arguments[0]
     ) {
       walk(node.arguments[0], "spec");

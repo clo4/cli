@@ -1,16 +1,15 @@
 ---
 import { codeToTokens, createCssVariablesTheme } from "shiki";
 import { t } from "@/i18n";
-import type { Panel, PlaygroundProps } from "@/playground/components/Playground";
+import type { PlaygroundProps, Source } from "@/playground/components/Playground";
 import { specRanges } from "@/playground/ranges";
 import { scenarios } from "@/playground/scenarios";
-import build from "@/playground/scenarios/build.ts?raw";
-import greet from "@/playground/scenarios/greet.ts?raw";
-import resize from "@/playground/scenarios/resize.ts?raw";
-import serve from "@/playground/scenarios/serve.ts?raw";
-import wait from "@/playground/scenarios/wait.ts?raw";
 
-const sources: Record<string, string> = { greet, wait, build, resize, serve };
+const files = import.meta.glob<string>("/src/playground/scenarios/**/*.ts", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
 const theme = createCssVariablesTheme({ name: "tokens", variablePrefix: "--shiki-" });
 const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -22,13 +21,14 @@ async function highlight(source: string): Promise<string[]> {
   );
 }
 
-const panels: Record<string, Panel> = {};
-for (const scenario of scenarios) {
-  const source = sources[scenario.id];
-  panels[scenario.id] = { tab: t(scenario.tab), code: await highlight(source), ranges: specRanges(source) };
+const sources: Record<string, Source> = {};
+for (const { path } of scenarios.flatMap((scenario) => scenario.files)) {
+  const source = files[`/src/playground/scenarios/${path}`];
+  sources[path] = { code: await highlight(source), ranges: specRanges(source) };
 }
 const props: PlaygroundProps = {
-  panels,
+  tabs: Object.fromEntries(scenarios.map((scenario) => [scenario.id, t(scenario.tab)])),
+  sources,
   copy: {
     label: t("stage.label"),
     input: t("stage.input"),

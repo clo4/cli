@@ -179,7 +179,7 @@ export function Prompt(props: { pg: Playground; copy: Copy }) {
       <Show when={card()}>
         {(token) => (
           <Pop class="card" left={left(token().start)}>
-            <Card token={token()} tree={pg.tree()} file={`${pg.id()}.ts`} copy={props.copy} />
+            <Card token={token()} tree={pg.tree()} copy={props.copy} />
           </Pop>
         )}
       </Show>

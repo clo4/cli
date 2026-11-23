@@ -22,7 +22,7 @@ test("nothing is selected at first, and accepting takes the first item", async (
   const menu = await suggest(greet, "greet --t", 9);
   expect(menu.selected).toBe(-1);
   expect(preview(menu)).toBe("imes");
-  expect(accept("greet --t", 9, menu)).toEqual({ line: "greet --times ", caret: 14 });
+  expect(accept("greet --t", menu)).toEqual({ line: "greet --times ", caret: 14 });
 });
 
 test("moving the selection wraps around: forward from nothing is the first, and back the last", async () => {
@@ -37,13 +37,13 @@ test("Tab completes as far as the items agree, then moves through them", async (
   const line = "greet --";
   const menu = await suggest(greet, line, line.length);
   // --help, --times and --shout agree on nothing past `--`, so Tab selects.
-  expect(tab(line, line.length, menu)).toMatchObject({ selected: 0 });
+  expect(tab(line, menu)).toMatchObject({ selected: 0 });
   const dash = await suggest(greet, "greet -", 7);
-  expect(tab("greet -", 7, dash)).toEqual({ line: "greet --", caret: 8 });
+  expect(tab("greet -", dash)).toEqual({ line: "greet --", caret: 8 });
 });
 
 test("Tab accepts the only item", async () => {
-  expect(tab("greet --t", 9, await suggest(greet, "greet --t", 9))).toEqual({
+  expect(tab("greet --t", await suggest(greet, "greet --t", 9))).toEqual({
     line: "greet --times ",
     caret: 14,
   });
@@ -56,7 +56,7 @@ test("an item that's typed already offers nothing more on its own", async () => 
 
 test("an incomplete item is accepted with no space after it", async () => {
   const size = CLI.spec({ name: "size", args: { name: "size", parse: CLI.seq(CLI.uint, "x", CLI.uint) } });
-  expect(accept("size 1920", 9, await suggest(size, "size 1920", 9)).line).toBe("size 1920x");
+  expect(accept("size 1920", await suggest(size, "size 1920", 9)).line).toBe("size 1920x");
 });
 
 test("text typed for an argument that takes any text comes first, and accepting keeps it", async () => {
@@ -66,9 +66,9 @@ test("text typed for an argument that takes any text comes first, and accepting 
     ["completion", undefined],
   ]);
   expect(preview(menu)).toBe("");
-  expect(accept("greet c", 7, menu)).toEqual({ line: "greet c ", caret: 8 });
+  expect(accept("greet c", menu)).toEqual({ line: "greet c ", caret: 8 });
   // Tab is asked to complete, so it takes the suggestion.
-  expect(tab("greet c", 7, menu)).toEqual({ line: "greet completion ", caret: 17 });
+  expect(tab("greet c", menu)).toEqual({ line: "greet completion ", caret: 17 });
 });
 
 test("text typed for an argument with a parser, or that reads as an option, isn't kept first", async () => {
@@ -78,4 +78,19 @@ test("text typed for an argument with a parser, or that reads as an option, isn'
 
 test("a lone dash is an argument, so it's kept first too", async () => {
   expect((await suggest(greet, "greet -", 7)).items[0]).toMatchObject({ insert: "-", typed: "name" });
+});
+
+test("with the caret inside a word, accepting replaces all of it", async () => {
+  const line = "greet --ti 2";
+  expect(accept(line, await suggest(greet, line, 8))).toEqual({ line: "greet --times 2", caret: 14 });
+});
+
+test("a word typed whole, with the caret inside it, offers nothing more", async () => {
+  expect(offersMore(await suggest(greet, "greet --times", 9))).toBe(false);
+});
+
+test("with the caret inside text typed for any argument, the whole word is kept", async () => {
+  const menu = await suggest(greet, "greet Ada", 8);
+  expect(menu.items[0]).toMatchObject({ insert: "Ada", typed: "name" });
+  expect(offersMore(menu)).toBe(false);
 });

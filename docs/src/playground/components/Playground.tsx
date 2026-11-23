@@ -10,22 +10,25 @@ import { Terminal } from "./Terminal";
 import { hintScroll } from "@/lib/scroll-hint";
 import "../playground.css";
 
-/** What the page works out for each scenario as it's built. */
-export interface Panel {
-  /** The tab's name. */
-  tab: string;
-  /** Each line of the source, highlighted. */
+/** What the page works out for each file of the scenarios as it's built. */
+export interface Source {
+  /** Each line, highlighted. */
   code: string[];
   ranges: Ranges;
 }
 
 export interface PlaygroundProps {
-  panels: Record<string, Panel>;
+  /** Each scenario's tab name. */
+  tabs: Record<string, string>;
+  /** Each file, by its path in `scenarios`. */
+  sources: Record<string, Source>;
   copy: Copy;
 }
 
 export function Playground(props: PlaygroundProps) {
-  const ranges = Object.fromEntries(Object.entries(props.panels).map(([id, panel]) => [id, panel.ranges]));
+  const ranges = Object.fromEntries(
+    Object.entries(props.sources).map(([path, source]) => [path, source.ranges]),
+  );
   const pg = createPlayground(ranges, props.copy.notFound);
 
   // The underline slides to the selected tab.
@@ -54,7 +57,7 @@ export function Playground(props: PlaygroundProps) {
               aria-selected={pg.id() === scenario.id ? "true" : "false"}
               onClick={() => pg.show(scenario.id)}
             >
-              {props.panels[scenario.id].tab}
+              {props.tabs[scenario.id]}
             </button>
           )}
         </For>
@@ -77,11 +80,14 @@ export function Playground(props: PlaygroundProps) {
         <Show when={pg.id()} keyed>
           {(id) => (
             <Code
-              file={`${id}.ts`}
-              lines={props.panels[id].code}
-              active={pg.highlight().lines}
+              files={scenarios
+                .find((s) => s.id === id)!
+                .files.map(({ path }) => ({ path, code: props.sources[path].code }))}
+              shown={pg.file()}
+              lit={pg.highlight().lines}
               kind={pg.highlight().kind}
-              onHoverLine={(line) => pg.hoverLine(line)}
+              onShow={(path) => pg.showFile(path)}
+              onHoverLine={(at) => pg.hoverLine(at)}
             />
           )}
         </Show>
