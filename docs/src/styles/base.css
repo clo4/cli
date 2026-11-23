@@ -79,3 +79,31 @@ kbd {
   margin: 0 auto;
   padding: 56px var(--page-gutter) 96px;
 }
+
+/* Going from one page to another, the header stays and the page beneath it
+   crosses over, rising a little. Without motion, pages just change. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+.header {
+  view-transition-name: header;
+}
+::view-transition-old(root) {
+  animation: var(--duration) var(--ease-out) both page-out;
+}
+::view-transition-new(root) {
+  animation: var(--duration-slow) var(--ease-out) both page-in;
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
