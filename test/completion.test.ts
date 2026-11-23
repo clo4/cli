@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { expect, test } from "vitest";
 
 import { complete } from "../src/complete.js";
+import type { Completion } from "../src/complete.js";
 import { formatCandidates, script as shellScript } from "../src/completion.js";
 import { completion } from "../src/completion.js";
 import type { Shell } from "../src/completion.js";
@@ -53,7 +54,7 @@ const fixture: Spec = {
 // Runtime resolver
 // ---------------------------------------------------------------------------
 
-const values = (cands: { value: string }[]) => cands.map((c) => c.value);
+const values = (cands: readonly Completion[]) => cands.flatMap((c) => c.values);
 
 const resolve = (spec: Spec, before: readonly string[], partial: string, optionsNeedDash?: boolean) =>
   complete(spec, before, partial, { optionsNeedDash });
@@ -65,9 +66,38 @@ test("runtime: a description after a leading newline is offered by its first lin
     subcommands: [{ name: "sync", description: "\n      Sync files.\n    " }],
   };
   expect(await resolve(spec, [], "")).toEqual([
-    { value: "sync", description: "Sync files." },
-    { value: "--force", description: "Overwrite." },
+    { values: ["sync"], description: "Sync files." },
+    { values: ["--force"], description: "Overwrite." },
   ]);
+});
+
+test("runtime: an option's names, a subcommand's aliases and a suggestion's names are one completion", async () => {
+  const spec: Spec = {
+    name: "cli",
+    args: { name: "target", suggestions: [{ name: ["production", "prod"], description: "Live" }] },
+    options: [{ name: ["-t", "--times"], description: "How many times" }],
+    subcommands: [{ name: ["remove", "rm"], description: "Remove it" }],
+  };
+  expect(await resolve(spec, [], "")).toEqual([
+    { values: ["production", "prod"], description: "Live" },
+    { values: ["remove", "rm"], description: "Remove it" },
+    { values: ["-t", "--times"], description: "How many times" },
+  ]);
+});
+
+test("runtime: a suggestion keeps the names that no subcommand takes", async () => {
+  const spec: Spec = {
+    name: "cli",
+    args: { name: "target", suggestions: [{ name: ["rm", "other"] }] },
+    subcommands: [{ name: ["remove", "rm"] }],
+  };
+  expect(await resolve(spec, [], "")).toEqual([{ values: ["other"] }, { values: ["remove", "rm"] }]);
+});
+
+test("formatCandidates writes a line for each value, with the completion's description", async () => {
+  const completions = [{ values: ["-t", "--times"], description: "How many" }];
+  expect(formatCandidates(completions, "fish", "")).toEqual(["-t\tHow many", "--times\tHow many"]);
+  expect(formatCandidates(completions, "bash", "")).toEqual(["-t ", "--times "]);
 });
 
 test("runtime: top level offers subcommands and persistent options", async () => {
@@ -323,8 +353,8 @@ test("runtime: a value the parser would read as a subcommand isn't offered as a 
     subcommands: [{ name: "build", description: "Build it" }],
   };
   expect(await resolve(spec, [], "")).toEqual([
-    { value: "other" },
-    { value: "build", description: "Build it" },
+    { values: ["other"] },
+    { values: ["build"], description: "Build it" },
   ]);
 });
 
@@ -333,7 +363,7 @@ test("runtime: each value is offered once, where it first appears", async () => 
     name: "x",
     args: { name: "v", suggestions: ["a", { name: "b", description: "first" }], suggest: () => ["a", "b"] },
   };
-  expect(await resolve(spec, [], "")).toEqual([{ value: "a" }, { value: "b", description: "first" }]);
+  expect(await resolve(spec, [], "")).toEqual([{ values: ["a"] }, { values: ["b"], description: "first" }]);
 });
 
 test("runtime: a command like help completes its names with no help of its own", async () => {
@@ -455,8 +485,8 @@ test("runtime: dependsOn is noted in the description", async () => {
     ],
   };
   const candidates = await resolve(spec, [], "");
-  expect(candidates.find((c) => c.value === "--a")?.description).toBe("Use a (requires --b, --c)");
-  expect(candidates.find((c) => c.value === "--d")?.description).toBe("requires --b");
+  expect(candidates.find((c) => c.values.includes("--a"))?.description).toBe("Use a (requires --b, --c)");
+  expect(candidates.find((c) => c.values.includes("--d"))?.description).toBe("requires --b");
 });
 
 test("runtime: a persistent repeatable option's limit counts uses in parent commands", async () => {
@@ -522,7 +552,7 @@ test("runtime: required options are annotated", async () => {
     options: [{ name: "--need", isRequired: true, description: "needed" }],
   };
   const [first] = await resolve(spec, [], "");
-  expect(first.value).toBe("--need");
+  expect(first.values).toEqual(["--need"]);
   expect(first.description).toMatch(/\[required\]/);
 });
 
@@ -707,9 +737,9 @@ test.skipIf(!nu || process.platform === "win32")("the Nushell shim runs in Nushe
     const log = join(dir, "args");
     const forge = join(bin, "forge");
     const candidates = [
-      { value: "my file.txt", description: "A file" },
-      { value: "other" },
-      { value: "build" },
+      { values: ["my file.txt"], description: "A file" },
+      { values: ["other"] },
+      { values: ["build"] },
     ];
     writeFakeCli(forge, "nushell", candidates, ["my f", "bu", "ot"], log);
     copyFileSync(forge, join(bin, "forge.exe"));
@@ -860,7 +890,7 @@ test("runtime: an option that another option shadows isn't offered", async () =>
     ],
   };
   const candidates = await resolve(spec, ["sub"], "");
-  expect(candidates.filter((c) => c.value === "--g").map((c) => c.description)).toEqual(["child"]);
+  expect(candidates.filter((c) => c.values.includes("--g")).map((c) => c.description)).toEqual(["child"]);
   expect(candidates.map((c) => c.description)).toContain("still reachable");
 });
 
@@ -872,7 +902,7 @@ test("runtime: a shadowed name is offered only for the option it refers to", asy
       { name: "--all", description: "second" },
     ],
   };
-  const candidates = (await resolve(spec, [], "")).map((c) => `${c.value}:${c.description}`);
+  const candidates = (await resolve(spec, [], "")).map((c) => `${c.values.join(" ")}:${c.description}`);
   expect(candidates).toEqual(["-a:first", "--all:second"]);
 });
 
@@ -939,7 +969,7 @@ test("runtime: an option isn't offered under a name that a subcommand matches", 
     options: [{ name: ["-f", "--foo"], description: "option" }],
     subcommands: [{ name: "--foo", description: "subcommand" }],
   };
-  const candidates = (await resolve(spec, [], "")).map((c) => `${c.value}:${c.description}`);
+  const candidates = (await resolve(spec, [], "")).map((c) => `${c.values.join(" ")}:${c.description}`);
   expect(candidates).toEqual(["--foo:subcommand", "-f:option"]);
 });
 
@@ -991,7 +1021,7 @@ test("runtime: help offers the subcommands of the command its names lead to", as
   expect(values(remote)).toEqual(expect.arrayContaining(["remove", "rm"]));
   expect(values(remote)).not.toContain("ghost");
   expect(values(remote)).not.toContain("build");
-  expect(remote.find((c) => c.value === "remove")).toBeDefined();
+  expect(remote.find((c) => c.values.includes("remove"))).toBeDefined();
   expect(values(await resolve(spec, ["help", "build"], ""))).toEqual(["-h", "--help"]);
   expect(values(await resolve(spec, ["help", "remote", "remove"], ""))).toEqual(["-h", "--help"]);
   expect(values(await resolve(spec, ["help", "nope"], ""))).toEqual(["-h", "--help"]);
@@ -999,7 +1029,7 @@ test("runtime: help offers the subcommands of the command its names lead to", as
 
 test("runtime: help's subcommand names carry their descriptions", async () => {
   const candidates = await resolve(helpFixture(helpCommand), ["help"], "b");
-  expect(candidates).toContainEqual({ value: "build", description: "Build inputs" });
+  expect(candidates).toContainEqual({ values: ["build"], description: "Build inputs" });
 });
 
 test("runtime: a persistent help command offers the subcommands of the command it's used in", async () => {
@@ -1021,7 +1051,7 @@ test("runtime: help offers the persistent subcommands the command its names lead
     ],
   };
   const candidates = await resolve(spec, ["help", "leaf"], "");
-  expect(candidates).toEqual([{ value: "status", description: "Show the status" }]);
+  expect(candidates).toEqual([{ values: ["status"], description: "Show the status" }]);
 });
 
 test("runtime: optionsNeedDash offers help's subcommand names until the word starts with a dash", async () => {
@@ -1124,19 +1154,19 @@ test.skipIf(!hasShell("nu") || process.platform === "win32")("the Nushell shim s
 // ---------------------------------------------------------------------------
 
 const awkward = [
-  { value: "plain" },
-  { value: "http://example.com", description: "A URL: with colon" },
-  { value: "a:b" },
-  { value: "my file.txt", description: "A file\nsecond line" },
-  { value: "it's" },
-  { value: "$(touch x)" },
-  { value: "back\\slash", description: "a \\ b" },
-  { value: "Upper", description: "desc\twith\r\n  tabs" },
+  { values: ["plain"] },
+  { values: ["http://example.com"], description: "A URL: with colon" },
+  { values: ["a:b"] },
+  { values: ["my file.txt"], description: "A file\nsecond line" },
+  { values: ["it's"] },
+  { values: ["$(touch x)"] },
+  { values: ["back\\slash"], description: "a \\ b" },
+  { values: ["Upper"], description: "desc\twith\r\n  tabs" },
   // A tab or line break in a value can't fit on a line, so these are left out.
-  { value: "tab\there" },
-  { value: "line\nbreak" },
-  { value: "carriage\rreturn" },
-  { value: "" },
+  { values: ["tab\there"] },
+  { values: ["line\nbreak"] },
+  { values: ["carriage\rreturn"] },
+  { values: [""] },
 ];
 
 test("formatCandidates quotes values for bash and drops descriptions", async () => {
@@ -1157,7 +1187,7 @@ test("formatCandidates escapes every character bash treats specially", async () 
   const values = ["~home", "#tag", "!bang", "a*b?", "[x]", "{a,b}", "a;b|c&d", "<in>", '"q"', "`x`", "end "];
   expect(
     formatCandidates(
-      values.map((value) => ({ value })),
+      values.map((value) => ({ values: [value] })),
       "bash",
       "",
     ),
@@ -1235,7 +1265,7 @@ test("formatCandidates writes the CompletionResult fields for PowerShell", async
 test("formatCandidates quotes the characters PowerShell reads as quotes", async () => {
   const values = ["it\u2019s", "\u201cq\u201d", "a,b", "@x", "a{b}"];
   const texts = formatCandidates(
-    values.map((value) => ({ value })),
+    values.map((value) => ({ values: [value] })),
     "powershell",
     "",
   ).map((line) => line.split("\t")[0]);
@@ -1253,7 +1283,7 @@ test("formatCandidates writes Nushell lines with quoted values", async () => {
     "back\\slash\ta \\ b",
     "Upper\tdesc with tabs",
   ]);
-  const quotes = [{ value: `a'b"c` }, { value: "a'\\b" }, { value: "[x]" }];
+  const quotes = [{ values: [`a'b"c`] }, { values: ["a'\\b"] }, { values: ["[x]"] }];
   expect(formatCandidates(quotes, "nushell", "")).toEqual([`"a'b\\"c"`, `"a'\\\\b"`, "'[x]'"]);
 });
 
@@ -1347,12 +1377,12 @@ test("every shim asks for its own shell's lines", async () => {
 
 /** Candidates that each shell's script has to get through whole. */
 const tricky = [
-  { value: "http://example.com", description: "A URL: with colon" },
-  { value: "a:b" },
-  { value: "my file.txt", description: "A file\nsecond line" },
-  { value: "$(touch PWNED)" },
-  { value: "back\\slash" },
-  { value: "Upper" },
+  { values: ["http://example.com"], description: "A URL: with colon" },
+  { values: ["a:b"] },
+  { values: ["my file.txt"], description: "A file\nsecond line" },
+  { values: ["$(touch PWNED)"] },
+  { values: ["back\\slash"] },
+  { values: ["Upper"] },
 ];
 
 /**
@@ -1450,27 +1480,31 @@ test.skipIf(!hasShell("bash") || process.platform === "win32")(
 );
 
 test("formatCandidates leaves the space off an open value for bash, and marks it for zsh", async () => {
-  const candidates = [{ value: "12:", open: true }, { value: "12:am" }];
+  const candidates = [{ values: ["12:"], open: true }, { values: ["12:am"] }];
   expect(formatCandidates(candidates, "bash", "12")).toEqual(["12:", "12:am "]);
   expect(formatCandidates(candidates, "zsh", "12")).toEqual(["12\\:\t", "12\\:am"]);
   expect(formatCandidates(candidates, "fish", "12")).toEqual(["12:", "12:am"]);
 });
 
 test("formatCandidates gives fish a second value after an open one that would be the only one", async () => {
-  const amount = { value: "amount", open: true };
+  const amount = { values: ["amount"], open: true };
   // Fish adds a space after the only value that starts with the word.
-  expect(formatCandidates([amount, { value: "--help" }], "fish", "")).toEqual(["amount", "--help"]);
-  expect(formatCandidates([amount, { value: "--help" }], "fish", "a")).toEqual([
+  expect(formatCandidates([amount, { values: ["--help"] }], "fish", "")).toEqual(["amount", "--help"]);
+  expect(formatCandidates([amount, { values: ["--help"] }], "fish", "a")).toEqual([
     "amount",
     "amount.",
     "--help",
   ]);
   expect(formatCandidates([amount], "fish", "")).toEqual(["amount", "amount."]);
-  expect(formatCandidates([amount, { value: "amounts" }], "fish", "am")).toEqual(["amount", "amounts"]);
-  expect(formatCandidates([{ value: "amount" }], "fish", "am")).toEqual(["amount"]);
+  expect(formatCandidates([amount, { values: ["amounts"] }], "fish", "am")).toEqual(["amount", "amounts"]);
+  expect(formatCandidates([{ values: ["amount"] }], "fish", "am")).toEqual(["amount"]);
   // Fish takes the values in the word's own case before the rest.
-  expect(formatCandidates([amount, { value: "Apple" }], "fish", "a")).toEqual(["amount", "amount.", "Apple"]);
-  expect(formatCandidates([amount, { value: "Apple" }], "fish", "A")).toEqual(["amount", "Apple"]);
+  expect(formatCandidates([amount, { values: ["Apple"] }], "fish", "a")).toEqual([
+    "amount",
+    "amount.",
+    "Apple",
+  ]);
+  expect(formatCandidates([amount, { values: ["Apple"] }], "fish", "A")).toEqual(["amount", "Apple"]);
 });
 
 test.skipIf(!hasShell("fish") || process.platform === "win32")(

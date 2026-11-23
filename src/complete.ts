@@ -17,12 +17,18 @@ import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import { formStart } from "./scope.js";
 
-/** A value the word being typed can become. */
+/**
+ * What the word being typed can become. An option's names, a subcommand's
+ * aliases and a suggestion's names are one completion with each of its values,
+ * in the order the spec lists them, so a prompt can show them together. A shell
+ * lists each value.
+ */
 export interface Completion {
-  value: string;
+  /** The values that mean the same thing. There's at least one. */
+  values: readonly string[];
   /** The first line of the description, as help shows it. */
   description?: string;
-  /** The value needs more text after it, like `1920x`, so no space follows it. */
+  /** The values need more text after them, like `1920x`, so no space follows. */
   open?: boolean;
 }
 
@@ -34,10 +40,10 @@ function firstLine(description: string | undefined): string | undefined {
 
 function fromSuggestion(suggestion: Suggestion | string): Completion {
   if (typeof suggestion === "string") {
-    return { value: suggestion };
+    return { values: [suggestion] };
   }
   const name = suggestion.name;
-  return { value: typeof name === "string" ? name : name[0], description: firstLine(suggestion.description) };
+  return { values: typeof name === "string" ? [name] : name, description: firstLine(suggestion.description) };
 }
 
 /** The file system entries that `word` could become, for a path template. */
@@ -71,7 +77,7 @@ async function paths(word: string, template: Template): Promise<Completion[]> {
     if (foldersOnly && !isDir) {
       continue;
     }
-    found.push({ value: `${dir}${entry.name}${isDir ? separator : ""}` });
+    found.push({ values: [`${dir}${entry.name}${isDir ? separator : ""}`] });
   }
   return found;
 }
@@ -101,7 +107,9 @@ async function argValues(arg: Arg, init: SuggestInit): Promise<Completion[]> {
     found.push(...(await paths(init.word, arg.template)));
   }
   if (arg.suggestions === undefined && suggest === undefined && arg.template === undefined) {
-    found.push(...parserCompletions(arg, init.word));
+    for (const { value, open } of parserCompletions(arg, init.word)) {
+      found.push(open ? { values: [value], open } : { values: [value] });
+    }
   }
   return found;
 }
@@ -153,7 +161,7 @@ export async function complete(
     // The word is an option with a value attached, like `--mode=fa`.
     const { prefix, arg, value } = next.attached;
     for (const completion of await argValues(arg, { ...next.line, word: value })) {
-      found.push({ ...completion, value: prefix + completion.value });
+      found.push({ ...completion, values: completion.values.map((value) => prefix + value) });
     }
   } else if (next.value?.required) {
     // The open option needs the word as its value.
@@ -174,18 +182,17 @@ export async function complete(
         }
       }
       for (const completion of await argValues(arg, { ...next.line, word })) {
-        if (!taken.has(completion.value)) {
-          found.push(completion);
+        const free = completion.values.filter((value) => !taken.has(value));
+        if (free.length > 0) {
+          found.push({ ...completion, values: free });
         }
       }
     }
     for (const { command, names } of next.subcommands()) {
       if (!command.hidden) {
-        const description = firstLine(command.description);
-        for (const name of names) {
-          if (want.subcommand(name)) {
-            found.push({ value: name, description });
-          }
+        const offered = names.filter(want.subcommand);
+        if (offered.length > 0) {
+          found.push({ values: offered, description: firstLine(command.description) });
         }
       }
     }
@@ -219,11 +226,9 @@ function optionCompletions(next: NextToken): Completion[] {
     // so the next Tab completes the value. A name joined with nothing between,
     // like `-` in `-5`, is only the option once the value is typed, so it isn't
     // offered.
-    const into = option.isRequired ? required : optional;
-    for (const form of forms) {
-      if (form.join !== "") {
-        into.push({ value: formStart(form), description });
-      }
+    const values = forms.filter((form) => form.join !== "").map(formStart);
+    if (values.length > 0) {
+      (option.isRequired ? required : optional).push({ values, description });
     }
   }
   return [...required, ...optional];
@@ -234,9 +239,14 @@ function once(found: Completion[]): Completion[] {
   const seen = new Set<string>();
   const kept: Completion[] = [];
   for (const completion of found) {
-    if (!seen.has(completion.value)) {
-      seen.add(completion.value);
+    const values = completion.values.filter((value) => !seen.has(value));
+    for (const value of values) {
+      seen.add(value);
+    }
+    if (values.length === completion.values.length) {
       kept.push(completion);
+    } else if (values.length > 0) {
+      kept.push({ ...completion, values });
     }
   }
   return kept;

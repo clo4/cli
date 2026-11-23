@@ -57,7 +57,9 @@ function nuQuote(value: string): string {
 
 /**
  * Write completions as the lines a shell's completion script reads, one line
- * per completion. `word` is the word being completed, as the script passed it.
+ * per value. `word` is the word being completed, as the script passed it.
+ * Every value of a completion gets its description, so fish and zsh show the
+ * values that share it together, as they do for their own completions.
  *
  * - bash: the quoted value, then a space unless the value is open. Bash
  *   inserts a candidate as written and doesn't filter, so this keeps the
@@ -78,13 +80,16 @@ function nuQuote(value: string): string {
  * A value with a tab or line break doesn't fit on a line, so it's left out.
  * A description's tabs and line breaks become spaces.
  */
-export function formatCandidates(candidates: readonly Completion[], shell: Shell, word: string): string[] {
+export function formatCandidates(completions: readonly Completion[], shell: Shell, word: string): string[] {
+  const candidates = completions.flatMap(({ values, description, open }) =>
+    values.map((value) => ({ value, description, open })),
+  );
   const lines: string[] = [];
   const lowerWord = word.toLowerCase();
   const startsWithWord = (value: string) => value.slice(0, word.length).toLowerCase() === lowerWord;
   // The one value fish would insert with a space after it. Fish takes the
   // values that start with the word as written, or else in any case.
-  let only: Completion | undefined;
+  let only: (typeof candidates)[number] | undefined;
   if (shell === "fish") {
     for (const sameCase of [true, false]) {
       const matches = candidates.filter(

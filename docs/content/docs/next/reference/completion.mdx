@@ -16,7 +16,7 @@ function complete(
 ): Promise<Completion[]>;
 ```
 
-What `word` can become after `before`: subcommands, options, and the values of the argument the word is for. `before` is the words after the program's name. Each value is offered once.
+What `word` can become after `before`: subcommands, options, and the values of the argument the word is for. `before` is the words after the program's name. Each value is offered once, and the values that mean the same thing are one completion.
 
 It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab, and the way to complete a command line anywhere else, like in a prompt.
 
@@ -28,11 +28,11 @@ It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab
 
 ### `Completion` [#completion-result]
 
-| Field         | Type      | Meaning                                                              |
-| ------------- | --------- | -------------------------------------------------------------------- |
-| `value`       | `string`  | What the word can become.                                            |
-| `description` | `string`  | The first line of its description, as help shows it.                 |
-| `open`        | `boolean` | The value needs more after it, like `1920x`, so no space follows it. |
+| Field         | Type                | Meaning                                                                                                                                              |
+| ------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `values`      | `readonly string[]` | What the word can become: an option's names, a subcommand's aliases or a suggestion's names, in the order the spec lists them. There's at least one. |
+| `description` | `string`            | The first line of its description, as help shows it.                                                                                                 |
+| `open`        | `boolean`           | The values need more after them, like `1920x`, so no space follows.                                                                                  |
 
 ## `Suggester` [#suggester]
 

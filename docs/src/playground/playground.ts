@@ -136,7 +136,7 @@ export function start(stage: HTMLElement) {
   let hovered = -1;
   let hoveredLine: number | null = null;
   let pointerX: number | null = null;
-  let completions: CLI.Completion[] = [];
+  let completions: { value: string; description?: string; open?: boolean }[] = [];
   let selected = 0;
   let word = { text: "", start: 0 };
   let run = 0;
@@ -487,7 +487,7 @@ export function start(stage: HTMLElement) {
     const mine = run;
     let list: CLI.Completion[];
     if (before.length === 0) {
-      list = [{ value: spec.name }];
+      list = [{ values: [spec.name] }];
     } else if (before[0].text !== spec.name) {
       list = [];
     } else {
@@ -500,7 +500,9 @@ export function start(stage: HTMLElement) {
     if (mine !== run || document.activeElement !== input) {
       return;
     }
-    completions = list.filter((c) => c.value.startsWith(typed.text) && c.value !== typed.text);
+    completions = list
+      .flatMap(({ values, ...rest }) => values.map((value) => ({ value, ...rest })))
+      .filter((c) => c.value.startsWith(typed.text) && c.value !== typed.text);
     word = typed;
     selected = 0;
     if (!completions.length) {

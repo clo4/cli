@@ -1,3 +1,12 @@
 ---
 title: "Unreleased"
 ---
+
+## Breaking changes
+
+- A `Completion` has `values` in place of `value`. An option's names, a subcommand's aliases and a suggestion's names are one completion, in the order the spec lists them, so a prompt can show `-t, --times` together. The shell scripts still list each value, with the completion's description.
+
+  ```ts
+  (await CLI.complete(spec, [], "-")).map((c) => c.value); // 7.0
+  (await CLI.complete(spec, [], "-")).flatMap((c) => c.values); // next
+  ```

@@ -386,7 +386,7 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
   if ((await specCheckError(specChecks, spec)) !== undefined) {
     return null;
   }
-  const offered = new Set((await complete(spec, before, "")).map((c) => c.value));
+  const offered = new Set((await complete(spec, before, "")).flatMap((c) => c.values));
   const next = await readNext(spec, before, "");
   for (const { command, names } of next.subcommands()) {
     for (const name of names) {

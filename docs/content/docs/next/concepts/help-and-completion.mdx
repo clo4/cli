@@ -140,9 +140,9 @@ The shell scripts are one use of `CLI.complete`. It says what the word being typ
 
 ```ts
 const completions = await CLI.complete(spec, ["deploy", "--target"], "pro");
-// [{ value: "production" }]
+// [{ values: ["production"] }]
 ```
 
-Each completion has a `value`, and a `description` and `open` when they apply. An open value needs more text after it, like `1920x`, so a shell adds no space. Pass `{ optionsNeedDash: true }` to offer options only once the word starts one of their names, which is what the Bash, Fish, PowerShell and Nushell scripts do.
+Each completion has its `values`, and a `description` and `open` when they apply. An option's names, a subcommand's aliases and a suggestion's names are one completion, so a prompt can show `-t, --times` together. An open value needs more text after it, like `1920x`, so a shell adds no space. Pass `{ optionsNeedDash: true }` to offer options only once the word starts one of their names, which is what the Bash, Fish, PowerShell and Nushell scripts do.
 
 See [Arg](../reference/specs-and-commands.mdx#arg), [Suggester](../reference/completion.mdx#suggester), [SuggestInit](../reference/completion.mdx#suggestinit), [Suggestion](../reference/completion.mdx#suggestion) and [complete](../reference/completion.mdx#complete) for the field reference.
