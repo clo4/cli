@@ -8,6 +8,7 @@ const read = async (line: string) => actionInput(await analyse(greet, line, (nam
 test("the input is the arguments by position, and the options by how the action reads them", async () => {
   expect(await read("greet Ada --shout")).toEqual({
     kind: "input",
+    path: ["greet"],
     args: [{ name: "name", value: "Ada" }],
     options: [
       { name: "--times", read: "get", value: 1, isDefault: true },

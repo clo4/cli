@@ -13,13 +13,16 @@
   "dependencies": {
     "@astrojs/react": "^7.1.7",
     "@fumadocs/astro": "0.3.0",
+    "@solidjs/web": "^2.0.3",
     "astro": "^7.4.13",
     "fumadocs-core": "16.19.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "shiki": "^4.6.0"
+    "shiki": "^4.6.0",
+    "solid-js": "^2.0.3"
   },
   "devDependencies": {
+    "@solidjs/vite-plugin": "^3.0.1",
     "@takumi-rs/core": "2.22.1",
     "@takumi-rs/helpers": "2.22.1",
     "@types/mdx": "^2.0.14",

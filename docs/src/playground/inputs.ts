@@ -1,6 +1,6 @@
 import * as CLI from "@clo4/cli";
 import type { Analysis } from "./analyse";
-import { asArray, keyOf } from "./util";
+import { asArray, keyOf, names } from "./util";
 
 /** How an action reads an option. */
 export type Read = "get" | "has" | "count";
@@ -20,7 +20,13 @@ export interface OptionInput {
 
 /** What the action gets from a line, or the option whose action runs in its place. */
 export type ActionInput =
-  | { kind: "input"; args: ArgInput[]; options: OptionInput[] }
+  | {
+      kind: "input";
+      /** The names of the commands from the program to the one whose action runs. */
+      path: string[];
+      args: ArgInput[];
+      options: OptionInput[];
+    }
   | { kind: "replaced"; option: string };
 
 export function actionInput({ result, tokens }: Analysis): ActionInput | null {
@@ -60,5 +66,5 @@ export function actionInput({ result, tokens }: Analysis): ActionInput | null {
       options.push({ name, read: "get", value: result.options.get(name), isDefault });
     }
   }
-  return { kind: "input", args, options };
+  return { kind: "input", path: result.path.map((command) => names(command)[0]), args, options };
 }

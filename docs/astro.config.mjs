@@ -1,5 +1,6 @@
 import { defineConfig, fontProviders } from "astro/config";
 import fumadocs from "@fumadocs/astro";
+import solid from "@solidjs/vite-plugin";
 import { createCssVariablesTheme } from "shiki";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +14,9 @@ export default defineConfig({
   prefetch: { prefetchAll: true },
   server: { allowedHosts: [".ts.net"] },
   vite: {
+    // The playground's view is Solid, mounted in the browser. Once
+    // @astrojs/solid-js supports Solid 2, it can be an island.
+    plugins: [solid({ include: ["src/playground/**/*.tsx"] })],
     resolve: {
       alias: [
         {

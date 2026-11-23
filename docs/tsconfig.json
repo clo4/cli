@@ -7,6 +7,8 @@
       "@/*": ["./src/*"],
       "@clo4/cli": ["../src/index.ts"],
       "@clo4/cli/unstable": ["../src/unstable.ts"]
-    }
+    },
+    "jsx": "preserve",
+    "jsxImportSource": "@solidjs/web"
   }
 }
