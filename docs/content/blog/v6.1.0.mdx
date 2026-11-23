@@ -1,10 +1,14 @@
 ---
-title: "Version 6.1.0"
-description: "Arguments can parse their values with a schema, and the user sees every problem with their command line at once."
+title: "Version 6.1.0: argument parsers"
+description: "Adding type-safe argument parsers using Standard Schema"
 date: 2026-11-15T22:37:34Z
 ---
 
-Actions used to receive every value as a string. If `--port` needed a number, you'd convert it in the action, check the range yourself, and print your own error. Now you can give an argument a `parse`, and your action receives the parsed value:
+Introducing v6.1.0, bringing basic support for custom argument value parsers.
+
+Actions previously received all values as strings. Take `--port`: this clearly needs a number, and clearly within a defined range. Previously, you'd have to convert it in the action, validate the range yourself, and handle the error yourself too. Now, you can give arguments a `parse` property, taking a "standard schema" and returning its parsed output as the argument value.
+
+This library includes two parsers, purpose built for the most common command-line parsing tasks, but you can use anything that implements the standard schema interface (e.g. Zod, Valibot, ArkType).
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -44,9 +48,9 @@ CLI.run(spec);
 
 `CLI.number` and `CLI.choice` are built in. The default `"8080"` goes through `parse` like a value the user typed, so your action gets the number `8080`.
 
-## Every problem at once
+## All errors are now shown at once
 
-Every `parse` runs before your action. If any value is rejected, the action doesn't run. This command line leaves out `root` and gets both values wrong, and the user sees all three problems together:
+Any errors accumulated from running parsers or from the command-line parser itself are now presented simultaneously. Previously, the library would stop at the first error as a performance optimisation, but this results in a worse user experience because you needed to make N+1 attempts to run a command, where N is the number of errors you made. Now it's constant, 2: make a mistake, fix your errors, and you're on your way.
 
 ```console
 $ serve --port 70000 --mode fast
@@ -66,11 +70,9 @@ Flags:
   --mode <mode>  Build mode (debug | release)
 ```
 
-Version 6.0 printed only the first problem, so the user had to fix it and run the command again to find the next one. Now every problem gets its own `Error:` line, followed by the help once. That covers missing arguments and required options, `dependsOn` and `exclusiveOn` rules the command line breaks, and values a `parse` rejects.
+Note: if an unknown option is provided, it will be the only error reported, because the parser can't tell what the words after it mean. The worst case would be executing an action when the user was intending to tweak some aspect of its execution.
 
-If an unknown option is provided, it will be the only error reported, because the parser can't tell what the words after it mean.
-
-## Zod, ArkType and Valibot
+## Using Zod, ArkType and Valibot
 
 `parse` takes any [Standard Schema](https://standardschema.dev), the shared interface that Zod, ArkType, Valibot and other validation libraries implement. If you already validate config or API input with one of them, your command line can use the same schemas:
 
@@ -110,14 +112,14 @@ const spec = CLI.spec({
 CLI.run(spec);
 ```
 
-TypeScript gives each value the schema's output type. Async schemas work too. A rejected value shows the schema's own message:
+Async schemas work too, and will be executed concurrently. A rejected value shows the schema's error message:
 
 ```console
 $ deploy --replicas 40
 Error: Invalid value "40" for --replicas: Too big: expected number to be <=10
 ```
 
-Help and completion read a schema's choices and number range from the JSON Schema it returns through `~standard.jsonSchema`, the same way they read `CLI.number` and `CLI.choice`. Zod and ArkType schemas have it with no setup, so you don't need to list their values in the option's description. The tests cover Zod 4.6 and ArkType 2.2:
+Help and completion read a schema's choices and number range from the JSON Schema it returns from `~standard.jsonSchema`, the same way they read `CLI.number` and `CLI.choice`. Zod and ArkType schemas have it with no setup, so you don't need to list their values in the option's description. The tests cover Zod 4.6 and ArkType 2.2:
 
 ```console
 $ deploy --help
@@ -140,11 +142,14 @@ Pressing Tab after `--region` offers `us-east`, `eu-west` and `ap-south`, and af
 
 Valibot schemas have no `~standard.jsonSchema`, so they parse values and add nothing to help or completion. For a Valibot schema, list the values in the option's description and give the argument a `suggestions` array.
 
+## Why not plain functions?
+
+I've thought long and hard about this. Ultimately, I decided against supporting plain functions for parsers because using libraries that implement standard schema push you into a pit of success, and conversely, plain functions make it too easy to make a crappy user experience. Essentially, standard schema makes the default UX *too good* to justify the comparatively normal UX of a plain function.
+
+If you *desperately* want to use a plain function, ask your LLM of choice to generate you a function that takes a function and returns a schema from it. But if I were you, I would seriously consider if that's actually the right thing to do.
+
 ## Upgrading
 
-A CLI written for 6.0 runs unchanged. Two kinds of test can need updating:
-
-- A test that compares error output for a command line with several problems. It now gets one `Error:` line for each problem.
-- A test that passes an action a hand-built `options` object typed as `CLI.OptionArgs`. That object no longer compiles until its `get` and `all` are generic, as in `get<Read>(name: string): Read | undefined`. You can drop the hand-built object and run the command with `CLI.run(spec, { argv: ["--port", "3000"], setExitCode: false })` instead, which leaves `process.exitCode` alone.
+There are no changes to the library that will impact specs written on version 6.0.0.
 
 The minified bundle grew from 33.5 kB to 39.2 kB, and importing it takes 0.09 ms longer, even in a CLI that doesn't use `parse`. The [release notes](https://github.com/clo4/cli/releases/tag/v6.1.0) have the benchmark details, the new spec checks and the full list of changes.

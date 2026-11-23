@@ -1,14 +1,14 @@
 ---
-title: "Version 5.0.0"
-description: "TypeScript now checks option names and which arguments can be missing."
+title: "Version 5.0.0: Type-safety and autosuggestions"
+description: "The release I've always wanted to make"
 date: 2026-11-13T14:05:49Z
 ---
 
 This is the release I've wanted to make since I started this library in 2022.
 
-Until now, you could define every argument and option in one object, but your action still received `args: string[]`, and `options` accepted any name. A misspelled option name would compile, and TypeScript couldn't tell which positional arguments could be missing.
+Until now, you could define every argument and option in one object, but your action still received `args: string[]`, and `options` accepted any name. The TypeScript compiler couldn't help you: a misspelled option name was fine (it's all just strings!), and it couldn't tell which positional arguments could be missing.
 
-Wrap that object in `CLI.spec(...)` and TypeScript uses the definition to check your action. Values are still strings. The types describe how many arguments there are, which can be missing, and which option names you can read:
+Now, replace `const spec: CLI.Spec = { ... }` with `const spec = CLI.spec({ ... })`, and you get inference on what options are valid and what arguments may be missing. All values are still strings. The types describe how many arguments there are, which can be missing, and which option names you can read:
 
 ```ts
 import * as CLI from "@clo4/cli";
@@ -34,6 +34,8 @@ const spec = CLI.spec({
 
 CLI.run(spec);
 ```
+
+The argument to `CLI.run` is still any spec, since it doesn't care at all about the types. Something typed as `CLI.Spec` is still valid there.
 
 The types work in nested subcommands too, including persistent options from parent commands. Your editor suggests option names as you type them. You don't need a separate schema or annotations on the action.
 
