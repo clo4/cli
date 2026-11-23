@@ -7,7 +7,7 @@ import { readHelpNames } from "./parse.js";
 import type { HelpNames } from "./parse.js";
 import { describeParser } from "./description.js";
 import { argName, leadingDefaults } from "./args.js";
-import { asArray, print, printError } from "./util.js";
+import { asArray, print, printError, singleOrArray } from "./util.js";
 
 // Help uses plain loops instead of array callbacks. V8 compiles each function
 // the first time it's called, and a CLI prints help at most once a run, so
@@ -98,10 +98,9 @@ export const helpCommand: Subcommand = {
     async suggest({ path, args }) {
       const suggestions: Suggestion[] = [];
       for (const { command, names } of (await readHelpNames(path, args)).subcommands) {
-        if (!command.hidden) {
-          for (const name of names) {
-            suggestions.push({ name, description: command.description });
-          }
+        const name = singleOrArray(names);
+        if (!command.hidden && name !== undefined) {
+          suggestions.push({ name, description: command.description });
         }
       }
       return suggestions;

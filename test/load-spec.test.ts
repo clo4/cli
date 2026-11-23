@@ -7,6 +7,7 @@ import { help, helpCommand } from "../src/index.js";
 import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import * as Testing from "../src/testing.js";
 import type { ActionInit, NonEmptyArray, Spec, Subcommand } from "../src/types.js";
+import { asArray } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator } from "./fuzz/generate.js";
 import { difference, nextDifference } from "./fuzz/snapshot.js";
@@ -142,7 +143,7 @@ for (const [kind, wrap] of kinds) {
   test(`loadSpec returning ${kind}: completion loads the commands before the word`, async () => {
     const { spec, loads } = lazyCli(wrap);
     const names = async (before: string[], partial: string) =>
-      (await complete(spec, before, partial, { optionsNeedDash: true })).flatMap(({ values }) => values);
+      (await complete(spec, before, partial, { optionsNeedDash: true })).flatMap(({ name }) => asArray(name));
     // The word names a command, but nothing follows it, so it isn't loaded.
     expect(await names([], "remote")).toContain("remote");
     expect(loads).toEqual({ remote: 0, add: 0, config: 0 });

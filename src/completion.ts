@@ -7,9 +7,8 @@
  * @module
  */
 
-import type { Spec, Subcommand } from "./types.js";
+import type { Spec, Subcommand, Suggestion } from "./types.js";
 import { complete } from "./complete.js";
-import type { Completion } from "./complete.js";
 import { choice } from "./schemas.js";
 import { print } from "./util.js";
 
@@ -56,20 +55,20 @@ function nuQuote(value: string): string {
 // Candidate lines {{{
 
 /**
- * Write completions as the lines a shell's completion script reads, one line
- * per value. `word` is the word being completed, as the script passed it.
- * Every value of a completion gets its description, so fish and zsh show the
- * values that share it together, as they do for their own completions.
+ * Write suggestions as the lines a shell's completion script reads, one line
+ * per name. `word` is the word being completed, as the script passed it. Each
+ * name of a suggestion gets its description, so fish and zsh show the names
+ * that share it together, as they do for their own completions.
  *
- * - bash: the quoted value, then a space unless the value is open. Bash
+ * - bash: the quoted value, then a space unless the value is incomplete. Bash
  *   inserts a candidate as written and doesn't filter, so this keeps the
  *   values whose quoted form starts with the word.
  * - zsh: `value:description` for `_describe`, with `\` and `:` escaped in the
- *   value, then a tab if the value is open. Zsh filters and quotes the
+ *   value, then a tab if the value is incomplete. Zsh filters and quotes the
  *   values itself.
  * - fish: `value<Tab>description`. Fish filters and quotes the values itself.
  *   It adds a space after the only value that starts with the word, and has
- *   no way to be told not to. So an open value that would be the only one
+ *   no way to be told not to. So an incomplete value that would be the only one
  *   is followed by the same value with a `.` after it. Fish then has two
  *   values, and inserts what they share with no space.
  * - powershell: `text<Tab>value<Tab>tooltip`, the arguments of a
@@ -80,9 +79,9 @@ function nuQuote(value: string): string {
  * A value with a tab or line break doesn't fit on a line, so it's left out.
  * A description's tabs and line breaks become spaces.
  */
-export function formatCandidates(completions: readonly Completion[], shell: Shell, word: string): string[] {
-  const candidates = completions.flatMap(({ values, description, open }) =>
-    values.map((value) => ({ value, description, open })),
+export function formatCandidates(suggestions: readonly Suggestion[], shell: Shell, word: string): string[] {
+  const candidates = suggestions.flatMap(({ name, description, incomplete }) =>
+    (typeof name === "string" ? [name] : name).map((value) => ({ value, description, incomplete })),
   );
   const lines: string[] = [];
   const lowerWord = word.toLowerCase();
@@ -113,17 +112,17 @@ export function formatCandidates(completions: readonly Completion[], shell: Shel
     if (shell === "bash") {
       const text = value.replace(/[ '"\\$`|&;()<>{}*?[!#~]/g, "\\$&");
       if (text.startsWith(word)) {
-        lines.push(candidate.open ? text : `${text} `);
+        lines.push(candidate.incomplete ? text : `${text} `);
       }
     } else if (shell === "zsh") {
       // `_describe` splits at the first colon without a backslash before it,
       // then removes the backslashes from both parts.
       const text = value.replace(/[\\:]/g, "\\$&");
       const line = description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text;
-      lines.push(candidate.open ? `${line}\t` : line);
+      lines.push(candidate.incomplete ? `${line}\t` : line);
     } else if (shell === "fish") {
       lines.push(description ? `${value}\t${description}` : value);
-      if (candidate === only && candidate.open) {
+      if (candidate === only && candidate.incomplete) {
         lines.push(`${value}.`);
       }
     } else if (startsWithWord(value)) {

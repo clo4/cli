@@ -13,10 +13,10 @@ function complete(
   before: readonly string[],
   word: string,
   options?: CompleteOptions,
-): Promise<Completion[]>;
+): Promise<Suggestion[]>;
 ```
 
-What `word` can become after `before`: subcommands, options, and the values of the argument the word is for. `before` is the words after the program's name. Each value is offered once, and the values that mean the same thing are one completion.
+What `word` can become after `before`: subcommands, options, and the values of the argument the word is for, as [suggestions](#suggestion). `before` is the words after the program's name. An option's names and a subcommand's aliases are one suggestion, so a prompt can show `-t, --times` together. Each name is offered once, and each description is its first line, with `(requires …)` or `[required]` after it when an option needs them.
 
 It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab, and the way to complete a command line anywhere else, like in a prompt.
 
@@ -25,14 +25,6 @@ It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab
 | Field             | Type      | Default | Meaning                                                                                                     |
 | ----------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------- |
 | `optionsNeedDash` | `boolean` | `false` | Offer options only once the word starts one of their names, and no values when the word reads as an option. |
-
-### `Completion` [#completion-result]
-
-| Field         | Type                | Meaning                                                                                                                                              |
-| ------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `values`      | `readonly string[]` | What the word can become: an option's names, a subcommand's aliases or a suggestion's names, in the order the spec lists them. There's at least one. |
-| `description` | `string`            | The first line of its description, as help shows it.                                                                                                 |
-| `open`        | `boolean`           | The values need more after them, like `1920x`, so no space follows.                                                                                  |
 
 ## `Suggester` [#suggester]
 
@@ -56,12 +48,13 @@ What a suggester receives: what an action would receive from the line typed so f
 
 ## `Suggestion` [#suggestion]
 
-| Field         | Type                                      | Meaning                          |
-| ------------- | ----------------------------------------- | -------------------------------- |
-| `name`        | `string \| [string, string, ...string[]]` | The value, or values, to insert. |
-| `description` | `string`                                  | Shown beside it.                 |
+| Field         | Type                                      | Meaning                                                                              |
+| ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `name`        | `string \| [string, string, ...string[]]` | The value to insert. An array is names that mean the same thing, offered together.   |
+| `description` | `string`                                  | Shown beside it.                                                                     |
+| `incomplete`  | `boolean`                                 | The value needs more text after it, like `user@` or `1920x`, so no space follows it. |
 
-A plain string is a suggestion without a description.
+A plain string is a suggestion without a description. [`complete`](#complete) gives suggestions too, always as objects.
 
 ## `Template` [#template]
 

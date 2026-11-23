@@ -4,9 +4,18 @@ title: "Unreleased"
 
 ## Breaking changes
 
-- A `Completion` has `values` in place of `value`. An option's names, a subcommand's aliases and a suggestion's names are one completion, in the order the spec lists them, so a prompt can show `-t, --times` together. The shell scripts still list each value, with the completion's description.
+- `CLI.complete` gives `Suggestion` objects, the shape an argument's `suggestions` takes, and the `Completion` type is removed. An option's names and a subcommand's aliases are one suggestion, so a prompt can show `-t, --times` together.
 
   ```ts
   (await CLI.complete(spec, [], "-")).map((c) => c.value); // 7.0
-  (await CLI.complete(spec, [], "-")).flatMap((c) => c.values); // next
+  (await CLI.complete(spec, [], "-")).flatMap((s) => (typeof s.name === "string" ? [s.name] : s.name)); // next
   ```
+
+## Added
+
+- A suggestion can be `incomplete`, like `user@`, so the shell adds no space after it.
+
+## Fixed
+
+- An option that requires a separator, like `--mode=`, completes without a space after it in Bash and Fish.
+- Every name of a suggestion is offered. Only the first was.

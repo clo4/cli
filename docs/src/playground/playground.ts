@@ -485,9 +485,9 @@ export function start(stage: HTMLElement) {
       return;
     }
     const mine = run;
-    let list: CLI.Completion[];
+    let list: CLI.Suggestion[];
     if (before.length === 0) {
-      list = [{ values: [spec.name] }];
+      list = [{ name: spec.name }];
     } else if (before[0].text !== spec.name) {
       list = [];
     } else {
@@ -501,7 +501,9 @@ export function start(stage: HTMLElement) {
       return;
     }
     completions = list
-      .flatMap(({ values, ...rest }) => values.map((value) => ({ value, ...rest })))
+      .flatMap(({ name, description, incomplete }) =>
+        asArray(name).map((value) => ({ value, description, open: incomplete })),
+      )
       .filter((c) => c.value.startsWith(typed.text) && c.value !== typed.text);
     word = typed;
     selected = 0;

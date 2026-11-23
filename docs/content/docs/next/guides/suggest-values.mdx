@@ -91,7 +91,7 @@ test("target completion filters by the word", async () => {
 To test what the shell would be offered, with the parser choosing the argument, call [`CLI.complete`](../concepts/help-and-completion.mdx#complete-a-command-line-anywhere):
 
 ```ts
-expect(await CLI.complete(spec, ["--target"], "prod")).toEqual([{ values: ["production"] }]);
+expect(await CLI.complete(spec, ["--target"], "prod")).toEqual([{ name: "production" }]);
 ```
 
 A separate shell check confirms installation and insertion behavior.

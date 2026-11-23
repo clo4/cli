@@ -25,7 +25,7 @@ export type {
 } from "./types.js";
 
 export { complete } from "./complete.js";
-export type { CompleteOptions, Completion } from "./complete.js";
+export type { CompleteOptions } from "./complete.js";
 export { completion } from "./completion.js";
 export type { Shell } from "./completion.js";
 export { help, helpCommand } from "./help.js";

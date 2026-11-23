@@ -10,27 +10,13 @@
  * @module
  */
 
-import type { Arg, Spec, Suggestion, SuggestInit, Template } from "./types.js";
+import type { Arg, SingleOrArray, Spec, Suggestion, SuggestInit, Template } from "./types.js";
 import { parserCompletions } from "./description.js";
 import { shownDescription } from "./help.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import { formStart } from "./scope.js";
-
-/**
- * What the word being typed can become. An option's names, a subcommand's
- * aliases and a suggestion's names are one completion with each of its values,
- * in the order the spec lists them, so a prompt can show them together. A shell
- * lists each value.
- */
-export interface Completion {
-  /** The values that mean the same thing. There's at least one. */
-  values: readonly string[];
-  /** The first line of the description, as help shows it. */
-  description?: string;
-  /** The values need more text after them, like `1920x`, so no space follows. */
-  open?: boolean;
-}
+import { asArray, singleOrArray } from "./util.js";
 
 /** The first line of a description as help shows it. */
 function firstLine(description: string | undefined): string | undefined {
@@ -38,16 +24,27 @@ function firstLine(description: string | undefined): string | undefined {
   return shown ? shown.split("\n", 1)[0].trim() : undefined;
 }
 
-function fromSuggestion(suggestion: Suggestion | string): Completion {
-  if (typeof suggestion === "string") {
-    return { values: [suggestion] };
+/** The names of `name` that `keep` accepts, or undefined if it accepts none. */
+function keepNames(
+  name: SingleOrArray<string>,
+  keep: (name: string) => boolean,
+): SingleOrArray<string> | undefined {
+  if (typeof name === "string") {
+    return keep(name) ? name : undefined;
   }
-  const name = suggestion.name;
-  return { values: typeof name === "string" ? [name] : name, description: firstLine(suggestion.description) };
+  return name.every(keep) ? name : singleOrArray(name.filter(keep));
+}
+
+/** A suggestion as completion offers it: an object, with its description's first line. */
+function offered(suggestion: Suggestion | string): Suggestion {
+  if (typeof suggestion === "string") {
+    return { name: suggestion };
+  }
+  return { ...suggestion, description: firstLine(suggestion.description) };
 }
 
 /** The file system entries that `word` could become, for a path template. */
-async function paths(word: string, template: Template): Promise<Completion[]> {
+async function paths(word: string, template: Template): Promise<Suggestion[]> {
   // Imported through a variable so the Node-free `src` build doesn't need
   // @types/node. Only completion reads the file system.
   const specifier = "node:fs";
@@ -68,7 +65,7 @@ async function paths(word: string, template: Template): Promise<Completion[]> {
   } catch {
     return [];
   }
-  const found: Completion[] = [];
+  const found: Suggestion[] = [];
   for (const entry of entries) {
     if (!entry.name.startsWith(base)) {
       continue;
@@ -77,7 +74,7 @@ async function paths(word: string, template: Template): Promise<Completion[]> {
     if (foldersOnly && !isDir) {
       continue;
     }
-    found.push({ values: [`${dir}${entry.name}${isDir ? separator : ""}`] });
+    found.push({ name: `${dir}${entry.name}${isDir ? separator : ""}` });
   }
   return found;
 }
@@ -87,10 +84,10 @@ async function paths(word: string, template: Template): Promise<Completion[]> {
  * suggester gives, in order, then the paths its template matches. An argument
  * that says nothing about completion offers what its parser accepts.
  */
-async function argValues(arg: Arg, init: SuggestInit): Promise<Completion[]> {
-  const found: Completion[] = [];
+async function argValues(arg: Arg, init: SuggestInit): Promise<Suggestion[]> {
+  const found: Suggestion[] = [];
   for (const suggestion of arg.suggestions ?? []) {
-    found.push(fromSuggestion(suggestion));
+    found.push(offered(suggestion));
   }
   const suggest = arg.suggest;
   if (suggest) {
@@ -99,7 +96,7 @@ async function argValues(arg: Arg, init: SuggestInit): Promise<Completion[]> {
     );
     for (const suggestions of given) {
       for (const suggestion of suggestions) {
-        found.push(fromSuggestion(suggestion));
+        found.push(offered(suggestion));
       }
     }
   }
@@ -107,9 +104,7 @@ async function argValues(arg: Arg, init: SuggestInit): Promise<Completion[]> {
     found.push(...(await paths(init.word, arg.template)));
   }
   if (arg.suggestions === undefined && suggest === undefined && arg.template === undefined) {
-    for (const { value, open } of parserCompletions(arg, init.word)) {
-      found.push(open ? { values: [value], open } : { values: [value] });
-    }
+    found.push(...parserCompletions(arg, init.word));
   }
   return found;
 }
@@ -153,15 +148,19 @@ export async function complete(
   before: readonly string[],
   word: string,
   options?: CompleteOptions,
-): Promise<Completion[]> {
+): Promise<Suggestion[]> {
   const next = await readNext(spec, before, word);
-  const found: Completion[] = [];
+  const found: Suggestion[] = [];
 
   if (next.attached) {
     // The word is an option with a value attached, like `--mode=fa`.
     const { prefix, arg, value } = next.attached;
-    for (const completion of await argValues(arg, { ...next.line, word: value })) {
-      found.push({ ...completion, values: completion.values.map((value) => prefix + value) });
+    for (const suggestion of await argValues(arg, { ...next.line, word: value })) {
+      const { name } = suggestion;
+      found.push({
+        ...suggestion,
+        name: typeof name === "string" ? prefix + name : singleOrArray(name.map((n) => prefix + n))!,
+      });
     }
   } else if (next.value?.required) {
     // The open option needs the word as its value.
@@ -181,18 +180,18 @@ export async function complete(
           taken.add(name);
         }
       }
-      for (const completion of await argValues(arg, { ...next.line, word })) {
-        const free = completion.values.filter((value) => !taken.has(value));
-        if (free.length > 0) {
-          found.push({ ...completion, values: free });
+      for (const suggestion of await argValues(arg, { ...next.line, word })) {
+        const name = keepNames(suggestion.name, (n) => !taken.has(n));
+        if (name !== undefined) {
+          found.push({ ...suggestion, name });
         }
       }
     }
     for (const { command, names } of next.subcommands()) {
       if (!command.hidden) {
-        const offered = names.filter(want.subcommand);
-        if (offered.length > 0) {
-          found.push({ values: offered, description: firstLine(command.description) });
+        const name = singleOrArray(names.filter(want.subcommand));
+        if (name !== undefined) {
+          found.push(offered({ name, description: command.description }));
         }
       }
     }
@@ -204,9 +203,9 @@ export async function complete(
 }
 
 /** The options the word can be, required ones first. */
-function optionCompletions(next: NextToken): Completion[] {
-  const required: Completion[] = [];
-  const optional: Completion[] = [];
+function optionCompletions(next: NextToken): Suggestion[] {
+  const required: Suggestion[] = [];
+  const optional: Suggestion[] = [];
   for (const { option, forms, used } of next.options()) {
     // The parser lets a later use of an option override an earlier one, but
     // that's rarely what someone wants, so an option that isn't repeatable is
@@ -223,31 +222,36 @@ function optionCompletions(next: NextToken): Completion[] {
       description = description ? `${description} [required]` : "[required]";
     }
     // A name joined to its value by a separator is offered with the separator,
-    // so the next Tab completes the value. A name joined with nothing between,
-    // like `-` in `-5`, is only the option once the value is typed, so it isn't
-    // offered.
-    const values = forms.filter((form) => form.join !== "").map(formStart);
-    if (values.length > 0) {
-      (option.isRequired ? required : optional).push({ values, description });
+    // so the next Tab completes the value, with no space between. A name
+    // joined with nothing between, like `-` in `-5`, is only the option once
+    // the value is typed, so it isn't offered. An option's names all take the
+    // same separator.
+    const joined = forms.filter((form) => form.join !== "");
+    const name = singleOrArray(joined.map(formStart));
+    if (name !== undefined) {
+      const suggestion: Suggestion = { name, description };
+      if (joined[0].join !== null) {
+        suggestion.incomplete = true;
+      }
+      (option.isRequired ? required : optional).push(suggestion);
     }
   }
   return [...required, ...optional];
 }
 
-/** `found` with each value once, where it first appears. */
-function once(found: Completion[]): Completion[] {
+/** `found` with each name once, where it first appears. */
+function once(found: Suggestion[]): Suggestion[] {
   const seen = new Set<string>();
-  const kept: Completion[] = [];
-  for (const completion of found) {
-    const values = completion.values.filter((value) => !seen.has(value));
-    for (const value of values) {
-      seen.add(value);
+  const kept: Suggestion[] = [];
+  for (const suggestion of found) {
+    const name = keepNames(suggestion.name, (n) => !seen.has(n));
+    if (name === undefined) {
+      continue;
     }
-    if (values.length === completion.values.length) {
-      kept.push(completion);
-    } else if (values.length > 0) {
-      kept.push({ ...completion, values });
+    for (const n of asArray(name)) {
+      seen.add(n);
     }
+    kept.push(name === suggestion.name ? suggestion : { ...suggestion, name });
   }
   return kept;
 }

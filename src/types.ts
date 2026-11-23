@@ -357,11 +357,21 @@ export type Template = "filepaths" | "folders" | ["folders", "filepaths"] | ["fi
  * displayName, insertValue, type) are intentionally omitted.
  */
 export interface Suggestion {
-  /** Value(s) inserted when the suggestion is accepted. */
+  /**
+   * Value inserted when the suggestion is accepted. An array is names that
+   * mean the same thing, like an option's `-t` and `--times`, offered
+   * together.
+   */
   name: SingleOrArray<string>;
 
   /** Additional information shown next to the suggestion. */
   description?: string;
+
+  /**
+   * The value needs more text after it, like `1920x` or `--mode=`, so no space
+   * follows it when it's accepted.
+   */
+  incomplete?: boolean;
 }
 
 /**

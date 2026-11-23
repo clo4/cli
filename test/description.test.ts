@@ -39,14 +39,14 @@ test("describeParser: a built-in parser says what JSON Schema has no words for",
   expect(jobs.choices).toEqual(["auto"]);
   expect(jobs.range).toBeUndefined();
   expect(jobs.constraint).toEqual(["auto", "<int>"]);
-  expect(parserCompletions({ parse: CLI.choice("auto", CLI.int) }, "a")).toEqual([{ value: "auto" }]);
+  expect(parserCompletions({ parse: CLI.choice("auto", CLI.int) }, "a")).toEqual([{ name: "auto" }]);
 
   const size = describeParser({ parse: CLI.seq(CLI.uint.as("width"), "x", CLI.uint.as("height")) })!;
   expect(size.choices).toBeUndefined();
   expect(size.constraint).toEqual(["<width>x<height>"]);
   expect(
     parserCompletions({ parse: CLI.seq(CLI.uint.as("width"), "x", CLI.uint.as("height")) }, "1920"),
-  ).toEqual([{ value: "1920x", open: true }]);
+  ).toEqual([{ name: "1920x", incomplete: true }]);
 
   const mapped = describeParser({ parse: CLI.choice("a", CLI.choice("b", "c")).map((value) => value) })!;
   expect(mapped.choices).toEqual(["a", "b", "c"]);

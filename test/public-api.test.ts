@@ -65,7 +65,6 @@ test("the entrypoints export these types", async () => {
     "Arg",
     "CommandPath",
     "CompleteOptions",
-    "Completion",
     "NonEmptyArray",
     "Option",
     "OptionArgs",

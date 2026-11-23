@@ -11,7 +11,7 @@
  * @module
  */
 
-import type { Arg, StandardSchemaV1 } from "./types.js";
+import type { Arg, StandardSchemaV1, Suggestion } from "./types.js";
 import {
   accepts,
   choicesOf,
@@ -75,21 +75,21 @@ function builtIn(parser: Parser<unknown>): ParserDescription {
 /**
  * What the partly typed `word` could become, as the parser of `arg` says, for
  * completion to offer. A built-in parser gives the text that can come next,
- * and a value that isn't whole yet, like `1920x`, is `open`. Another schema
+ * and a value that isn't whole yet, like `1920x`, is `incomplete`. Another schema
  * gives the values its JSON Schema lists. It's a function of its own so that
  * a CLI that never completes leaves it out of a bundle.
  */
-export function parserCompletions(arg: Arg, word: string): { value: string; open?: true }[] {
+export function parserCompletions(arg: Arg, word: string): Suggestion[] {
   const parse = arg.parse;
   if (parse === undefined) {
     return [];
   }
   if (isParser(parse)) {
     return completionsOf(parse, word).map((value) =>
-      accepts(parse, value) ? { value } : { value, open: true },
+      accepts(parse, value) ? { name: value } : { name: value, incomplete: true },
     );
   }
-  return (standard(jsonSchemaOf(parse)).choices ?? []).map((value) => ({ value }));
+  return (standard(jsonSchemaOf(parse)).choices ?? []).map((name) => ({ name }));
 }
 
 /** A schema described by the JSON Schema it gives, if any. */

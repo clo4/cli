@@ -1,3 +1,5 @@
+import type { SingleOrArray } from "./types.js";
+
 /**
  * `Array.isArray`, typed to narrow read-only arrays. `asArray` and the
  * functions of the args module run on every parse, so they call
@@ -17,6 +19,14 @@ export function makeArray<T>(thing: T | readonly T[] | undefined): T[] {
     return thing.slice();
   }
   return [thing];
+}
+
+/**
+ * `items` as a {@link SingleOrArray}: the item if there's one, the array if
+ * there are more, or undefined if there are none.
+ */
+export function singleOrArray<T>(items: readonly T[]): SingleOrArray<T> | undefined {
+  return items.length > 1 ? (items as readonly [T, T, ...T[]]) : items[0];
 }
 
 /**
