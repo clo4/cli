@@ -1,0 +1,36 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import Icon from "@/components/Icon.astro";
+import { t } from "@/i18n";
+
+interface Props extends HTMLAttributes<"button"> {
+  /** The text to copy. */
+  text?: string;
+  /** Where to fetch the text to copy. Without `text` or `url`, it copies the code in its `.code-block`. */
+  url?: string;
+  /** What the button says. Without it, the label is for screen readers, after what's in the slot. */
+  label?: string;
+}
+
+const { text, url, label, class: className, ...rest } = Astro.props;
+const iconOnly = !label && !Astro.slots.has("default");
+---
+
+<button
+  class:list={[iconOnly ? "icon-button" : "button", className]}
+  data-copy
+  data-copy-text={text}
+  data-copy-url={url}
+  {...rest}
+>
+  <slot />
+  <span class="swap"><Icon name="copy" /><Icon name="check" /></span>
+  <span class:list={["swap", { "visually-hidden": !label }]}>
+    <span>{label ?? t("code.copy")}</span>
+    <span>{t("docs.copied")}</span>
+  </span>
+</button>
+
+<script>
+  import "@/lib/copy";
+</script>

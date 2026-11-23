@@ -53,8 +53,8 @@ const copy = {
       panels.map((panel, i) => (
         <div class="tries" data-tries={panel.id} hidden={i !== 0}>
           {panel.tries.map((line) => (
-            <button data-try={line}>
-              <code>{line}</code>
+            <button class="button small mono" data-try={line}>
+              {line}
             </button>
           ))}
         </div>
@@ -92,6 +92,8 @@ const copy = {
 
 <style>
   .stage {
+    width: min(1280px, 100% - 2 * var(--page-gutter));
+    margin: 0 auto;
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--sunken);
@@ -246,7 +248,7 @@ const copy = {
   }
   .terminal {
     margin: 0;
-    font-size: 12.5px;
+    font-size: var(--text-xs);
     line-height: 1.6;
     white-space: pre;
     & :global(.stderr) {
@@ -262,22 +264,7 @@ const copy = {
       display: none;
     }
     & button {
-      padding: 3px 10px;
-      border: 1px solid var(--line);
-      border-radius: var(--radius-inner);
       background: var(--bg);
-      color: var(--muted);
-      cursor: pointer;
-      transition:
-        color var(--ease),
-        border-color var(--ease);
-      &:hover {
-        color: var(--fg);
-        border-color: var(--line-strong);
-      }
-      & code {
-        font-size: 12.5px;
-      }
     }
   }
   .stage :global(.tk) {
@@ -327,7 +314,7 @@ const copy = {
     }
     & :global(span) {
       color: var(--muted);
-      font-size: 12.5px;
+      font-size: var(--text-xs);
     }
   }
   .stage :global(.card) {
@@ -336,7 +323,7 @@ const copy = {
     padding: 10px 12px;
     & :global(.kind) {
       color: var(--muted);
-      font-size: 12.5px;
+      font-size: var(--text-xs);
     }
     & :global(.kind:not(:first-child)) {
       margin-top: 10px;
@@ -383,8 +370,11 @@ const copy = {
       margin-top: 6px;
     }
   }
-  @media (width < 960px) {
+  /* Under the width the header collapses at, the playground is the width of
+     the page, with its columns stacked. */
+  @media (width < 860px) {
     .stage {
+      width: 100%;
       border-inline: 0;
       border-radius: 0;
     }

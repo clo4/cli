@@ -1,0 +1,81 @@
+* {
+  box-sizing: border-box;
+}
+html {
+  overflow-x: clip;
+  scroll-padding-top: calc(var(--header) + 24px);
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--text-body) / 1.65 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: inherit;
+}
+code,
+pre {
+  font-family: var(--mono);
+}
+kbd {
+  font: 12px var(--sans);
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  kbd {
+    display: none;
+  }
+}
+
+/* The title of a page. */
+.title {
+  margin: 0;
+  font: 400 var(--title-lg) / 1.1 var(--display);
+  text-wrap: balance;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Text that a translator hasn't checked, marked in development. */
+[data-suggested] {
+  text-decoration: underline dotted var(--faint);
+  text-underline-offset: 3px;
+}
+
+/* A scroller with more to the right. */
+[data-more] {
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+/* A page of reading, centred. */
+.page {
+  max-width: calc(var(--page-width, 760px) + 2 * var(--page-gutter));
+  margin: 0 auto;
+  padding: 56px var(--page-gutter) 96px;
+}

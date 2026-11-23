@@ -32,7 +32,7 @@ const open = categories(version).find((category) => category.items.some((item) =
   <span class="label"><small><T k="docs.version" /></small><span>{selected.name}</span></span>
   <Icon name="updown" />
 </button>
-<div id={`${id}-versions`} class="versions" popover style={`position-anchor: --${id}-switcher`}>
+<div id={`${id}-versions`} class="versions surface enters" popover style={`position-anchor: --${id}-switcher`}>
   {
     options.map((option) => (
       <a href={option.url} aria-current={option.version === version ? "page" : undefined}>
@@ -111,11 +111,7 @@ const open = categories(version).find((category) => category.items.some((item) =
     width: anchor-size(width);
     margin: 4px 0 0;
     padding: 4px;
-    border: 1px solid var(--line-strong);
-    border-radius: calc(var(--radius-inner) + 4px);
-    background: var(--surface);
-    color: var(--fg);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 0.16);
+    transform-origin: top;
     & a {
       display: grid;
       padding: 6px 8px;
@@ -177,7 +173,7 @@ const open = categories(version).find((category) => category.items.some((item) =
     border-radius: var(--radius-inner);
     list-style: none;
     cursor: pointer;
-    font-size: 14.5px;
+    font-size: var(--text-ui);
     font-weight: 500;
     color: var(--muted);
     transition:

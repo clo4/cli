@@ -1,8 +1,8 @@
 ---
 import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
 import Base from "@/layouts/Base.astro";
-import PageLink from "@/components/PageLink.astro";
 import PrevNext from "@/components/PrevNext.astro";
+import Markdown from "@/components/Markdown.astro";
 import T from "@/components/T.astro";
 import Sidebar from "@/components/docs/Sidebar.astro";
 import Toc from "@/components/docs/Toc.astro";
@@ -57,24 +57,17 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
         )
       }
       {category && <p class="crumb">{category}</p>}
-      <h1>{page.data.title}</h1>
+      <h1 class="title">{page.data.title}</h1>
       {page.data.description && <p class="lead">{page.data.description}</p>}
       <PageActions markdownUrl={markdownUrl} editUrl={editUrl} />
       <div class="toc-inline"><Toc toc={toc} inline /></div>
-      <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
-        <Content components={{ a: PageLink }} />
-      </div>
+      <Markdown content={Content} docs />
       <PrevNext previous={previous} next={next} previousLabel="docs.previous" nextLabel="docs.next" />
     </main>
     <div class="toc"><Toc toc={toc} /></div>
   </div>
   <Search version={version} />
 </Base>
-
-<script>
-  import { addCopyButtons } from "@/lib/copy";
-  addCopyButtons();
-</script>
 
 <style>
   .docs {
@@ -104,7 +97,7 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
     border: 1px solid var(--line);
     border-radius: var(--radius-inner);
     background: var(--surface);
-    font-size: 14.5px;
+    font-size: var(--text-ui);
     color: var(--muted);
     & a {
       color: var(--fg);
@@ -112,18 +105,12 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
   }
   .crumb {
     margin: 0 0 10px;
-    font-size: 13.5px;
+    font-size: var(--text-sm);
     color: var(--muted);
-  }
-  h1 {
-    margin: 0;
-    font: 400 44px/1.1 var(--display);
-    letter-spacing: -0.015em;
-    text-wrap: balance;
   }
   .lead {
     margin: 12px 0 0;
-    font-size: 18px;
+    font-size: var(--text-lead);
     color: var(--muted);
     text-wrap: pretty;
   }
@@ -161,13 +148,10 @@ const editUrl = `${githubUrl}/edit/${gitConfig.branch}/docs/content/docs/${page.
     .notice {
       margin-bottom: 20px;
       padding: 8px 12px;
-      font-size: 13.5px;
+      font-size: var(--text-sm);
     }
     .crumb {
       margin-bottom: 6px;
-    }
-    h1 {
-      font-size: 34px;
     }
     .lead {
       margin-top: 8px;

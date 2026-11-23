@@ -1,0 +1,11 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import CopyButton from "@/components/CopyButton.astro";
+
+type Props = HTMLAttributes<"pre">;
+---
+
+<div class="code-block">
+  <pre {...Astro.props}><slot /></pre>
+  <CopyButton class="copy-code" />
+</div>

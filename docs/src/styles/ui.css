@@ -1,0 +1,157 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--muted);
+  font: var(--text-sm) / 1 var(--sans);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--ease),
+    background-color var(--ease),
+    border-color var(--ease);
+  &:hover {
+    color: var(--fg);
+    background: var(--hl);
+  }
+  &.small {
+    height: 28px;
+    font-size: var(--text-xs);
+  }
+  &.large {
+    gap: 10px;
+    height: 40px;
+    padding: 0 14px;
+    font-size: 14px;
+  }
+  &.mono {
+    font-family: var(--mono);
+  }
+  &.primary {
+    border-color: transparent;
+    background: var(--fg);
+    color: var(--bg);
+    font-weight: 500;
+    &:hover {
+      background: color-mix(in srgb, var(--fg) 86%, var(--bg));
+    }
+  }
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    color var(--ease),
+    background-color var(--ease);
+  &:hover {
+    color: var(--fg);
+    background: var(--hl);
+  }
+}
+
+/* Two things in one place, the second shown while copied. It's as wide as the
+   wider of them, so swapping them doesn't move anything. */
+.swap {
+  display: inline-grid;
+  justify-items: start;
+  & > * {
+    grid-area: 1 / 1;
+    transition:
+      opacity var(--ease),
+      visibility var(--ease);
+  }
+  & > :last-child,
+  [data-copied] & > :first-child {
+    opacity: 0;
+    visibility: hidden;
+  }
+  [data-copied] & > :last-child {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+/* A surface that floats over the page: a menu, a dialog, a hover card. */
+.surface {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pop);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-pop);
+}
+
+/* Popovers and dialogs settle in as they open, and fade as they close. */
+:is([popover], dialog).enters {
+  opacity: 0;
+  scale: 0.98;
+  translate: 0 -4px;
+  transition:
+    opacity var(--ease),
+    scale var(--ease),
+    translate var(--ease),
+    display var(--duration) allow-discrete,
+    overlay var(--duration) allow-discrete;
+  &:is(:popover-open, [open]) {
+    opacity: 1;
+    scale: 1;
+    translate: 0;
+    @starting-style {
+      opacity: 0;
+      scale: 0.98;
+      translate: 0 -4px;
+    }
+  }
+  &::backdrop {
+    background: rgb(0 0 0 / 0);
+    transition:
+      background-color var(--ease),
+      display var(--duration) allow-discrete,
+      overlay var(--duration) allow-discrete;
+  }
+  &[open]::backdrop {
+    background: rgb(0 0 0 / 0.4);
+    @starting-style {
+      background: rgb(0 0 0 / 0);
+    }
+  }
+}
+
+.code-block {
+  position: relative;
+  & .copy-code {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    opacity: 0;
+    background: var(--surface);
+    transition:
+      opacity var(--ease),
+      color var(--ease),
+      background-color var(--ease);
+  }
+  &:hover .copy-code,
+  & .copy-code:focus-visible {
+    opacity: 1;
+  }
+}
+@media (pointer: coarse) {
+  .code-block .copy-code {
+    opacity: 1;
+  }
+}

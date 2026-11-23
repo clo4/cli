@@ -2,12 +2,17 @@
 import Base from "@/layouts/Base.astro";
 import Icon from "@/components/Icon.astro";
 import T from "@/components/T.astro";
+import CopyButton from "@/components/CopyButton.astro";
 import Stage from "@/components/landing/Stage.astro";
 import { t } from "@/i18n";
 import { getPosts } from "@/lib/blog";
 import { githubUrl, href, site, version } from "@/lib/shared";
 
 const latest = getPosts()[0];
+const install = "npm install @clo4/cli";
+/** The sentences of `text`, so the lead can wrap between them and not inside one where there's room. */
+const sentences = (text: string) =>
+  [...new Intl.Segmenter("en", { granularity: "sentence" }).segment(text)].map(({ segment }) => segment.trim());
 ---
 
 <Base current="home">
@@ -41,43 +46,30 @@ const latest = getPosts()[0];
         )
       }
       <h1><T k="landing.title" /></h1>
-      <p class="lead"><T k="landing.lead" /></p>
+      <p class="lead">{sentences(t("landing.lead")).map((sentence) => <span>{sentence}</span>)}</p>
       <div class="actions">
-        <button class="install" data-install="npm install @clo4/cli" aria-label={t("landing.copy")}>
-          <span class="prompt">$</span>npm install @clo4/cli<Icon name="copy" />
-        </button>
-        <a class="docs" href={href("docs")}><T k="landing.docs" /><Icon name="right" size={14} /></a>
+        <CopyButton class="large mono install" text={install} aria-label={t("landing.copy")}>
+          <span class="command"><span class="prompt">$</span> {install}</span>
+        </CopyButton>
+        <a class="button large primary" href={href("docs")}><T k="landing.docs" /><Icon name="right" size={14} /></a>
       </div>
     </section>
-    <div class="stage-wrap">
-      <Stage />
-    </div>
+    <Stage />
   </main>
 </Base>
-
-<script>
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-install]")) {
-    button.addEventListener("click", async () => {
-      await navigator.clipboard.writeText(button.dataset.install!);
-      button.dataset.copied = "";
-      setTimeout(() => delete button.dataset.copied, 1200);
-    });
-  }
-</script>
 
 <style>
   main {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 64px;
-    padding: 80px 0 96px;
+    gap: 72px;
+    padding: 72px 0 96px;
   }
   .hero {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 20px;
-    padding: 0 24px;
+    padding: 0 var(--page-gutter);
     text-align: center;
   }
   .pill {
@@ -85,16 +77,20 @@ const latest = getPosts()[0];
     align-items: center;
     gap: 8px;
     max-width: 100%;
+    margin-bottom: 36px;
     padding: 4px 12px 4px 4px;
     border: 1px solid var(--line);
     border-radius: 999px;
     background: var(--surface);
-    font-size: 13.5px;
+    font-size: var(--text-sm);
     color: var(--muted);
     text-decoration: none;
-    transition: color var(--ease);
+    transition:
+      color var(--ease),
+      border-color var(--ease);
     &:hover {
       color: var(--fg);
+      border-color: var(--line-strong);
     }
     & span {
       min-width: 0;
@@ -114,90 +110,60 @@ const latest = getPosts()[0];
     }
   }
   h1 {
-    margin: 0;
-    font: 400 clamp(30px, 8.4vw, 64px) / 1.05 var(--display);
-    letter-spacing: -0.02em;
     max-width: 13em;
+    margin: 0;
+    font: 400 var(--title-hero) / 1.05 var(--display);
     text-wrap: balance;
   }
   .lead {
-    max-width: 52ch;
-    margin: 0;
-    font-size: 18px;
+    margin: 24px 0 0;
+    font-size: var(--text-lead);
     color: var(--muted);
-    text-wrap: pretty;
+    /* Each sentence is a box, so a line breaks between them. One longer than
+       the line still wraps inside. */
+    & span {
+      display: inline-block;
+      text-wrap: balance;
+    }
+    & span + span {
+      margin-inline-start: 0.3em;
+    }
   }
   .actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px;
-  }
-  .install,
-  .docs {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    height: 40px;
-    padding: 0 14px;
-    border-radius: var(--radius-inner);
-    font-size: 14px;
-    text-decoration: none;
-    transition:
-      background-color var(--ease),
-      color var(--ease);
+    margin-top: 36px;
   }
   .install {
-    border: 1px solid var(--line);
+    border-color: var(--line);
     background: var(--surface);
-    font-family: var(--mono);
-    cursor: pointer;
+    color: var(--fg);
     & .prompt {
       color: var(--faint);
     }
     & :global(.icon) {
       color: var(--muted);
     }
-    &[data-copied] :global(.icon) {
-      color: var(--fg);
-    }
   }
-  .docs {
-    background: var(--fg);
-    color: var(--bg);
-    font-weight: 500;
-  }
-  .stage-wrap {
-    width: 100%;
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 0 24px;
-  }
-  @media (width < 760px) {
+  @media (width < 640px) {
     main {
-      gap: 40px;
+      gap: 48px;
       padding: 40px 0 64px;
     }
-    .hero {
-      gap: 16px;
-      padding: 0 16px;
-    }
     .pill {
-      font-size: 12.5px;
+      margin-bottom: 28px;
+      font-size: var(--text-xs);
     }
     .lead {
-      font-size: 16px;
+      margin-top: 16px;
+      font-size: var(--text-body);
     }
     .actions {
       flex-direction: column;
       align-self: stretch;
-      align-items: stretch;
-      & > * {
-        justify-content: center;
-      }
-    }
-    .stage-wrap {
-      padding: 0;
+      margin-top: 28px;
     }
   }
 </style>

@@ -116,7 +116,6 @@ const links = [
   }
   .wordmark {
     font: 500 15px var(--mono);
-    letter-spacing: -0.01em;
     text-decoration: none;
     & span {
       color: var(--faint);
@@ -128,7 +127,7 @@ const links = [
     & a {
       padding: 6px 10px;
       border-radius: var(--radius-inner);
-      font-size: 14.5px;
+      font-size: var(--text-ui);
       color: var(--muted);
       text-decoration: none;
       transition: color var(--ease);
@@ -147,7 +146,7 @@ const links = [
   .version {
     padding: 6px 8px;
     border-radius: var(--radius-inner);
-    font-size: 13.5px;
+    font-size: var(--text-sm);
     font-variant-numeric: tabular-nums;
     color: var(--muted);
     text-decoration: none;
@@ -213,7 +212,6 @@ const links = [
       list-style: none;
       cursor: pointer;
       font: 13px var(--mono);
-      letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--muted);
       &::-webkit-details-marker {

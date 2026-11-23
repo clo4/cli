@@ -11,7 +11,7 @@ interface Props {
 const { version } = Astro.props;
 ---
 
-<dialog class="search" aria-label={t("search.open")} data-search data-from={href("api/search")} data-tag={version}>
+<dialog class="search surface enters" aria-label={t("search.open")} data-search data-from={href("api/search")} data-tag={version}>
   <div class="field">
     <Icon name="search" />
     <input type="search" placeholder={t("search.placeholder")} aria-label={t("search.placeholder")} autocomplete="off" spellcheck="false" />
@@ -137,18 +137,11 @@ const { version } = Astro.props;
     max-height: min(560px, 80dvh);
     margin: 12vh auto auto;
     padding: 0;
-    border: 1px solid var(--line-strong);
     border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--fg);
-    box-shadow: 0 24px 64px rgb(0 0 0 / 0.28);
-    &::backdrop {
-      background: rgb(0 0 0 / 0.4);
-    }
+    box-shadow: var(--shadow-dialog);
     &[open] {
       display: flex;
       flex-direction: column;
-      animation: pop-in var(--ease);
     }
   }
   .field {
@@ -194,7 +187,7 @@ const { version } = Astro.props;
     }
     & :global(small) {
       color: var(--muted);
-      font-size: 12.5px;
+      font-size: var(--text-xs);
     }
     & :global(code) {
       font-size: 0.88em;

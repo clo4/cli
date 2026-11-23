@@ -1,8 +1,7 @@
 ---
 import Base from "@/layouts/Base.astro";
-import Icon from "@/components/Icon.astro";
 import InlineCode from "@/components/InlineCode.astro";
-import T from "@/components/T.astro";
+import PageHeader from "@/components/PageHeader.astro";
 import { t } from "@/i18n";
 import { formatDate, getPosts } from "@/lib/blog";
 import { href } from "@/lib/shared";
@@ -14,10 +13,7 @@ const posts = getPosts();
 
 <Base title={t("blog.title")} description={t("blog.description")} image={href("og/blog.png")} current="blog">
   <main class="page">
-    <div class="head">
-      <h1><T k="blog.title" /></h1>
-      <a href={href("blog/rss.xml")}><Icon name="rss" /><T k="blog.rss" /></a>
-    </div>
+    <PageHeader title="blog.title" rss={href("blog/rss.xml")} />
     <ul>
       {
         posts.map((post) => (
@@ -39,35 +35,8 @@ const posts = getPosts();
 </Base>
 
 <style>
-  .page {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 56px 24px 96px;
-  }
-  .head {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 20px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--line);
-    & h1 {
-      margin: 0;
-      font: 400 44px/1.1 var(--display);
-      letter-spacing: -0.015em;
-    }
-    & a {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13.5px;
-      color: var(--muted);
-      text-decoration: none;
-      &:hover {
-        color: var(--fg);
-      }
-    }
+  ul {
+    margin-top: 8px;
   }
   ul {
     list-style: none;
@@ -95,7 +64,7 @@ const posts = getPosts();
   }
   h2 {
     margin: 0;
-    font: 400 24px/1.25 var(--display);
+    font: 400 var(--title-sm) / 1.25 var(--display);
     transition: color var(--ease);
   }
   p {

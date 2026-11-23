@@ -4,6 +4,7 @@ import Base from "@/layouts/Base.astro";
 import Icon from "@/components/Icon.astro";
 import InlineCode from "@/components/InlineCode.astro";
 import PrevNext from "@/components/PrevNext.astro";
+import Markdown from "@/components/Markdown.astro";
 import T from "@/components/T.astro";
 import { blog, formatDate, getPosts } from "@/lib/blog";
 import { href, site } from "@/lib/shared";
@@ -50,7 +51,7 @@ const newer = posts[at - 1];
   <main class="page">
     <header>
       <a class="back" href={href("blog")}><Icon name="left" /><T k="blog.back" /></a>
-      <h1>{post.data.title}</h1>
+      <h1 class="title">{post.data.title}</h1>
       {
         post.data.description && (
           <p class="lead">
@@ -60,9 +61,7 @@ const newer = posts[at - 1];
       }
       <p class="meta"><time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time></p>
     </header>
-    <article class="prose" data-copy-label="Copy" data-copied-label="Copied">
-      <Content />
-    </article>
+    <Markdown as="article" content={Content} />
     <PrevNext
       previous={older && { url: older.url, name: older.data.title }}
       next={newer && { url: newer.url, name: newer.data.title }}
@@ -72,17 +71,7 @@ const newer = posts[at - 1];
   </main>
 </Base>
 
-<script>
-  import { addCopyButtons } from "@/lib/copy";
-  addCopyButtons();
-</script>
-
 <style>
-  .page {
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 56px 24px 96px;
-  }
   header {
     margin-bottom: 32px;
   }
@@ -98,20 +87,14 @@ const newer = posts[at - 1];
       color: var(--fg);
     }
   }
-  h1 {
-    margin: 0;
-    font: 400 46px/1.1 var(--display);
-    letter-spacing: -0.015em;
-    text-wrap: balance;
-  }
   .lead {
     margin: 12px 0 0;
-    font-size: 18px;
+    font-size: var(--text-lead);
     color: var(--muted);
   }
   .meta {
     margin: 14px 0 0;
-    font-size: 14.5px;
+    font-size: var(--text-ui);
     color: var(--muted);
   }
 </style>

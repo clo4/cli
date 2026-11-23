@@ -1,0 +1,91 @@
+/*
+ * Breakpoints. Custom properties can't be used in media queries, so these are
+ * written out where they're used:
+ * - 640px: phone. Stacked layouts, smaller titles.
+ * - 860px: the header collapses into the menu, and the docs sidebar goes.
+ * - 1180px: the docs table of contents moves into the page.
+ */
+
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f8f6f1, #141312);
+  --surface: light-dark(#fffefb, #1b1a18);
+  --sunken: light-dark(#f1eee8, #100f0e);
+  --fg: light-dark(#1c1917, #e9e6e1);
+  --muted: light-dark(#75706a, #9a958e);
+  --faint: light-dark(#aaa49c, #605b55);
+  --line: light-dark(#e9e4da, #2a2825);
+  --line-strong: light-dark(#dcd5c8, #383532);
+
+  --sub: light-dark(#945e80, #d3869b);
+  --opt: light-dark(#45707a, #7daea3);
+  --val: light-dark(#6c782e, #a9b665);
+  --arg: light-dark(#b47109, #d8a657);
+  --err: light-dark(#c14a4a, #ea6962);
+
+  --hl: color-mix(in srgb, var(--fg) 5%, transparent);
+  --hl-strong: color-mix(in srgb, var(--fg) 9%, transparent);
+
+  --sans: var(--font-sans), system-ui, sans-serif;
+  --mono: var(--font-mono), ui-monospace, monospace;
+  --display: var(--font-display), Georgia, serif;
+
+  --text-xs: 12.5px;
+  --text-sm: 13.5px;
+  --text-ui: 14.5px;
+  --text-body: 16px;
+  --text-lead: 18px;
+  --title-sm: 24px;
+  --title-md: 28px;
+  --title-lg: clamp(34px, 2.5vw + 22px, 44px);
+  --title-hero: clamp(30px, 8.4vw, 64px);
+
+  --radius: 12px;
+  --gap: 6px;
+  --radius-inner: calc(var(--radius) - var(--gap));
+  --radius-pop: calc(var(--radius-inner) + 4px);
+  --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.16);
+  --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.28);
+
+  --header: 56px;
+  --page-gutter: 24px;
+
+  /* Every transition and animation takes its time from these, so reduced
+     motion turns them all off in one place. */
+  --duration: 160ms;
+  --duration-slow: 320ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease: var(--duration) var(--ease-out);
+  --ease-slow: var(--duration-slow) var(--ease-out);
+
+  --shiki-foreground: var(--fg);
+  --shiki-background: var(--surface);
+  --shiki-token-keyword: var(--sub);
+  --shiki-token-string: var(--val);
+  --shiki-token-string-expression: var(--val);
+  --shiki-token-function: var(--opt);
+  --shiki-token-constant: var(--arg);
+  --shiki-token-comment: var(--faint);
+  --shiki-token-parameter: var(--fg);
+  --shiki-token-punctuation: var(--muted);
+  --shiki-token-link: var(--opt);
+
+  interpolate-size: allow-keywords;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+@media (width < 640px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration: 0s;
+    --duration-slow: 0s;
+  }
+}

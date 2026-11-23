@@ -1,0 +1,27 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import type { MDXContent } from "mdx/types";
+import CodeBlock from "@/components/CodeBlock.astro";
+import PageLink from "@/components/PageLink.astro";
+
+interface Props extends HTMLAttributes<"div"> {
+  /** The rendered markdown. */
+  content: MDXContent;
+  as?: "div" | "article";
+  /** Resolve links between docs pages. */
+  docs?: boolean;
+}
+
+const { content: Content, as: Tag = "div", docs = false, class: className, ...rest } = Astro.props;
+const components = docs ? { pre: CodeBlock, a: PageLink } : { pre: CodeBlock };
+---
+
+<Tag class:list={["prose", className]} {...rest}>
+  <Content components={components} />
+  <slot />
+</Tag>
+
+<script>
+  import { hintScrollAll } from "@/lib/scroll-hint";
+  hintScrollAll(".prose :is(pre, table)");
+</script>

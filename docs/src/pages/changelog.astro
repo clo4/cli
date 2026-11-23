@@ -1,6 +1,7 @@
 ---
 import Base from "@/layouts/Base.astro";
-import Icon from "@/components/Icon.astro";
+import PageHeader from "@/components/PageHeader.astro";
+import Markdown from "@/components/Markdown.astro";
 import T from "@/components/T.astro";
 import { t } from "@/i18n";
 import { blog, formatDate } from "@/lib/blog";
@@ -24,10 +25,7 @@ const releases = await Promise.all(
 
 <Base title={t("changelog.title")} description={t("changelog.description")} image={href("og/changelog.png")} current="changelog">
   <main class="page">
-    <div class="head">
-      <h1><T k="changelog.title" /></h1>
-      <a href={href("changelog/rss.xml")}><Icon name="rss" /><T k="blog.rss" /></a>
-    </div>
+    <PageHeader title="changelog.title" rss={href("changelog/rss.xml")} />
     {
       hasPending && pending && (
         <section class="release" id="unreleased">
@@ -41,9 +39,7 @@ const releases = await Promise.all(
               <T k="changelog.onMain" />
             </span>
           </div>
-          <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
-            <pending.body />
-          </div>
+          <Markdown content={pending.body} />
         </section>
       )
     }
@@ -56,8 +52,7 @@ const releases = await Promise.all(
             </h2>
             {date && <time datetime={date.toISOString()}>{formatDate(date, "short")}</time>}
           </div>
-          <div class="prose" data-copy-label={t("code.copy")} data-copied-label={t("docs.copied")}>
-            <Content />
+          <Markdown content={Content}>
             {post && (
               <p>
                 <a href={post.url}>
@@ -65,47 +60,16 @@ const releases = await Promise.all(
                 </a>
               </p>
             )}
-          </div>
+          </Markdown>
         </section>
       ))
     }
   </main>
 </Base>
 
-<script>
-  import { addCopyButtons } from "@/lib/copy";
-  addCopyButtons();
-</script>
-
 <style>
   .page {
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 56px 24px 96px;
-  }
-  .head {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--line);
-    & h1 {
-      margin: 0;
-      font: 400 44px/1.1 var(--display);
-      letter-spacing: -0.015em;
-    }
-    & a {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13.5px;
-      color: var(--muted);
-      text-decoration: none;
-      &:hover {
-        color: var(--fg);
-      }
-    }
+    --page-width: 860px;
   }
   .release {
     display: grid;
@@ -120,7 +84,7 @@ const releases = await Promise.all(
     align-self: start;
     & h2 {
       margin: 0;
-      font: 400 24px/1.2 var(--display);
+      font: 400 var(--title-sm) / 1.2 var(--display);
       & a {
         text-decoration: none;
       }

@@ -37,7 +37,7 @@ export async function socialImage({ title, description, label }: Card) {
   const html = `<div style="display:flex;flex-direction:column;justify-content:space-between;width:100%;height:100%;padding:72px 80px;background:#141312;color:#e9e6e1;font-family:Inter">
     <div style="font-family:'Roboto Mono';font-size:30px"><span style="color:#605b55">@clo4/</span>cli</div>
     <div style="display:flex;flex-direction:column;gap:20px">
-      <div style="font-family:Newsreader;font-size:${size}px;line-height:1.05;letter-spacing:-0.02em">${escape(title)}</div>
+      <div style="font-family:Newsreader;font-size:${size}px;line-height:1.05">${escape(title)}</div>
       ${description ? `<div style="font-size:32px;color:#9a958e;line-height:1.4">${escape(description.replaceAll("`", ""))}</div>` : ""}
     </div>
     <div style="font-size:26px;color:#9a958e">${escape(label ?? "")}</div>

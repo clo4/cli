@@ -1,0 +1,48 @@
+---
+import Icon from "@/components/Icon.astro";
+import T from "@/components/T.astro";
+import type { Key } from "@/i18n";
+
+interface Props {
+  title: Key;
+  /** The page's feed. */
+  rss?: string;
+}
+
+const { title, rss } = Astro.props;
+---
+
+<div class="head">
+  <h1 class="title"><T k={title} /></h1>
+  {
+    rss && (
+      <a href={rss}>
+        <Icon name="rss" />
+        <T k="blog.rss" />
+      </a>
+    )
+  }
+</div>
+
+<style>
+  .head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-sm);
+    color: var(--muted);
+    text-decoration: none;
+    transition: color var(--ease);
+    &:hover {
+      color: var(--fg);
+    }
+  }
+</style>
