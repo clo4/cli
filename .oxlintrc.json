@@ -6,7 +6,8 @@
     "correctness": "error"
   },
   "rules": {
-    "curly": "error"
+    "curly": "error",
+    "eslint/no-nested-ternary": "error"
   },
   "env": {
     "builtin": true

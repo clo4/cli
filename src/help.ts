@@ -454,7 +454,13 @@ function withDetails(
       pieces.push(parts[j]);
       carriesOn.add(pieces.length);
     }
-    pieces.push(parts[parts.length - 1] + (i < values.length - 1 ? " |" : byDefault === "" ? "" : ","));
+    let last = parts[parts.length - 1];
+    if (i < values.length - 1) {
+      last += " |";
+    } else if (byDefault !== "") {
+      last += ",";
+    }
+    pieces.push(last);
   }
   if (byDefault !== "") {
     pieces.push(byDefault);

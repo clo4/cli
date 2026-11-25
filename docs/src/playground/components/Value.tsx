@@ -12,7 +12,10 @@ export function Value(props: { value: unknown; read?: string }) {
 }
 
 function typeOf(value: unknown) {
-  return Array.isArray(value) ? "array" : value === null ? "null" : typeof value;
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  return value === null ? "null" : typeof value;
 }
 
 function Literal(props: { value: unknown }): JSX.Element {

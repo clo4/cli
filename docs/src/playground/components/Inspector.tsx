@@ -15,7 +15,10 @@ export function Inspector(props: {
 }) {
   const where = (problem: Problem) => {
     const token = problem.token === undefined ? undefined : props.tokens[problem.token];
-    return token ? (problem.start === undefined ? token.text : token.text.slice(problem.start)) : "";
+    if (!token) {
+      return "";
+    }
+    return problem.start === undefined ? token.text : token.text.slice(problem.start);
   };
   return (
     <section class="inspector">

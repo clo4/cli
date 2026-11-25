@@ -59,21 +59,21 @@ export const takesNoArguments = (option: string) => `Option ${option} doesn't ta
 
 export const tooManyArguments = (value: string) => `Too many arguments, ${repr(value)} was unexpected`;
 
-export function tooFewOptionArguments(option: string, min: number, max: number): string {
-  return min === max
-    ? `Option ${option} needs ${count(min, "argument")}`
-    : !Number.isFinite(max)
-      ? `Option ${option} needs at least ${count(min, "argument")}`
-      : `Option ${option} needs between ${min} and ${max} arguments`;
+/** How many arguments something takes, at least `min` and at most `max`. */
+function howMany(min: number, max: number): string {
+  if (min === max) {
+    return count(min, "argument");
+  }
+  if (max === Infinity) {
+    return `at least ${count(min, "argument")}`;
+  }
+  return `between ${min} and ${max} arguments`;
 }
 
-export function tooFewArguments(min: number, max: number): string {
-  return min === max
-    ? `Expected ${count(min, "argument")}`
-    : !Number.isFinite(max)
-      ? `Expected at least ${count(min, "argument")}`
-      : `Expected between ${min} and ${max} arguments`;
-}
+export const tooFewOptionArguments = (option: string, min: number, max: number) =>
+  `Option ${option} needs ${howMany(min, max)}`;
+
+export const tooFewArguments = (min: number, max: number) => `Expected ${howMany(min, max)}`;
 
 export const missingOption = (name: string) => `Option ${name} is required, but wasn't found`;
 

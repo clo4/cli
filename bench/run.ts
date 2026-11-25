@@ -562,7 +562,12 @@ async function bundle(
         : [
             {
               name: "generated-adapter",
-              resolveId: (id) => (id === input ? id : files?.has(id) ? join(dirname(input), id) : null),
+              resolveId(id) {
+                if (id === input) {
+                  return id;
+                }
+                return files?.has(id) ? join(dirname(input), id) : null;
+              },
               load: (id) => generated.get(id) ?? null,
             },
           ],

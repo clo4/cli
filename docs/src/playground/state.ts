@@ -131,8 +131,10 @@ export function createPlayground(ranges: Record<string, Ranges>, notFound: strin
       return lit;
     }
     const at = caret();
-    const i =
-      hovered() >= 0 ? hovered() : focused() ? all.findIndex((t) => t.start <= at && at <= t.end) : -1;
+    let i = hovered();
+    if (i < 0) {
+      i = focused() ? all.findIndex((t) => t.start <= at && at <= t.end) : -1;
+    }
     if (i < 0) {
       return lit;
     }

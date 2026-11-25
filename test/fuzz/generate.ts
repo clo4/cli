@@ -464,7 +464,10 @@ function replaced<T>(items: readonly T[], i: number, item: T): T[] {
 
 /** Show a spec as JSON, with actions by name and Infinity spelled out. */
 export function showSpec(spec: Spec): string {
-  return JSON.stringify(spec, (_, v: unknown) =>
-    typeof v === "function" ? `<${v.name}>` : v === Infinity ? "Infinity" : v,
-  );
+  return JSON.stringify(spec, (_, v: unknown) => {
+    if (typeof v === "function") {
+      return `<${v.name}>`;
+    }
+    return v === Infinity ? "Infinity" : v;
+  });
 }

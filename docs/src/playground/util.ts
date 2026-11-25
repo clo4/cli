@@ -1,7 +1,11 @@
 import type { Option } from "@clo4/cli";
 
-export const asArray = <T>(x: T | readonly T[] | undefined): readonly T[] =>
-  x === undefined ? [] : Array.isArray(x) ? (x as readonly T[]) : [x as T];
+export function asArray<T>(x: T | readonly T[] | undefined): readonly T[] {
+  if (x === undefined) {
+    return [];
+  }
+  return Array.isArray(x) ? (x as readonly T[]) : [x as T];
+}
 
 /** The names of a command or option. */
 export const names = (piece: { name?: string | readonly string[] }): readonly string[] => asArray(piece.name);

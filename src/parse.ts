@@ -294,10 +294,14 @@ function checkRequiredOptions(
     if (!option.isRequired) {
       continue;
     }
-    const names = option.name;
-    const missing =
-      typeof names === "string" ? (options.has(names) ? null : names) : names.find((n) => !options.has(n));
-    if (missing) {
+    let missing: string | undefined;
+    for (const name of asArray(option.name)) {
+      if (!options.has(name)) {
+        missing = name;
+        break;
+      }
+    }
+    if (missing !== undefined) {
       const definedAt = i < local.length ? path.length - 1 : definerIndex(path, option);
       (problems ??= []).push(new ParseError(contextAt(path, entered[definedAt]), missingOption(missing)));
     }

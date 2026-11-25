@@ -120,13 +120,7 @@ function addJobs(
       jobs.push({
         arg: arg as Job["arg"],
         raw: values[i] as string,
-        // An option with several arguments says which one the value is for.
-        target:
-          target === null
-            ? `<${argName(arg)}>`
-            : Array.isArray(args) && args.length > 1
-              ? `${target} <${argName(arg, `argument ${i - start + 1}`)}>`
-              : target,
+        target: targetOf(target, args, arg, i - start),
         isDefault: i >= typedEnd,
         values,
         index: i,
@@ -135,6 +129,22 @@ function addJobs(
       });
     }
   }
+}
+
+/**
+ * What a value of `arg`, the argument at `index` of `args`, is for, as the
+ * user would write it: `<name>` for a positional argument, or the option's
+ * name, which `option` is otherwise.
+ */
+function targetOf(option: string | null, args: ArgList, arg: Arg, index: number): string {
+  if (option === null) {
+    return `<${argName(arg)}>`;
+  }
+  // An option with several arguments says which one the value is for.
+  if (Array.isArray(args) && args.length > 1) {
+    return `${option} <${argName(arg, `argument ${index + 1}`)}>`;
+  }
+  return option;
 }
 
 /**

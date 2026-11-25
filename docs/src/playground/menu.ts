@@ -76,7 +76,7 @@ function freeArgument(next: Awaited<ReturnType<typeof readNext>>): Arg | undefin
   if (next.partialIsOption && !next.attached) {
     return undefined;
   }
-  const arg = next.attached ? next.attached.arg : next.value ? next.value.arg : next.arg;
+  const arg = next.attached?.arg ?? (next.value ? next.value.arg : next.arg);
   return arg && arg.parse === undefined ? arg : undefined;
 }
 
@@ -94,7 +94,10 @@ export function preview(menu: Menu): string {
 /** `menu` with the selection moved by `by`, wrapping around. From no selection, forward is the first. */
 export function move(menu: Menu, by: number): Menu {
   const count = menu.items.length;
-  const from = menu.selected < 0 && by > 0 ? -1 : menu.selected < 0 ? 0 : menu.selected;
+  let from = menu.selected;
+  if (from < 0) {
+    from = by > 0 ? -1 : 0;
+  }
   return { ...menu, selected: (from + by + count) % count };
 }
 

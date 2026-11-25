@@ -651,9 +651,12 @@ const specChecks: readonly SpecCheck[] = [
           return;
         }
         // The least and greatest numbers the range has, for a range of integers.
-        const least = type === "integer" ? (bounds.minExclusive ? Math.floor(min) + 1 : Math.ceil(min)) : min;
-        const greatest =
-          type === "integer" ? (bounds.maxExclusive ? Math.ceil(max) - 1 : Math.floor(max)) : max;
+        let least = min;
+        let greatest = max;
+        if (type === "integer") {
+          least = bounds.minExclusive ? Math.floor(min) + 1 : Math.ceil(min);
+          greatest = bounds.maxExclusive ? Math.ceil(max) - 1 : Math.floor(max);
+        }
         const hasNone =
           least > greatest ||
           (type === "number" && least === greatest && (bounds.minExclusive || bounds.maxExclusive));
