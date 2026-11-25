@@ -132,6 +132,12 @@ function wanted(next: NextToken, word: string, optionsNeedDash: boolean) {
  *
  * It's what the `completion` command's scripts ask a CLI on each Tab, and the
  * way to complete a CLI's command line anywhere else, like in a prompt.
+ *
+ * The caller matches the suggestions against `word`, because each shell
+ * matches its own way: fish fuzzily, zsh by the user's matcher-list, and
+ * PowerShell and Nushell in any case. Only what's worked out from `word`
+ * depends on it, like the files a template lists, or how a parser's pattern
+ * goes on.
  */
 export async function complete(
   spec: Spec,

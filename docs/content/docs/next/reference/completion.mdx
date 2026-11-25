@@ -20,6 +20,8 @@ What `word` can become after `before`: subcommands, options, and the values of t
 
 It's what the [`completion`](./built-ins.mdx#completion) scripts ask on each Tab, and the way to complete a command line anywhere else, like in a prompt.
 
+The caller matches the suggestions against `word`, because each shell matches its own way: fish fuzzily, zsh by the user's `matcher-list`, and PowerShell and Nushell in any case. `complete` doesn't match subcommands, options or an argument's `suggestions` against it, and a suggester decides for itself. Only what's worked out from `word` depends on it, like the files a `template` lists, or how a parser's pattern goes on.
+
 ### `CompleteOptions` [#completeoptions]
 
 | Field             | Type      | Default | Meaning                                                                                                     |
