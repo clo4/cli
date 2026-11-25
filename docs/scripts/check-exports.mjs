@@ -35,7 +35,7 @@ const documented = (name) =>
   new RegExp(`^#+ \`${name}\\b`, "m").test(pages) || new RegExp(`^\\| \`${name}\\b`, "m").test(pages);
 
 const missing = [];
-for (const file of ["../src/index.ts", "../src/testing.ts"]) {
+for (const file of ["../src/index.ts", "../src/testing.ts", "../src/analyze.ts"]) {
   for (const name of await exportsOf(file)) {
     if (name !== "default" && !documented(name)) {
       missing.push(`${name} (${file.slice(3)})`);

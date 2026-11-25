@@ -32,6 +32,7 @@
     "reference/parsers",
     "reference/standard-schema",
     "reference/testing",
+    "reference/analyze",
     "reference/parsing-behavior",
     "reference/compatibility"
   ]

@@ -1,9 +1,9 @@
 import { defineConfig } from "tsdown";
 import type { UserConfig } from "tsdown";
 
-// The package publicly exports exactly two entries (see package.json "exports"):
-// "." (index) and "./testing". They are built as SEPARATE single-entry bundles
-// on purpose:
+// The package publicly exports three entries (see package.json "exports"):
+// "." (index), "./testing" and "./analyze". They are built as SEPARATE
+// single-entry bundles on purpose:
 //
 //   * Listing the internal modules (parse, help, completion and the rest) as
 //     entries — or even just bundling index + testing together — makes rolldown
@@ -29,15 +29,15 @@ const shared = {
   platform: "node",
   target: "es2022",
   // platform "node" defaults fixedExtension to true (.mjs); keep .js so the
-  // package.json "exports" paths (./dist/index.js, ./dist/testing.js) resolve.
+  // package.json "exports" paths, like ./dist/index.js, resolve.
   fixedExtension: false,
 } satisfies UserConfig;
 
 // The index bundle is minified because V8 scans every byte of it on each
 // import, and a CLI imports it on every run. Minifying it cut a run by 0.1 to
 // 0.4 ms. Stack traces show minified names unless Node runs with
-// --enable-source-maps. The testing bundle isn't minified, so spec check
-// failures stay readable.
+// --enable-source-maps. The other bundles aren't minified, so spec check
+// failures stay readable, and nothing imports them on every run.
 export default defineConfig([
   {
     ...shared,
@@ -46,4 +46,5 @@ export default defineConfig([
     minify: true,
   },
   { ...shared, entry: ["src/testing.ts"], clean: false },
+  { ...shared, entry: ["src/analyze.ts"], clean: false },
 ]);

@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 
 import * as CLI from "../src/index.js";
 import * as Testing from "../src/testing.js";
+import * as Analyze from "../src/analyze.js";
 
 test("public API stays minimal and namespace-friendly", () => {
   expect(Object.keys(CLI).sort()).toEqual([
@@ -41,11 +42,15 @@ test("the testing entrypoint exports test and testSpec", () => {
   expect(Object.keys(Testing).sort()).toEqual(["test", "testSpec"]);
 });
 
-test("package exports stay limited to runtime and testing entrypoints", async () => {
+test("the analyze entrypoint exports analyze", () => {
+  expect(Object.keys(Analyze)).toEqual(["analyze"]);
+});
+
+test("package exports stay limited to runtime, testing and analyze entrypoints", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as {
     exports: Record<string, unknown>;
   };
-  expect(Object.keys(pkg.exports).sort()).toEqual([".", "./testing"]);
+  expect(Object.keys(pkg.exports).sort()).toEqual([".", "./analyze", "./testing"]);
 });
 
 /** The names of the types a source file exports. */
@@ -85,6 +90,7 @@ test("the entrypoints export these types", async () => {
     "Template",
   ]);
   expect(await exportedTypes("testing.ts")).toEqual(["TestContextLike", "TestNamingStyle", "TestOptions"]);
+  expect(await exportedTypes("analyze.ts")).toEqual(["Analysis", "ParseResult", "Problem", "TokenReading"]);
 });
 
 test("the completion command is written with public functions alone", async () => {
