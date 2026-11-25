@@ -1434,6 +1434,25 @@ test("parse: a short option's value starts after the first listed separator it b
   expect(await value([":=", ":"])).toBe("v");
 });
 
+test("parse: a repeated option breaks each of its rules once", async () => {
+  const spec: Spec = {
+    name: "test",
+    options: [
+      { name: "--out", args: {} },
+      { name: "-v", isRepeatable: true, dependsOn: ["--out"], exclusiveOn: ["-q", "--quiet"] },
+      { name: ["-q", "--quiet"], exclusiveOn: ["-v"] },
+    ],
+  };
+  const messages = async (argv: string[]) =>
+    parse(argv, spec).then(
+      () => [],
+      (error: ParseError) => (error.problems ?? [error]).map((problem) => problem.message),
+    );
+  expect(await messages(["-v", "-v"])).toEqual(["-v requires --out, add it to fix this error"]);
+  expect(await messages(["--out", "x", "-vv", "-q", "-v"])).toEqual(["-v can't be used together with -q"]);
+  expect(await messages(["--out", "x", "-q", "-v"])).toEqual(["-q/--quiet can't be used together with -v"]);
+});
+
 test("parse: option rules are checked dependsOn, then exclusiveOn, then required", async () => {
   const spec: Spec = {
     name: "test",

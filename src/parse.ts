@@ -198,20 +198,31 @@ function contextAt(path: CommandPath, token?: number, start?: number): ErrorCont
   return { path: [...path], token, start };
 }
 
+/** A name in a `dependsOn` or `exclusiveOn` rule, and the option it refers to, or null if none. */
+interface RuleName {
+  name: string;
+  option: Option | null;
+}
+
 /**
  * An option used that has a `dependsOn` or `exclusiveOn` rule, with the option
- * each name in the rule refers to at the command the option was used in, or
- * null for a name that refers to none there. A name means what it means to the
- * option's own command, so a parent's option that isn't persistent is out of a
- * subcommand's reach, and a name a subcommand's option has taken still means
- * the parent's option to the parent's.
+ * each name in the rule refers to at the command the option was first used in.
+ * A name means what it means to the option's own command, so a parent's option
+ * that isn't persistent is out of a subcommand's reach, and a name a
+ * subcommand's option has taken still means the parent's option to the
+ * parent's.
  */
 interface UsedRules {
   option: Option;
-  /** The index of the token the option was used in. */
+  /** The index of the token the option was first used in. */
   token: number;
-  needs: readonly (Option | null)[];
-  excludes: readonly (Option | null)[];
+  needs: readonly RuleName[];
+  excludes: readonly RuleName[];
+}
+
+/** Whether `name` refers to `option`, or to an option with the same names. */
+function refersTo(name: RuleName, option: Option): boolean {
+  return name.option !== null && optionKey(name.option) === optionKey(option);
 }
 
 /** The key of each option in `seenOptions`. See {@link optionKey}. */
@@ -225,7 +236,8 @@ function usedKeys(seenOptions: readonly Option[]): Set<string> {
 
 /**
  * Add each `dependsOn` or `exclusiveOn` rule the options used break to
- * `problems`, and return it. `path` ends at the current command.
+ * `problems`, and return it. `path` ends at the current command. Every
+ * missing option comes first, then every pair that can't be used together.
  */
 function checkOptionRules(
   rules: readonly UsedRules[],
@@ -234,43 +246,44 @@ function checkOptionRules(
   problems: ParseError[] | null,
 ): ParseError[] | null {
   const used = usedKeys(seenOptions);
-  for (let i = 0; i < rules.length; i++) {
-    const { option, needs } = rules[i];
-    for (let j = 0; j < needs.length; j++) {
-      const need = needs[j];
-      if (!need || !used.has(optionKey(need))) {
-        (problems ??= []).push(
-          new ParseError(
-            contextAt(path, rules[i].token),
-            `${asArray(option.name).join("/")} requires ${option.dependsOn![j]}, add it to fix this error`,
-          ),
-        );
+  const isUsed = (name: RuleName) => name.option !== null && used.has(optionKey(name.option));
+  for (const { option, token, needs } of rules) {
+    for (const need of needs) {
+      if (!isUsed(need)) {
+        const message = `${asArray(option.name).join("/")} requires ${need.name}, add it to fix this error`;
+        (problems ??= []).push(new ParseError(contextAt(path, token), message));
       }
     }
   }
-  // Two options that exclude each other are one problem.
-  let reported: Set<string> | null = null;
   for (let i = 0; i < rules.length; i++) {
-    const { option, excludes, token } = rules[i];
-    for (let j = 0; j < excludes.length; j++) {
-      const excluded = excludes[j];
-      if (!excluded || !used.has(optionKey(excluded))) {
-        continue;
+    const { option, token, excludes } = rules[i];
+    for (const excluded of excludes) {
+      if (isUsed(excluded) && !excludedBefore(rules, i, excluded.option!)) {
+        const message = `${asArray(option.name).join("/")} can't be used together with ${excluded.name}`;
+        (problems ??= []).push(new ParseError(contextAt(path, token), message));
       }
-      const pair = [optionKey(option), optionKey(excluded)].sort().join("\n");
-      if (reported?.has(pair)) {
-        continue;
-      }
-      (reported ??= new Set()).add(pair);
-      (problems ??= []).push(
-        new ParseError(
-          contextAt(path, token),
-          `${asArray(option.name).join("/")} can't be used together with ${option.exclusiveOn![j]}`,
-        ),
-      );
     }
   }
   return problems;
+}
+
+/**
+ * Whether `excluded` was used before the option of `rules[i]` and excludes it
+ * too. Two options that exclude each other are one problem, which the first
+ * of them reports.
+ */
+function excludedBefore(rules: readonly UsedRules[], i: number, excluded: Option): boolean {
+  const { option } = rules[i];
+  for (let k = 0; k < i; k++) {
+    const earlier = rules[k];
+    if (
+      optionKey(earlier.option) === optionKey(excluded) &&
+      earlier.excludes.some((name) => refersTo(name, option))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -631,15 +644,25 @@ class Scanner {
    * without such an option doesn't compile it.
    */
   private noteRules(option: Option): void {
-    const needs: (Option | null)[] = [];
-    const excludes: (Option | null)[] = [];
-    for (const name of option.dependsOn ?? []) {
-      needs.push(this.scope.resolve(name));
+    // An option's rules are the same however often it's used.
+    if (this.rules?.some((rule) => optionKey(rule.option) === optionKey(option))) {
+      return;
     }
-    for (const name of option.exclusiveOn ?? []) {
-      excludes.push(this.scope.resolve(name));
-    }
+    const needs = this.ruleNames(option.dependsOn);
+    const excludes = this.ruleNames(option.exclusiveOn);
     (this.rules ??= []).push({ option, token: this.at, needs, excludes });
+  }
+
+  /** Each of `names` with the option it refers to here, leaving out a second name of the same option. */
+  private ruleNames(names: readonly string[] | undefined): RuleName[] {
+    const found: RuleName[] = [];
+    for (const name of names ?? []) {
+      const option = this.scope.resolve(name);
+      if (option === null || !found.some((other) => refersTo(other, option))) {
+        found.push({ name, option });
+      }
+    }
+    return found;
   }
 
   /**
@@ -828,7 +851,7 @@ class Scanner {
       }
     }
     for (const { excludes } of this.rules ?? []) {
-      if (excludes.some((excluded) => excluded !== null && optionKey(excluded) === key)) {
+      if (excludes.some((name) => refersTo(name, option))) {
         return true;
       }
     }
