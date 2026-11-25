@@ -9,10 +9,10 @@ import { expect, test, vi } from "vitest";
 
 import { complete } from "../src/complete.js";
 import { ParseError } from "../src/errors.js";
-import type { Directives } from "../src/directives.js";
 import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import { formStart } from "../src/scope.js";
+import type { Directives } from "../src/scope.js";
 import type { Option, Spec, Subcommand } from "../src/types.js";
 import { minArgs } from "../src/args.js";
 import { asArray } from "../src/util.js";

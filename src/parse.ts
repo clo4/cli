@@ -12,9 +12,8 @@ import {
   unknownOption,
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
-import type { Directives } from "./directives.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
-import type { LiveSubcommand, OptionForm, SubcommandMatching, TokenMeaning } from "./scope.js";
+import type { Directives, LiveSubcommand, OptionForm, SubcommandMatching, TokenMeaning } from "./scope.js";
 import { parseValues } from "./values.js";
 import type { ParsedUse } from "./values.js";
 

@@ -1,9 +1,22 @@
 import type { Option, Spec, Subcommand } from "./types.js";
-import { applyDirectives, defaultDirectives } from "./directives.js";
-import type { Directives } from "./directives.js";
 import type { DidYouMean } from "./errors.js";
 import { hasParse, maxArgs, minArgs } from "./args.js";
 import { asArray } from "./util.js";
+
+/** The parser directives in effect for a command, with defaults filled in. */
+export interface Directives {
+  optionArgSeparators: readonly string[];
+  flagsArePosixNoncompliant: boolean;
+  optionsMustPrecedeArguments: boolean;
+  subcommandsMatchUniquePrefix: boolean;
+}
+
+/** The directives that are switches, which a command turns on or off. */
+const switches = [
+  "flagsArePosixNoncompliant",
+  "optionsMustPrecedeArguments",
+  "subcommandsMatchUniquePrefix",
+] as const;
 
 /**
  * How the next token can match a subcommand: by any name the command's
@@ -102,7 +115,12 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    */
   readonly inheritedSubcommands: Subcommand[] = [];
   /** The directives in effect. A subcommand inherits each until it sets its own. */
-  readonly directives: Directives = defaultDirectives();
+  readonly directives: Directives = {
+    optionArgSeparators: ["="],
+    flagsArePosixNoncompliant: false,
+    optionsMustPrecedeArguments: false,
+    subcommandsMatchUniquePrefix: false,
+  };
   /** Whether the current command has subcommands of its own or inherits any. */
   hasSubcommands = false;
   /** Whether an option in effect here is required. */
@@ -220,7 +238,16 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     this.hasParse = this.persistentParse || localParse;
     const configured = command.parserDirectives;
     if (configured) {
-      applyDirectives(this.directives, configured);
+      const directives = this.directives;
+      if (configured.optionArgSeparators) {
+        directives.optionArgSeparators = asArray(configured.optionArgSeparators);
+      }
+      for (const key of switches) {
+        const value = configured[key];
+        if (typeof value === "boolean") {
+          directives[key] = value;
+        }
+      }
     }
   }
 
