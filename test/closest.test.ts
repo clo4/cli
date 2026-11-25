@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { closestChoice } from "../src/suggest.js";
+import { closestChoice } from "../src/closest.js";
 
 const options = ["--out", "--mode", "--watch", "-v", "--verbose", "-h", "--help"];
 const commands = ["build", "b", "remote", "config", "completion", "help"];

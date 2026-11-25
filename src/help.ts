@@ -8,7 +8,7 @@ import type {
   Subcommand,
   Suggestion,
 } from "./types.js";
-import { closestChoice } from "./suggest.js";
+import { closestChoice } from "./closest.js";
 import { CommandScope } from "./scope.js";
 import type { LiveOption, LiveSubcommand, OptionForm } from "./scope.js";
 import type { DidYouMean } from "./errors.js";

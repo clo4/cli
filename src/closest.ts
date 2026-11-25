@@ -1,5 +1,7 @@
 /**
- * "Did you mean" suggestions for unknown commands and options.
+ * The closest of the names a user could have meant, for the "did you mean"
+ * line after an unknown command, option or value. It isn't completion's
+ * suggestions.
  *
  * This only runs after a mistake, but it's loaded on every run, so it's kept
  * small and does nothing until it's called.

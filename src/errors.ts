@@ -1,5 +1,5 @@
 import type { CommandPath, Option } from "./types.js";
-import type { Choice } from "./suggest.js";
+import type { Choice } from "./closest.js";
 
 const repr = JSON.stringify as (str: string) => string;
 
