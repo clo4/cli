@@ -4,7 +4,7 @@ import { complete } from "../src/complete.js";
 import { getHelp } from "../src/help.js";
 import type { HelpConfig } from "../src/help.js";
 import { help, helpCommand } from "../src/index.js";
-import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
+import { parse, readNext, tokenReader } from "../src/parse.js";
 import * as Testing from "../src/testing.js";
 import type { ActionInit, NonEmptyArray, Spec, Subcommand } from "../src/types.js";
 import { asArray } from "../src/util.js";
@@ -12,7 +12,7 @@ import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator } from "./fuzz/generate.js";
 import { difference, nextDifference } from "./fuzz/snapshot.js";
 import type { Outcome } from "./fuzz/snapshot.js";
-import { captureConsole, run, runSpecCheck } from "./helpers.js";
+import { captureConsole, readToken, run, runSpecCheck } from "./helpers.js";
 
 /** How a `loadSpec` gives its command: as it is, or as a promise of it. */
 type Wrap = (command: Subcommand) => Subcommand | Promise<Subcommand>;

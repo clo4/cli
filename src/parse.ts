@@ -90,7 +90,7 @@ export interface UsableOption {
   used: boolean;
 }
 
-/** What the parser read one token as. See {@link readToken}. */
+/** What the parser read one token as. See {@link tokenReader}. */
 export type TokenReading =
   /** `--`, the end of options. */
   | { kind: "separator" }
@@ -1162,17 +1162,6 @@ export async function readNext(spec: Spec, before: readonly string[], partial: s
   const s = new Scanner(spec, false);
   await s.readAll(before);
   return s.next(partial);
-}
-
-/**
- * Say what the parser reads `token` as when it comes after `before`, without
- * reading it, so a subcommand it names isn't loaded. Reads leniently, like
- * {@link readNext}. To read every token of a line, use {@link tokenReader}.
- */
-export async function readToken(spec: Spec, before: readonly string[], token: string): Promise<TokenReading> {
-  const s = new Scanner(spec, false);
-  await s.readAll(before);
-  return s.peek(token);
 }
 
 /**

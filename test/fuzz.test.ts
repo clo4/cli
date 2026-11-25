@@ -9,7 +9,7 @@ import { expect, test, vi } from "vitest";
 
 import { complete } from "../src/complete.js";
 import { ParseError } from "../src/errors.js";
-import { parse, readNext, readToken, tokenReader } from "../src/parse.js";
+import { parse, readNext, tokenReader } from "../src/parse.js";
 import type { NextToken } from "../src/parse.js";
 import { formStart } from "../src/scope.js";
 import type { Directives } from "../src/scope.js";
@@ -20,7 +20,7 @@ import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import type { GenerateOptions } from "./fuzz/generate.js";
 import { attempt, difference } from "./fuzz/snapshot.js";
-import { specCheckError } from "./helpers.js";
+import { readToken, specCheckError } from "./helpers.js";
 
 vi.setConfig({ testTimeout: TIMEOUT });
 

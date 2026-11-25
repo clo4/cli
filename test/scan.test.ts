@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
-import { parse, readHelpNames, readNext, readToken } from "../src/parse.js";
+import { parse, readHelpNames, readNext } from "../src/parse.js";
 import type { Arg, Option, Spec, Subcommand } from "../src/types.js";
-import { map } from "./helpers.js";
+import { map, readToken } from "./helpers.js";
 
 // What each problem the parser finds says.
 const unknownOption = /looks like a flag, but is unknown/;
@@ -293,7 +293,7 @@ test("readNext: skips unknown characters in a chain and keeps the rest", async (
   });
 });
 
-test("readToken: says what each kind of token is read as", async () => {
+test("a token reading: says what each kind of token is read as", async () => {
   const dir: Arg = { name: "dir" };
   const out: Option = { name: "--out", args: dir };
   const sub: Subcommand = { name: "sub" };
@@ -313,7 +313,7 @@ test("readToken: says what each kind of token is read as", async () => {
   expect(await readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
 });
 
-test("readToken: an argument past the command's last is for none", async () => {
+test("a token reading: an argument past the command's last is for none", async () => {
   const spec: Spec = { name: "test", args: { name: "only" } };
   expect(await readToken(spec, ["one"], "two")).toEqual({ kind: "argument", arg: undefined });
 });
