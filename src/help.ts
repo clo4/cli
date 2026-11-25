@@ -1,4 +1,4 @@
-import type { ActionInit, Arg, Option, NonEmptyArray, Subcommand, Suggestion } from "./types.js";
+import type { Action, ActionInit, Arg, Option, NonEmptyArray, Subcommand, Suggestion } from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
 import type { LiveOption, OptionForm } from "./scope.js";
@@ -77,6 +77,12 @@ export function printUsageError(
 ): void {
   printError(`${message}\n\n${helpText(path, false, true, didYouMean)}`);
 }
+
+/** The action of a command that has none of its own: print the command's help. */
+export const usage: Action = ({ help }) => {
+  print(help().trimEnd());
+  return 0;
+};
 
 /**
  * A subcommand that prints help for its parent, or for the command the names

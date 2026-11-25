@@ -31,7 +31,7 @@ export async function attempt(parse: Parse, input: readonly string[], spec: Spec
 export function difference(
   a: Outcome,
   b: Outcome,
-  sameAction: (x: Action, y: Action) => boolean = Object.is,
+  sameAction: (x: Action | undefined, y: Action | undefined) => boolean = Object.is,
   optionNames: readonly string[] = [],
   sameCommand: SameCommand = Object.is,
 ): string | null {

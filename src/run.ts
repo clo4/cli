@@ -1,5 +1,5 @@
 import type { ActionInit, Spec } from "./types.js";
-import { getHelp, printUsageError } from "./help.js";
+import { getHelp, printUsageError, usage } from "./help.js";
 import { ParseError } from "./errors.js";
 import { host } from "./host.js";
 import { parse } from "./parse.js";
@@ -61,7 +61,7 @@ export async function run(spec: Spec, options?: RunOptions): Promise<number> {
     };
     try {
       // The spec's own types say what each value is. See `ActionInit`.
-      const exitCode = await result.action(actionInit as ActionInit);
+      const exitCode = await (result.action ?? usage)(actionInit as ActionInit);
       code = Math.min(Math.max(exitCode ?? 0, 0), 255);
     } catch (error) {
       printError(describeThrown(error));

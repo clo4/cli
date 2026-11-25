@@ -58,10 +58,10 @@ What one token is, by its `kind`:
 
 What the action gets, as [`ActionInit`](./running.mdx#actioninit) has it, and the action that runs.
 
-| Field               | Type                                       | Meaning                                                                                             |
-| ------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `args`              | `unknown[]`                                | The positional arguments, each a string or what its parser gave.                                    |
-| `options`           | [`OptionArgs`](./running.mdx#optionargs)   | The options used, and the defaults of those that weren't.                                           |
-| `path`              | [`CommandPath`](./running.mdx#commandpath) | The commands from the root to the selected one.                                                     |
-| `argSeparatorIndex` | `number`                                   | Where `--` was among `args`, or `-1` if it wasn't used.                                             |
-| `action`            | [`Action`](./running.mdx#action)           | The last option action used, or else the selected command's. A command without one prints its help. |
+| Field               | Type                                            | Meaning                                                                                                                  |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `args`              | `unknown[]`                                     | The positional arguments, each a string or what its parser gave.                                                         |
+| `options`           | [`OptionArgs`](./running.mdx#optionargs)        | The options used, and the defaults of those that weren't.                                                                |
+| `path`              | [`CommandPath`](./running.mdx#commandpath)      | The commands from the root to the selected one.                                                                          |
+| `argSeparatorIndex` | `number`                                        | Where `--` was among `args`, or `-1` if it wasn't used.                                                                  |
+| `action`            | [`Action`](./running.mdx#action)` \| undefined` | The last option action used, or else the selected command's. Undefined for a command without one, which prints its help. |

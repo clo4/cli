@@ -1,6 +1,6 @@
 import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand, SuggestInit } from "./types.js";
 import { addDefaults, argAt, hasParse, maxArgs, minArgs, unusedDefaults } from "./args.js";
-import { asArray, print } from "./util.js";
+import { asArray } from "./util.js";
 import {
   missingOption,
   ParseError,
@@ -26,9 +26,10 @@ export interface ParseResult {
   path: CommandPath;
   /**
    * The action to run: the last option action used, or else the selected
-   * command's action. A command without an action prints its help.
+   * command's action. Undefined for a command without an action, which
+   * prints its help.
    */
-  action: Action;
+  action: Action | undefined;
 }
 
 /**
@@ -385,12 +386,6 @@ function unusedValues(
   const option = scope.resolve(name) ?? scope.withRef(name);
   return option ? (parsed?.get(option) ?? unusedDefaults(option)) : undefined;
 }
-
-/** The action of a command that has none of its own: print the command's help. */
-export const usage: Action = ({ help }) => {
-  print(help().trimEnd());
-  return 0;
-};
 
 /** Where the names after a help command lead. See {@link readHelpNames}. */
 export interface HelpNames {
@@ -852,7 +847,7 @@ class Scanner {
   private result(defaults: Map<Option, unknown[]> | null): ParseResult {
     return {
       path: this.scope.path,
-      action: this.optionAction ?? this.scope.command.action ?? usage,
+      action: this.optionAction ?? this.scope.command.action,
       args: this.args,
       argSeparatorIndex: this.argSeparatorIndex,
       options: optionArgs(this.options, this.scope, defaults),

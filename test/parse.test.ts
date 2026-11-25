@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { parse, usage } from "../src/parse.js";
+import { parse } from "../src/parse.js";
 import type { Action, Option, OptionArgs, Spec, Subcommand } from "../src/types.js";
 import { map } from "./helpers.js";
 
@@ -144,15 +144,15 @@ test("parse: the deepest command's action is picked", async () => {
   expect((await parse(["1", "2"], spec)).action).toBe(actions[2]);
 });
 
-test("parse: a command without an action picks usage, never an ancestor's action", async () => {
+test("parse: a command without an action has no action, never an ancestor's action", async () => {
   const spec: Spec = {
     name: "test",
     action: () => {},
     subcommands: [{ name: "1", subcommands: [{ name: "2" }] }],
   };
-  expect((await parse(["1"], spec)).action).toBe(usage);
-  expect((await parse(["1", "2"], spec)).action).toBe(usage);
-  expect((await parse([], { name: "test" })).action).toBe(usage);
+  expect((await parse(["1"], spec)).action).toBeUndefined();
+  expect((await parse(["1", "2"], spec)).action).toBeUndefined();
+  expect((await parse([], { name: "test" })).action).toBeUndefined();
 });
 
 test("parse: a command without an action still checks its arguments and options", async () => {
@@ -165,9 +165,9 @@ test("parse: a command without an action still checks its arguments and options"
     message: expect.stringMatching(tooFewArguments),
   });
   await expect(parse(["a"], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
-  expect((await parse(["a", "--token"], spec)).action).toBe(usage);
+  expect((await parse(["a", "--token"], spec)).action).toBeUndefined();
   // Only a command that requires a subcommand skips them, when none is named.
-  expect((await parse([], { ...spec, args: undefined, requiresSubcommand: true })).action).toBe(usage);
+  expect((await parse([], { ...spec, args: undefined, requiresSubcommand: true })).action).toBeUndefined();
 });
 
 test("parse: action on option is preferred to spec action", async () => {
@@ -922,12 +922,12 @@ test("parse: dependsOn, bidirectional", async () => {
   await parse(["-a", "-b"], spec);
 });
 
-test("parse: requiresSubcommand is equivalent to usage", async () => {
+test("parse: requiresSubcommand without an action has none", async () => {
   const result = await parse([], { name: "command", requiresSubcommand: true });
-  expect(result.action).toBe(usage);
+  expect(result.action).toBeUndefined();
 });
 
-test("parse: requiresSubcommand doesn't return usage when there is an action", async () => {
+test("parse: requiresSubcommand keeps the command's action", async () => {
   const action: Action = () => {};
   const result = await parse([], {
     name: "command",
@@ -1697,14 +1697,14 @@ test("parse: a command that shows usage for a missing subcommand skips required 
     options: [{ name: "--token", isPersistent: true, isRequired: true }],
     subcommands: [{ name: "a" }],
   };
-  expect((await parse([], spec)).action).toBe(usage);
+  expect((await parse([], spec)).action).toBeUndefined();
   await expect(parse(["a"], spec)).rejects.toMatchObject({ message: expect.stringMatching(missingOption) });
 });
 
 test("parse: a command that requires a subcommand accepts '--' alone, but no argument after it", async () => {
   const spec: Spec = { name: "test", requiresSubcommand: true, subcommands: [{ name: "a" }] };
   const result = await parse(["--"], spec);
-  expect(result.action).toBe(usage);
+  expect(result.action).toBeUndefined();
   expect(result.argSeparatorIndex).toBe(0);
   await expect(parse(["--", "a"], spec)).rejects.toThrow('Too many arguments, "a" was unexpected');
   const action: Action = () => {};
