@@ -90,10 +90,14 @@ test("analyze: says what each token is, and the argument each value is for", asy
   const { tokens, problems, result } = await analyze(s, ["build", "-o", "out", "src", "--jobs=2"]);
   expect(tokens).toEqual([
     { kind: "subcommand", command },
-    { kind: "options", options: [output], attached: null },
+    { kind: "options", uses: [{ option: output, name: "-o" }], attached: null },
     { kind: "value", option: output, arg: dir },
     { kind: "argument", arg: command.args },
-    { kind: "options", options: [jobs], attached: { option: jobs, arg: jobs.args, start: 7 } },
+    {
+      kind: "options",
+      uses: [{ option: jobs, name: "--jobs" }],
+      attached: { start: 7, separator: "=", arg: jobs.args },
+    },
   ]);
   expect(problems).toEqual([]);
   expect(result?.path).toEqual([s, command]);
@@ -102,7 +106,8 @@ test("analyze: says what each token is, and the argument each value is for", asy
 
 test("analyze: reads every token past a problem, and reports the first", async () => {
   const { tokens, problems } = await analyze(spec, ["--nope", "--token", "t", "build", "--nope"]);
-  expect(tokens.map((t) => t.kind)).toEqual(["unknown", "options", "value", "subcommand", "unknown"]);
+  expect(tokens.map((t) => t.kind)).toEqual(["options", "options", "value", "subcommand", "options"]);
+  expect(tokens[0]).toEqual({ kind: "options", uses: [{ option: null, name: "--nope" }], attached: null });
   expect(problems).toMatchObject([{ token: 0 }]);
 });
 
@@ -115,7 +120,7 @@ test("analyze: reads a loaded command's tokens", async () => {
   const loaded: Subcommand = { name: "remote", options: [{ name: "--force" }] };
   const s: Spec = { name: "s", subcommands: [{ name: "remote", loadSpec: async () => loaded }] };
   const { tokens, result } = await analyze(s, ["remote", "--force"]);
-  expect(tokens[1]).toMatchObject({ kind: "options", options: [loaded.options![0]] });
+  expect(tokens[1]).toMatchObject({ kind: "options", uses: [{ option: loaded.options![0] }] });
   expect(result?.options.has("--force")).toBe(true);
 });
 

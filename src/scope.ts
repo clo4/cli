@@ -1,4 +1,5 @@
 import type { Option, Spec, Subcommand } from "./types.js";
+import type { Token } from "./parse.js";
 import {
   ambiguousCommand,
   emptyCommand,
@@ -7,7 +8,7 @@ import {
   unknownCommand,
 } from "./errors.js";
 import type { DidYouMean } from "./errors.js";
-import { hasParse, maxArgs, minArgs } from "./args.js";
+import { argAt, hasParse, maxArgs, minArgs } from "./args.js";
 import { asArray } from "./util.js";
 
 /** The parser directives in effect for a command, with defaults filled in. */
@@ -37,26 +38,6 @@ export interface SubcommandMatching {
 export const anyName: SubcommandMatching = { exactOnly: false };
 /** Match a subcommand by its exact name only. */
 export const exactName: SubcommandMatching = { exactOnly: true };
-
-/** What a token means at one command. See {@link CommandScope.meaning}. */
-export type TokenMeaning =
-  | { kind: "subcommand"; command: Subcommand }
-  | {
-      kind: "options";
-      /** Each name the token uses, in order. */
-      uses: OptionUse[];
-      /**
-       * The last option, if the token has a value attached to it: where the
-       * value starts, and the separator before it, which is "" if there's none.
-       */
-      attached: { option: Option; name: string; start: number; separator: string } | null;
-    };
-
-/** A name a token uses, and the option it refers to, or null if none. */
-export interface OptionUse {
-  option: Option | null;
-  name: string;
-}
 
 /** An option that can be used here, and how each name that still refers to it is written. */
 export interface LiveOption {
@@ -284,7 +265,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /**
    * Why `token` names no subcommand here, as an error message and suggestions.
-   * It's for a token {@link meaning} read as no subcommand, matched the same
+   * It's for a word {@link token} read as no subcommand, matched the same
    * way.
    */
   unmatched(token: string, exactOnly: boolean): { message: string; didYouMean?: DidYouMean } {
@@ -324,35 +305,39 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * What `token` means here: the subcommand it names, the options it uses, or
-   * null for an argument or a value. `subcommands` says how the token can name
+   * The token `word` is here: the subcommand it names, the options it uses, or
+   * null for an argument or a value. `subcommands` says how the word can name
    * a subcommand, or is null if it can't, and `options` says whether it can
    * be an option. A subcommand wins over an option.
    *
-   * The token names one of the current command's own subcommands, or else an
+   * The word names one of the current command's own subcommands, or else an
    * inherited persistent one. An exact name always wins. With
    * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one of
    * the command's own names matches that command, unless `exactOnly`. A hidden
    * or inherited command only matches its exact name, so it can't make a
    * visible command's prefix ambiguous or take a prefix meant as an argument,
-   * and an empty token is no command's prefix.
+   * and an empty word is no command's prefix.
    *
-   * A token written like an option whose first name refers to no option still
-   * means options, with a null option for that name. The parser reads it as
+   * A word written like an option whose first name refers to no option is
+   * still options, with a null option for that name. The parser reads it as
    * an unknown option, or as a value if the open option has room for one.
    */
-  meaning(token: string, subcommands: SubcommandMatching | null, options: boolean): TokenMeaning | null {
+  token(
+    word: string,
+    subcommands: SubcommandMatching | null,
+    options: boolean,
+  ): Extract<Token, { kind: "subcommand" | "options" }> | null {
     if (subcommands) {
       const own = this.command.subcommands;
       if (own) {
         for (let i = 0; i < own.length; i++) {
-          if (hasName(own[i].name, token)) {
+          if (hasName(own[i].name, word)) {
             return { kind: "subcommand", command: own[i] };
           }
         }
       }
       if (this.inheritedSubcommands.length > 0 || this.directives.subcommandsMatchUniquePrefix) {
-        const command = this.otherSubcommand(token, subcommands.exactOnly);
+        const command = this.otherSubcommand(word, subcommands.exactOnly);
         if (command) {
           return { kind: "subcommand", command };
         }
@@ -362,17 +347,17 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       return null;
     }
     const { optionArgSeparators: separators, flagsArePosixNoncompliant: noncompliant } = this.directives;
-    const first = token.charCodeAt(0);
-    const isDoubleDash = first === 45 /* - */ && token.charCodeAt(1) === 45;
+    const first = word.charCodeAt(0);
+    const isDoubleDash = first === 45 /* - */ && word.charCodeAt(1) === 45;
 
-    if (!noncompliant && token.length > 1 && (first === 45 || first === 43) /* + */ && !isDoubleDash) {
-      return this.shortOptions(token);
+    if (!noncompliant && word.length > 1 && (first === 45 || first === 43) /* + */ && !isDoubleDash) {
+      return this.shortOptions(word);
     }
 
-    if (!noncompliant && !(token.length > 2 && isDoubleDash)) {
+    if (!noncompliant && !(word.length > 2 && isDoubleDash)) {
       return null;
     }
-    // A token like `--name` or `--name=value`, or any token when options
+    // A word like `--name` or `--name=value`, or any word when options
     // aren't POSIX compliant. The separator that appears first splits it, so
     // the value can contain the other separators. When two separators start
     // at the same place, the longer one wins.
@@ -380,7 +365,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     let index = -1;
     for (let i = 0; i < separators.length; i++) {
       const candidate = separators[i];
-      const at = token.indexOf(candidate);
+      const at = word.indexOf(candidate);
       if (
         at !== -1 &&
         (index === -1 || at < index || (at === index && candidate.length > separator.length))
@@ -389,22 +374,22 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
         index = at;
       }
     }
-    const name = separator ? token.slice(0, index) : token;
+    const name = separator ? word.slice(0, index) : word;
     const option = this.resolve(name);
-    // When options aren't POSIX compliant, no token looks like an option, so
+    // When options aren't POSIX compliant, no word looks like an option, so
     // one that isn't an option is an argument.
     if (!option && noncompliant) {
       return null;
     }
     const attached =
-      option && separator ? { option, name, start: index + separator.length, separator } : null;
+      option && separator ? { start: index + separator.length, separator, arg: argAt(option.args, 0) } : null;
     return { kind: "options", uses: [{ option, name }], attached };
   }
 
   /**
    * The inherited subcommand `token` names, or else the subcommand of the
    * current command that `token` is a unique prefix of, when prefixes match.
-   * See {@link meaning}. It's a method of its own so that a cold parse of a
+   * See {@link token}. It's a method of its own so that a cold parse of a
    * spec without persistent subcommands or prefix matching doesn't compile it.
    */
   private otherSubcommand(token: string, exactOnly: boolean): Subcommand | null {
@@ -424,11 +409,11 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * What a token like `-abc`, `+x` or `-ovalue` means. See {@link meaning}.
+   * The token a word like `-abc`, `+x` or `-ovalue` is. See {@link token}.
    * It's a method of its own so that a cold parse of a line without one
    * doesn't compile it.
    */
-  private shortOptions(token: string): TokenMeaning {
+  private shortOptions(token: string): Extract<Token, { kind: "options" }> {
     const separators = this.directives.optionArgSeparators;
     // A single dash or plus option takes the rest of the token as its value
     // if it takes arguments and the first character after it isn't an option.
@@ -438,7 +423,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       return {
         kind: "options",
         uses: [{ option: dashOption, name: leadingChar }],
-        attached: { option: dashOption, name: leadingChar, start: 1, separator: "" },
+        attached: { start: 1, separator: "", arg: argAt(dashOption.args, 0) },
       };
     }
     // Otherwise it's chained short options. An option that takes arguments
@@ -446,7 +431,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     // follows. So does an option without arguments that a separator follows,
     // so that `-v=1` fails like `--verbose=1`, unless the next character is
     // an option.
-    const uses: OptionUse[] = [];
+    const uses: { option: Option | null; name: string }[] = [];
     for (let char = 1; char < token.length; char++) {
       const name = leadingChar + token[char];
       const option = this.resolve(name);
@@ -465,7 +450,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
         return {
           kind: "options",
           uses,
-          attached: { option, name, start: char + separator.length + 1, separator },
+          attached: { start: char + separator.length + 1, separator, arg: argAt(option.args, 0) },
         };
       }
     }
@@ -549,7 +534,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
         const name = names[j];
         if (
           owner.get(name) === option &&
-          !(subcommands && this.meaning(name, subcommands, false)?.kind === "subcommand")
+          !(subcommands && this.token(name, subcommands, false)?.kind === "subcommand")
         ) {
           forms.push({ name, join: this.join(option, name) });
         }

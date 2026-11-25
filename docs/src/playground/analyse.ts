@@ -1,6 +1,6 @@
 import * as CLI from "@clo4/cli";
 import type { Spec } from "@clo4/cli";
-import { analyze, type ParseResult, type TokenReading } from "@clo4/cli/analyze";
+import { analyze, type ParseResult, type Token as CliToken } from "@clo4/cli/analyze";
 import type { Piece } from "./tree";
 import { words, type Word } from "./words";
 
@@ -76,10 +76,10 @@ export async function analyse(
   program.pieces = [spec];
 
   const argv = rest.map((token) => token.text);
-  const { tokens: readings, problems: found, result } = await analyze(spec, argv);
-  readings.forEach((reading, i) => {
-    rest[i].kind = reading.kind === "options" ? "option" : reading.kind;
-    rest[i].pieces = pieces(reading);
+  const { tokens: read, problems: found, result } = await analyze(spec, argv);
+  read.forEach((token, i) => {
+    rest[i].kind = kindOf(token);
+    rest[i].pieces = pieces(token);
   });
   for (const { message, token, start } of found) {
     report({ message, token: token === undefined ? undefined : token + 1, start });
@@ -87,17 +87,25 @@ export async function analyse(
   return { tokens, problems, result, printed: await execute(spec, argv) };
 }
 
-/** The pieces of the spec a word read as `reading` is. */
-function pieces(reading: TokenReading): Piece[] {
-  switch (reading.kind) {
+/** What a word read as `token` is. Options where no name refers to an option are unknown. */
+function kindOf(token: CliToken): Kind {
+  if (token.kind !== "options") {
+    return token.kind;
+  }
+  return token.uses.some(({ option }) => option) ? "option" : "unknown";
+}
+
+/** The pieces of the spec a word read as `token` is. */
+function pieces(token: CliToken): Piece[] {
+  switch (token.kind) {
     case "subcommand":
-      return [reading.command];
+      return [token.command];
     case "options":
-      return [...reading.options];
+      return token.uses.flatMap(({ option }) => (option ? [option] : []));
     case "value":
-      return reading.arg ? [reading.option, reading.arg] : [reading.option];
+      return token.arg ? [token.option, token.arg] : [token.option];
     case "argument":
-      return reading.arg ? [reading.arg] : [];
+      return token.arg ? [token.arg] : [];
     default:
       return [];
   }

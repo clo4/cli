@@ -14,7 +14,7 @@ import { CommandScope, loadAll, optionKey, stubKeys, writeForm } from "./scope.j
 import type { OptionForm } from "./scope.js";
 import { optionToString, shownDescription } from "./help.js";
 import { tokenReader } from "./parse.js";
-import type { TokenReading } from "./parse.js";
+import type { Token } from "./parse.js";
 import { describeParser } from "./description.js";
 import { describeRange } from "./schemas.js";
 import { apply, Rejected } from "./values.js";
@@ -318,31 +318,35 @@ interface OptionUse {
 }
 
 /**
- * What the parser read a token as, for a message. `path` is the command the
- * token came after.
+ * What the parser read a word as, for a message. `path` is the command the
+ * word came after.
  */
-function describeReading(reading: TokenReading, path: readonly Subcommand[]): string {
-  switch (reading.kind) {
+function describeToken(token: Token, path: readonly Subcommand[]): string {
+  switch (token.kind) {
     case "separator":
       return "the end of options, '--'";
     case "subcommand":
-      return `the subcommand ${namedArrayToString(...path, reading.command)}`;
-    case "options":
-      return reading.options.length === 1
-        ? `the option ${namedArrayToString(reading.options[0])}`
-        : `the options ${reading.options.map((option) => namedArrayToString(option)).join(", ")}`;
+      return `the subcommand ${namedArrayToString(...path, token.command)}`;
+    case "options": {
+      const { uses } = token;
+      if (!uses.some(({ option }) => option)) {
+        return "an option that doesn't exist";
+      }
+      const names = uses.map(({ option, name }) =>
+        option ? namedArrayToString(option) : `'${name}', which doesn't exist`,
+      );
+      return names.length === 1 ? `the option ${names[0]}` : `the options ${names.join(", ")}`;
+    }
     case "value":
-      return `a value of the option ${namedArrayToString(reading.option)}`;
+      return `a value of the option ${namedArrayToString(token.option)}`;
     case "argument":
       return "an argument";
-    case "unknown":
-      return "an option that doesn't exist";
   }
 }
 
-/** Whether the parser read a token as `option` alone. */
-function readsAs(reading: TokenReading, option: Option): boolean {
-  return reading.kind === "options" && reading.options.length === 1 && reading.options[0] === option;
+/** Whether the parser read a word as `option` alone. */
+function readsAs(token: Token, option: Option): boolean {
+  return token.kind === "options" && token.uses.length === 1 && token.uses[0].option === option;
 }
 
 /**
@@ -395,10 +399,10 @@ async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
       // A name joined to its value with nothing between isn't a token by itself.
       if (form.join !== "") {
         // Without a join, the first token is the name.
-        const reading = name ?? first;
+        const token = name ?? first;
         assert(
-          readsAs(reading, option),
-          `${where} has the name '${form.name}', but the parser reads it as ${describeReading(reading, path)}`,
+          readsAs(token, option),
+          `${where} has the name '${form.name}', but the parser reads it as ${describeToken(token, path)}`,
         );
       }
       const written = `${where} is written '${optionToString(option, [form])}'`;
@@ -409,17 +413,17 @@ async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
         );
       }
       if (form.join !== null) {
-        const joined = first.kind === "options" && first.attached?.option === option;
+        const joined = first.kind === "options" && first.attached !== null;
         assert(
           readsAs(first, option) && joined,
-          `${written}, but the parser reads '${tokens[0]}' as ${describeReading(first, path)}${joined ? "" : " without a value"}`,
+          `${written}, but the parser reads '${tokens[0]}' as ${describeToken(first, path)}${joined ? "" : " without a value"}`,
         );
       }
       for (let index = 1; index < tokens.length; index++) {
-        const reading = await reader.read(tokens[index]);
+        const token = await reader.read(tokens[index]);
         assert(
-          reading.kind === "value" && reading.option === option,
-          `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeReading(reading, path)}`,
+          token.kind === "value" && token.option === option,
+          `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeToken(token, path)}`,
         );
       }
     }
@@ -941,13 +945,13 @@ const specChecks: readonly SpecCheck[] = [
         // An inherited subcommand is checked by the names that still refer to it.
         for (const { command: subcommand, names } of scope.subcommands()) {
           for (const name of names) {
-            const reading = await reader.peek(name);
-            if (reading.kind === "subcommand" && reading.command === subcommand) {
+            const token = await reader.peek(name);
+            if (token.kind === "subcommand" && token.command === subcommand) {
               continue;
             }
             assert(
               false,
-              `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeReading(reading, path)}`,
+              `${describeCommand([...path, subcommand])} has the name '${name}', but the parser reads it as ${describeToken(token, path)}`,
             );
           }
         }

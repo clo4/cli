@@ -5,7 +5,7 @@ import { testSpec } from "../src/testing.js";
 import type { Spec, Subcommand } from "../src/types.js";
 import { host } from "../src/host.js";
 import { analyze } from "../src/analyze.js";
-import type { TokenReading } from "../src/parse.js";
+import type { Token } from "../src/parse.js";
 
 /**
  * Runs the spec checks with these function-style step names on `spec`, through
@@ -99,7 +99,7 @@ export function run(spec: Spec, argv: readonly string[]): Promise<number> {
   return runAndSetExitCode(spec, { argv, setExitCode: false });
 }
 
-/** What the parser reads `token` as when it comes after `before`. */
-export async function readToken(spec: Spec, before: readonly string[], token: string): Promise<TokenReading> {
-  return (await analyze(spec, [...before, token])).tokens.at(-1)!;
+/** The token the parser reads `word` as when it comes after `before`. */
+export async function readToken(spec: Spec, before: readonly string[], word: string): Promise<Token> {
+  return (await analyze(spec, [...before, word])).tokens.at(-1)!;
 }

@@ -1,6 +1,6 @@
 ---
 title: Analyze
-description: Read a command line the way the parser does, token by token.
+description: Read a command line the way the parser does, word by word.
 ---
 
 ```ts
@@ -15,7 +15,7 @@ For tools built around a spec: an editor that highlights a command line, a linte
 function analyze(spec: Spec, argv: readonly string[]): Promise<Analysis>;
 ```
 
-Reads `argv`, the command line after the program's name, the way [`run`](./running.mdx#run) does, without running an action. Every token is read, even after one that's wrong, so each has a reading.
+Reads `argv`, the words after the program's name, the way [`run`](./running.mdx#run) does, without running an action. Every word is read, even after one that's wrong, so each has a [token](#token).
 
 ```ts
 const { tokens, problems } = await analyze(spec, ["build", "--jobs", "many"]);
@@ -29,22 +29,23 @@ It rejects only if a `loadSpec` does. Commands behind a `loadSpec` are loaded as
 
 | Field      | Type                                    | Meaning                                                 |
 | ---------- | --------------------------------------- | ------------------------------------------------------- |
-| `tokens`   | [`TokenReading`](#tokenreading)`[]`     | What the parser read each token as, in order.           |
+| `tokens`   | [`Token`](#token)`[]`                   | The token each word was read as, in order.              |
 | `problems` | [`Problem`](#problem)`[]`               | Everything `run` would report about the line, in order. |
 | `result`   | [`ParseResult`](#parseresult)` \| null` | What the action gets, or `null` if there are problems.  |
 
-## `TokenReading` [#tokenreading]
+## `Token` [#token]
 
-What one token is, by its `kind`:
+A word as the parser reads it, by its `kind`. A token says what the word was read as. Whether it's wrong is a [problem](#problem).
 
-| `kind`         | Other fields          | The token is                                                                                                                                       |
-| -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"subcommand"` | `command`             | A subcommand's name. `command` is the subcommand as the spec writes it, before a `loadSpec` loads it.                                              |
-| `"options"`    | `options`, `attached` | One option, or several chained short options like `-xvf`, in order. `attached` is the option, argument and start of a value in the token, or null. |
-| `"value"`      | `option`, `arg`       | A value of the option before it, for its argument `arg`.                                                                                           |
-| `"argument"`   | `arg`                 | A positional argument for `arg`, or for none if the command has no room for it.                                                                    |
-| `"separator"`  |                       | `--`, after which every token is an argument.                                                                                                      |
-| `"unknown"`    |                       | An option that doesn't exist.                                                                                                                      |
+| `kind`         | Other fields       | The word is                                                                                                                                                      |
+| -------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"subcommand"` | `command`          | A subcommand's name. `command` is the subcommand as the spec writes it, before a `loadSpec` loads it.                                                            |
+| `"options"`    | `uses`, `attached` | One option, or several chained short options like `-xvf`. `uses` has each name in order, with the option it refers to, or `null` for a name that refers to none. |
+| `"value"`      | `option`, `arg`    | A value of the option before it, for its argument `arg`.                                                                                                         |
+| `"argument"`   | `arg`              | A positional argument for `arg`, or for none if the command has no room for it.                                                                                  |
+| `"separator"`  |                    | `--`, after which every word is an argument.                                                                                                                     |
+
+`attached` is the value the word has after its last option, like `release` in `--mode=release`, or `null`: where it starts, the separator before it (`""` for one written straight after the name, like `-5`), and the argument it's for, or `undefined` if the option takes none. It's there whether or not the option accepts it. The problems say when it doesn't, unless an earlier word has a problem in reading too: like `run`, the parser reports only the first.
 
 ## `Problem` [#problem]
 
@@ -52,7 +53,7 @@ What one token is, by its `kind`:
 | --------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `message` | `string`              | What's wrong, in the words `run` prints.                                                                                                                                                    |
 | `token`   | `number \| undefined` | The index of the token it's in, or `-1` for the program's name. A problem with a command, like an argument it's missing, is in the token that names it. `undefined` for an invalid default. |
-| `start`   | `number \| undefined` | Where the value starts in the token, for a value attached to its option, like `--jobs=many`.                                                                                                |
+| `start`   | `number \| undefined` | Where the value starts in the word, for a value attached to its option, like `--jobs=many`.                                                                                                 |
 
 ## `ParseResult` [#parseresult]
 

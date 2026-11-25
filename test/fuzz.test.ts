@@ -90,13 +90,13 @@ function invalidPath(
 async function usedNames(spec: Spec, input: readonly string[]): Promise<Set<string>> {
   const names = new Set<string>();
   const reader = tokenReader(spec);
-  for (const token of input) {
-    const reading = await reader.read(token);
-    if (reading.kind !== "options") {
+  for (const word of input) {
+    const token = await reader.read(word);
+    if (token.kind !== "options") {
       continue;
     }
-    for (const option of reading.options) {
-      for (const name of asArray(option.name)) {
+    for (const { option } of token.uses) {
+      for (const name of asArray(option?.name)) {
         names.add(name);
       }
     }
@@ -445,8 +445,8 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
       if (!offered.has(token)) {
         continue;
       }
-      const reading = await readToken(spec, before, token);
-      if (reading.kind !== "options" || reading.options.length !== 1 || reading.options[0] !== option) {
+      const read = await readToken(spec, before, token);
+      if (read.kind !== "options" || read.uses.length !== 1 || read.uses[0].option !== option) {
         return `option ${JSON.stringify(token)} is offered, but isn't read as that option`;
       }
     }

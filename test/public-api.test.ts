@@ -90,7 +90,7 @@ test("the entrypoints export these types", async () => {
     "Template",
   ]);
   expect(await exportedTypes("testing.ts")).toEqual(["TestContextLike", "TestNamingStyle", "TestOptions"]);
-  expect(await exportedTypes("analyze.ts")).toEqual(["Analysis", "ParseResult", "Problem", "TokenReading"]);
+  expect(await exportedTypes("analyze.ts")).toEqual(["Analysis", "ParseResult", "Problem", "Token"]);
 });
 
 test("the completion command is written with public functions alone", async () => {

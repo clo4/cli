@@ -181,10 +181,18 @@ test("readNext: skips unknown options", async () => {
   const a: Option = { name: "-a" };
   const spec: Spec = { name: "test", args: [{ name: "first" }, { name: "second" }], options: [a] };
   const input = ["--nope", "--nope=value", "-zaz", "arg"];
-  expect(await readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
+  expect(await readToken(spec, [], "--nope")).toEqual({
+    kind: "options",
+    uses: [{ option: null, name: "--nope" }],
+    attached: null,
+  });
   expect(await readToken(spec, input.slice(0, 2), "-zaz")).toEqual({
     kind: "options",
-    options: [a],
+    uses: [
+      { option: null, name: "-z" },
+      { option: a, name: "-a" },
+      { option: null, name: "-z" },
+    ],
     attached: null,
   });
   expect((await readNext(spec, input, "")).arg).toBe((spec.args as Arg[])[1]);
@@ -199,10 +207,11 @@ test("readNext: keeps counting arguments past the maximum", async () => {
 test("readNext: a value attached to an option without args isn't an argument", async () => {
   const flag: Option = { name: "--flag" };
   const spec: Spec = { name: "test", args: { name: "a" }, options: [flag] };
+  // The token keeps the value the parser split off. The problem says it's wrong.
   expect(await readToken(spec, [], "--flag=value")).toEqual({
     kind: "options",
-    options: [flag],
-    attached: null,
+    uses: [{ option: flag, name: "--flag" }],
+    attached: { start: 7, separator: "=", arg: undefined },
   });
   expect((await readNext(spec, ["--flag=value"], "")).arg).toBe(spec.args);
 });
@@ -213,7 +222,7 @@ test("readNext: keeps reading past missing and repeated option values", async ()
   const spec: Spec = { name: "test", options: [out, verbose] };
   expect(await readToken(spec, ["-v"], "-v")).toEqual({
     kind: "options",
-    options: [verbose],
+    uses: [{ option: verbose, name: "-v" }],
     attached: null,
   });
   const next = await readNext(spec, ["-v", "-v", "--out"], "");
@@ -283,17 +292,21 @@ test("readNext: reports the directives in effect for the final command", async (
   });
 });
 
-test("readNext: skips unknown characters in a chain and keeps the rest", async () => {
+test("a token: a chain keeps each name, and the option it refers to, if any", async () => {
   const a: Option = { name: "-a" };
   const b: Option = { name: "-b" };
   expect(await readToken({ name: "test", options: [a, b] }, [], "-axb")).toEqual({
     kind: "options",
-    options: [a, b],
+    uses: [
+      { option: a, name: "-a" },
+      { option: null, name: "-x" },
+      { option: b, name: "-b" },
+    ],
     attached: null,
   });
 });
 
-test("a token reading: says what each kind of token is read as", async () => {
+test("a token: says what each kind of word is read as", async () => {
   const dir: Arg = { name: "dir" };
   const out: Option = { name: "--out", args: dir };
   const sub: Subcommand = { name: "sub" };
@@ -303,17 +316,21 @@ test("a token reading: says what each kind of token is read as", async () => {
   expect(await readToken(spec, [], "sub")).toEqual({ kind: "subcommand", command: sub });
   expect(await readToken(spec, [], "--out=a")).toEqual({
     kind: "options",
-    options: [out],
-    attached: { option: out, arg: dir, start: 6 },
+    uses: [{ option: out, name: "--out" }],
+    attached: { start: 6, separator: "=", arg: dir },
   });
   expect(await readToken(spec, ["--out"], "a")).toEqual({ kind: "value", option: out, arg: dir });
   expect(await readToken(spec, ["--out"], "--nope")).toEqual({ kind: "value", option: out, arg: dir });
   expect(await readToken(spec, [], "a")).toEqual({ kind: "argument", arg: file });
   expect(await readToken(spec, ["--"], "--out")).toEqual({ kind: "argument", arg: file });
-  expect(await readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
+  expect(await readToken(spec, [], "--nope")).toEqual({
+    kind: "options",
+    uses: [{ option: null, name: "--nope" }],
+    attached: null,
+  });
 });
 
-test("a token reading: an argument past the command's last is for none", async () => {
+test("a token: an argument past the command's last is for none", async () => {
   const spec: Spec = { name: "test", args: { name: "only" } };
   expect(await readToken(spec, ["one"], "two")).toEqual({ kind: "argument", arg: undefined });
 });

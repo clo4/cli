@@ -28,9 +28,9 @@ test("a loaded command is found in the file it's loaded from, and at its loading
     { file: "remote.ts", piece: remote, ranges: specRanges(remoteSource) },
   ]);
   // The word reads as the loading definition, not the command it loads.
-  const [reading] = (await analyze(main, ["remote"])).tokens;
-  expect(reading.kind).toBe("subcommand");
-  const command = (reading as { command: Subcommand }).command;
+  const [token] = (await analyze(main, ["remote"])).tokens;
+  expect(token.kind).toBe("subcommand");
+  const command = (token as { command: Subcommand }).command;
   expect(command).not.toBe(remote);
   expect(files.nodes(command).map((node) => [node.file, node.lines?.[0]])).toEqual([
     ["remote.ts", lineOf(remoteSource, "CLI.command(")],

@@ -6,7 +6,7 @@
 
 import * as CLI from "@clo4/cli";
 import type { Arg, Spec } from "@clo4/cli";
-import { analyze, type TokenReading } from "@clo4/cli/analyze";
+import { analyze, type Token } from "@clo4/cli/analyze";
 import { asArray } from "./util";
 import { wordAt, words, type Word } from "./words";
 
@@ -71,13 +71,13 @@ export async function suggest(spec: Spec, line: string, caret: number): Promise<
   return { word, end: whole.end, whole: whole.text, items, selected: -1 };
 }
 
-/** The argument the word, read as `reading`, fills, if it takes any text: one with no parser. */
-function freeArgument(reading: TokenReading | undefined): Arg | undefined {
+/** The argument the word, read as `token`, fills, if it takes any text: one with no parser. */
+function freeArgument(token: Token | undefined): Arg | undefined {
   let arg: Arg | undefined;
-  if (reading?.kind === "argument" || reading?.kind === "value") {
-    arg = reading.arg;
-  } else if (reading?.kind === "options") {
-    arg = reading.attached?.arg;
+  if (token?.kind === "argument" || token?.kind === "value") {
+    arg = token.arg;
+  } else if (token?.kind === "options") {
+    arg = token.attached?.arg;
   }
   return arg && arg.parse === undefined ? arg : undefined;
 }
