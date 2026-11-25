@@ -54,8 +54,6 @@ interface Version {
   run(spec: Spec, argv: readonly string[]): Promise<number>;
 }
 
-// Capturing {{{
-
 interface WriteSyncFs {
   writeSync(fd: number, data: Uint8Array | string, offset?: number, length?: number): number;
 }
@@ -174,10 +172,6 @@ function record(command: Spec | Subcommand): void {
   list(command.options).forEach(replace);
   list(command.subcommands).forEach(record);
 }
-
-// }}}
-
-// Versions {{{
 
 /**
  * Wrap `library` so `run` takes the command line the way that version does:
@@ -314,8 +308,6 @@ function withoutRules<T>(value: T): T {
   }
   return copy as T;
 }
-
-// }}}
 
 /**
  * Run every case: make a spec and a command line, and fail with the smallest

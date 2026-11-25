@@ -363,8 +363,6 @@ export function script(spec: Spec, shell: Shell): string {
   return shells[shell].script(spec.name, sanitize(spec.name));
 }
 
-// Completion commands {{{
-
 /**
  * Hidden machine-facing subcommand the completion scripts call on every Tab.
  * The tokens after `--` are the command line; the last is the word being
@@ -409,8 +407,6 @@ const completeCommand: Subcommand = {
     }
   },
 };
-
-// }}}
 
 /**
  * Subcommand that prints an installation script for the requested shell.

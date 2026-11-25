@@ -55,7 +55,6 @@ const fromNumber: CLI.StandardSchemaV1<number, string> = {
   "~standard": { version: 1, vendor: "test", validate: (value) => ({ value: String(value) }) },
 };
 
-// Types {{{
 // Everything in this section is checked by the compiler. The actions never run.
 
 function use(value: number): number {
@@ -212,8 +211,6 @@ CLI.spec({
   options: [{ name: "--port", description: "x", args: { name: "port", parse: port } }],
   action: ({ options }) => (anyOptions(options) ? 0 : 1),
 });
-
-// }}}
 
 /** What the action of `spec` received for `argv`, with what `run` printed. */
 async function received(spec: CLI.Spec, argv: readonly string[]) {

@@ -89,8 +89,6 @@ function forge(): Spec {
   };
 }
 
-// --- Dispatch & nesting -----------------------------------------------------
-
 test("complex: dispatches a deeply nested subcommand with mid-tree args", async () => {
   const result = await captureConsole(() =>
     run(forge(), ["remote", "add", "origin", "https://x", "--force"]),
@@ -121,8 +119,6 @@ test("complex: command alias resolves to the same action", async () => {
   expect(alias.stdout).toBe(full.stdout);
 });
 
-// --- requiresSubcommand -----------------------------------------------------
-
 test("complex: requiresSubcommand prints usage and succeeds with no subcommand", async () => {
   const result = await captureConsole(() => run(forge(), ["remote"]));
   expect(result.code).toBe(0);
@@ -136,15 +132,11 @@ test("complex: requiresSubcommand reports an unknown subcommand", async () => {
   expect(result.stderr).toMatch(/Unknown command 'bogus'/);
 });
 
-// --- Variadic args + options --------------------------------------------------
-
 test("complex: variadic args interspersed with a option", async () => {
   const result = await captureConsole(() => run(forge(), ["build", "a", "b", "--out", "dist", "c"]));
   expect(result.code).toBe(0);
   expect(result.stdout).toBe("build:[a,b,c]:out=dist:mode=-:watch=false:retry=0:v0\n");
 });
-
-// --- Persistent + repeatable options -----------------------------------------
 
 test("complex: persistent repeatable option counts across nesting (separate + chained)", async () => {
   const separate = await captureConsole(() => run(forge(), ["remote", "add", "origin", "-v", "-v"]));
@@ -155,8 +147,6 @@ test("complex: persistent repeatable option counts across nesting (separate + ch
   expect(chained.code).toBe(0);
   expect(chained.stdout).toBe("add:origin:-:force=false:tag=-:v3\n");
 });
-
-// --- requiresSeparator ------------------------------------------------------
 
 test("complex: requiresSeparator accepts an attached arg", async () => {
   const result = await captureConsole(() => run(forge(), ["remote", "add", "origin", "--tag=stable"]));
@@ -169,8 +159,6 @@ test("complex: requiresSeparator rejects a detached arg", async () => {
   expect(result.code).toBe(1);
   expect(result.stderr).toMatch(/^Error: Option --tag needs 1 argument\n/);
 });
-
-// --- Option constraints -------------------------------------------------------
 
 test("complex: missing required option fails", async () => {
   const result = await captureConsole(() => run(forge(), ["build", "main"]));
@@ -206,16 +194,12 @@ test("complex: repeatable option honors its limit", async () => {
   expect(tooMany.stderr).toMatch(/Too many repetitions/);
 });
 
-// --- Help precedence at depth ----------------------------------------------
-
 test("complex: --help on a nested command bypasses required options", async () => {
   const result = await captureConsole(() => run(forge(), ["build", "--help"]));
   expect(result.code).toBe(0);
   expect(result.stdout).toMatch(/Usage:\n {2}forge build/);
   expect(result.stderr).toBe("");
 });
-
-// --- parserDirectives -------------------------------------------------------
 
 test("complex: subcommandsMatchUniquePrefix dispatches on a unique prefix", async () => {
   const spec: Spec = {
@@ -247,15 +231,11 @@ test("complex: optionsMustPrecedeArguments treats later option-like tokens as ar
   expect(result.stdout).toBe("args=[first,--watch] watch=false\n");
 });
 
-// --- Exit codes -------------------------------------------------------------
-
 test("complex: action exit codes are returned and clamped to 0-255", async () => {
   await expect(run({ name: "x", action: () => 42 }, [])).resolves.toBe(42);
   await expect(run({ name: "x", action: () => 999 }, [])).resolves.toBe(255);
   await expect(run({ name: "x", action: () => -5 }, [])).resolves.toBe(0);
 });
-
-// --- Exit-path hardening (non-Error throws) ---------------------------------
 
 test("complex: a thrown non-Error value still exits 1 with a diagnostic", async () => {
   const stringThrow = await captureConsole(() =>

@@ -50,10 +50,6 @@ const fixture: Spec = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Runtime resolver
-// ---------------------------------------------------------------------------
-
 const values = (suggestions: readonly Suggestion[]) => suggestions.flatMap((s) => asArray(s.name));
 
 const resolve = (spec: Spec, before: readonly string[], partial: string, optionsNeedDash?: boolean) =>
@@ -630,10 +626,6 @@ test("runtime: optionsNeedDash exempts posix-noncompliant options (no dash to ga
   expect(v).toContain("stop");
 });
 
-// ---------------------------------------------------------------------------
-// The shim and the `completion` / `complete` subcommands
-// ---------------------------------------------------------------------------
-
 test("script emits the shim", async () => {
   const bash = shellScript(fixture, "bash");
   expectIncludes(bash, "completion complete --");
@@ -1007,10 +999,6 @@ test("runtime: optionsNeedDash offers dashed suggestions after '--', where they'
   expect(values(await resolve(stopped, ["a"], "-", true))).toEqual(["-1", "-2", "3"]);
 });
 
-// ---------------------------------------------------------------------------
-// Completing the names after `help`
-// ---------------------------------------------------------------------------
-
 const helpFixture = (help: Subcommand): Spec => ({
   name: "demo",
   options: [{ name: ["-h", "--help"], isPersistent: true }],
@@ -1089,10 +1077,6 @@ test("runtime: a help command with a copied action still completes names", async
   expect(values(await resolve(spec, ["help"], ""))).toContain("remote");
 });
 
-// ---------------------------------------------------------------------------
-// The environment variable the shims set
-// ---------------------------------------------------------------------------
-
 test("every shim sets SHELL_COMPLETION_GENERATOR to the shell's name for the CLI", async () => {
   expectIncludes(shellScript(fixture, "bash"), `SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete`);
   expectIncludes(shellScript(fixture, "zsh"), `SHELL_COMPLETION_GENERATOR=zsh "$bin" completion complete`);
@@ -1170,10 +1154,6 @@ test.skipIf(!hasShell("nu") || process.platform === "win32")("the Nushell shim s
     "unset",
   ]);
 });
-
-// ---------------------------------------------------------------------------
-// The lines `completion complete --shell` prints for each shell
-// ---------------------------------------------------------------------------
 
 const awkward = [
   { name: "plain" },
@@ -1392,10 +1372,6 @@ test("every shim asks for its own shell's lines", async () => {
   expectIncludes(shellScript(fixture, "powershell"), "'complete', '--shell', 'powershell'");
   expectIncludes(shellScript(fixture, "nushell"), "completion complete --shell nushell --gate-options --");
 });
-
-// ---------------------------------------------------------------------------
-// The scripts in real shells
-// ---------------------------------------------------------------------------
 
 /** Candidates that each shell's script has to get through whole. */
 const tricky = [

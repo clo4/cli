@@ -19,8 +19,6 @@ type AsArray<T> = T extends readonly unknown[] ? T : T extends undefined ? [] : 
 
 type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 
-// What an action receives {{{
-
 /**
  * Whether the fields that decide how many values an argument takes might be
  * set without the type saying so. That's the case for an argument typed `Arg`,
@@ -282,10 +280,6 @@ type InitFor<Y, Inherited> = Y extends unknown
   ? Init<ArgsOf<Y>, OptionsFor<OptionsOf<Y> | Inherited>>
   : never;
 
-// }}}
-
-// Reading a spec {{{
-
 /*
  * TypeScript types a function with unannotated parameters after it has
  * inferred everything else, and it won't infer a value that holds one of
@@ -528,8 +522,6 @@ type Tree<X, Inherited, S> = {
       : Whole<X, X[I], S> &
           Tree<X[I], Passed<X, I, Inherited>, X extends readonly unknown[] ? S : Child<S, I>>;
 } & (X extends readonly unknown[] | Primitive ? unknown : Checked<X, Inherited, S>);
-
-// }}}
 
 /**
  * Define a CLI from a root {@link Spec} and return the same object unchanged.

@@ -50,8 +50,6 @@ export function assert(expr: unknown, msg = ""): asserts expr {
   }
 }
 
-// Output {{{
-
 interface WriteSyncFs {
   writeSync(fd: number, buffer: Uint8Array, offset: number, length: number): number;
 }
@@ -115,8 +113,6 @@ export function print(...values: unknown[]): void {
 export function printError(...strings: unknown[]): void {
   output.write(2, `${["Error:", ...strings].map(String).join(" ")}\n`);
 }
-
-// }}}
 
 /**
  * The message for a value that an action, a `loadSpec` or an argument's parser threw. A
