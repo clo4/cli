@@ -43,58 +43,41 @@ export interface RunOptions {
  * @returns The selected action's exit code, or 1 on a reported error.
  */
 export async function run(spec: Spec, options?: RunOptions): Promise<number> {
-  const code = await exitCodeOf(spec, options?.argv ?? defaultArgs());
-  if (options?.setExitCode !== false) {
-    const maybeProcess = globalThis as typeof globalThis & { process?: { exitCode?: number } };
-    if (maybeProcess.process) {
-      maybeProcess.process.exitCode = code;
+  const node = (globalThis as { process?: { argv?: readonly string[]; exitCode?: number } }).process;
+  let code = 1;
+  let result: ParseResult | null = null;
+  try {
+    result = await parse(options?.argv ?? node?.argv?.slice(2) ?? [], spec);
+  } catch (error) {
+    reportParseError(error);
+  }
+  if (result) {
+    const actionInit: ActionInit<unknown> = {
+      help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
+      args: result.args,
+      path: result.path,
+      argSeparatorIndex: result.argSeparatorIndex,
+      options: result.options,
+    };
+    try {
+      // The spec's own types say what each value is. See `ActionInit`.
+      const exitCode = await result.action(actionInit as ActionInit);
+      code = Math.min(Math.max(exitCode ?? 0, 0), 255);
+    } catch (error) {
+      printError(describeThrown(error));
     }
+  }
+  if (node && options?.setExitCode !== false) {
+    node.exitCode = code;
   }
   return code;
 }
 
-/** The exit code of running `argv` against `spec`. */
-async function exitCodeOf(spec: Spec, argv: readonly string[]): Promise<number> {
-  let result: ParseResult;
-  try {
-    result = await parse(argv, spec);
-  } catch (error) {
-    return reportParseError(error);
-  }
-  const actionInit: ActionInit<unknown> = {
-    help: (helpOptions) => getHelp(helpOptions?.path ?? result.path, helpOptions),
-    args: result.args,
-    path: result.path,
-    argSeparatorIndex: result.argSeparatorIndex,
-    options: result.options,
-  };
-  let exitCode: number | void;
-  try {
-    // The spec's own types say what each value is. See `ActionInit`.
-    exitCode = await result.action(actionInit as ActionInit);
-  } catch (error) {
-    return reportThrown(error);
-  }
-  return Math.min(Math.max(exitCode ?? 0, 0), 255);
-}
-
-function reportParseError(error: unknown): number {
+function reportParseError(error: unknown): void {
   if (error instanceof ParseError) {
     printUsageError(error.context.path, error.message, error.didYouMean);
-    return 1;
+  } else {
+    // Anything else came from a `loadSpec`.
+    printError(describeThrown(error));
   }
-  // Anything else came from a `loadSpec`.
-  return reportThrown(error);
-}
-
-function reportThrown(error: unknown): number {
-  printError(describeThrown(error));
-  return 1;
-}
-
-function defaultArgs(): readonly string[] {
-  const maybeProcess = globalThis as typeof globalThis & {
-    process?: { argv?: readonly string[] };
-  };
-  return maybeProcess.process?.argv?.slice(2) ?? [];
 }
