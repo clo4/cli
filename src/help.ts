@@ -1,10 +1,19 @@
-import type { Action, ActionInit, Arg, Option, NonEmptyArray, Subcommand, Suggestion } from "./types.js";
+import type {
+  Action,
+  ActionInit,
+  Arg,
+  CommandPath,
+  Option,
+  NonEmptyArray,
+  Subcommand,
+  Suggestion,
+} from "./types.js";
 import { closestChoice } from "./suggest.js";
 import { CommandScope } from "./scope.js";
-import type { LiveOption, OptionForm } from "./scope.js";
+import type { LiveOption, LiveSubcommand, OptionForm } from "./scope.js";
 import type { DidYouMean } from "./errors.js";
-import { readHelpNames } from "./parse.js";
-import type { HelpNames } from "./parse.js";
+import { readNames } from "./parse.js";
+import type { NamesRead } from "./parse.js";
 import { describeParser } from "./description.js";
 import { argName, leadingDefaults } from "./args.js";
 import { asArray, print, printError, singleOrArray } from "./util.js";
@@ -103,7 +112,7 @@ export const helpCommand: Subcommand = {
     // The names the parser would read next in place of `help`.
     async suggest({ path, args }) {
       const suggestions: Suggestion[] = [];
-      for (const { command, names } of (await readHelpNames(path, args)).subcommands) {
+      for (const { command, names } of (await helpNames(path, args)).subcommands) {
         const name = singleOrArray(names);
         if (!command.hidden && name !== undefined) {
           suggestions.push({ name, description: command.description });
@@ -113,12 +122,40 @@ export const helpCommand: Subcommand = {
     },
   },
   async action({ path, args, help }) {
-    return printHelpNames(await readHelpNames(path, args), help);
+    return printHelpNames(await helpNames(path, args), help);
   },
 };
 
+/**
+ * Where `names`, the arguments of the help command that ends `path`, lead:
+ * the parser reads them in place of `help`. An inherited copy of help ends
+ * them, since `cli help a help` is `cli a help`, and isn't a name they can
+ * lead on to.
+ */
+export async function helpNames(path: CommandPath, names: readonly string[]): Promise<NamesRead> {
+  const [root, ...below] = path;
+  const help = below[below.length - 1];
+  const read = await readNames([root, ...below.slice(0, -1)], names);
+  const [, ...entered] = read.path;
+  for (let i = below.length - 1; i < entered.length; i++) {
+    if (entered[i] === help && !read.path[i].subcommands?.includes(help)) {
+      return { path: [root, ...entered.slice(0, i)], error: null, subcommands: [] };
+    }
+  }
+  if (read.path[read.path.length - 1].subcommands?.includes(help)) {
+    return read;
+  }
+  const next: LiveSubcommand[] = [];
+  for (let i = 0; i < read.subcommands.length; i++) {
+    if (read.subcommands[i].command !== help) {
+      next.push(read.subcommands[i]);
+    }
+  }
+  return { ...read, subcommands: next };
+}
+
 /** Print the help of the command the help command's names led to, or the error they ended in. */
-function printHelpNames(target: HelpNames, help: ActionInit["help"]): number {
+function printHelpNames(target: NamesRead, help: ActionInit["help"]): number {
   if (target.error) {
     printUsageError(target.path, target.error.message, target.error.didYouMean);
     return 1;

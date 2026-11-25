@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import { getHelp } from "../src/help.js";
-import type { Spec } from "../src/types.js";
+import { getHelp, helpNames } from "../src/help.js";
+import type { Spec, Subcommand } from "../src/types.js";
 import { expectIncludes, expectNotIncludes } from "./helpers.js";
 
 test("help: no path, no subcommands", () => {
@@ -325,4 +325,31 @@ test("help: an option name a subcommand matches is left out, like the parser rea
   expectNotIncludes(msg, "SHADOWED_FLAG");
   expectIncludes(msg, "  --both  PREFIX_FLAG");
   expectIncludes(msg, "  keep    KEPT_FLAG");
+});
+
+test("helpNames: reads the names after help in place of help", async () => {
+  const status: Subcommand = { name: "status", isPersistent: true };
+  const add: Subcommand = { name: "add" };
+  const remote: Subcommand = { name: "remote", subcommands: [add] };
+  const help: Subcommand = { name: "help", args: { isVariadic: true, isOptional: true }, isPersistent: true };
+  const spec: Spec = { name: "test", subcommands: [status, remote, help] };
+  const at = [spec, help] as const;
+
+  expect(await helpNames(at, ["remote", "add"])).toMatchObject({ path: [spec, remote, add], error: null });
+  expect((await helpNames(at, ["remote", "ad"])).error).toMatchObject({ message: "Unknown command 'ad'" });
+
+  // An inherited copy of help ends the names, and isn't offered as a name.
+  expect(await helpNames(at, ["remote", "help", "add"])).toEqual({
+    path: [spec, remote],
+    error: null,
+    subcommands: [],
+  });
+  expect((await helpNames(at, ["remote"])).subcommands).toEqual([
+    { command: add, names: ["add"] },
+    { command: status, names: ["status"] },
+  ]);
+  // Where help is a command's own subcommand, its name leads to help.
+  expect((await helpNames(at, ["help"])).path).toEqual([spec, help]);
+  // With no names, help is for the command it follows.
+  expect((await helpNames([spec, remote, help], [])).path).toEqual([spec, remote]);
 });

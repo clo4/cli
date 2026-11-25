@@ -387,11 +387,11 @@ function unusedValues(
   return option ? (parsed?.get(option) ?? unusedDefaults(option)) : undefined;
 }
 
-/** Where the names after a help command lead. See {@link readHelpNames}. */
-export interface HelpNames {
-  /** The commands from the root to the one whose help prints. */
+/** Where names read as subcommands lead. See {@link readNames}. */
+export interface NamesRead {
+  /** The commands from the root to the last one the names entered. */
   path: CommandPath;
-  /** The error help reports if a name is an unknown or ambiguous command. */
+  /** The error the parser reports if a name is an unknown or ambiguous command. */
   error: ParseError | null;
   /**
    * The subcommands the next name can lead to, hidden ones included, each
@@ -1074,48 +1074,26 @@ class Scanner {
   }
 
   /**
-   * See {@link readHelpNames}. Call it on a new scanner for the root of
-   * `path`.
+   * See {@link readNames}. Call it on a new scanner for the root of `path`.
    */
-  async readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
-    const [, ...below] = path;
-    const help = below[below.length - 1];
-    for (let i = 0; i < below.length - 1; i++) {
-      // The parser entered these on the way to help, so they're loaded.
-      this.scope.enterNow(below[i]);
+  async readNames(path: CommandPath, names: readonly string[]): Promise<NamesRead> {
+    for (let i = 1; i < path.length; i++) {
+      // The parser entered these on the way here, so they're loaded.
+      this.scope.enterNow(path[i]);
     }
-    // The parser read the names as arguments of help, so none is an option.
+    // The names are arguments of the command they follow, so none is an option.
     this.optionsAllowed = false;
     for (let i = 0; i < names.length; i++) {
-      const own = this.scope.command.subcommands;
-      const reading = this.read(names[i]);
-      if (reading.kind !== "subcommand") {
+      if (this.read(names[i]).kind !== "subcommand") {
         // Where the command has no subcommands of its own, the parser reports
-        // a name it has no room for as too many arguments. Help prints the
-        // command's help instead.
+        // a name it has no room for as too many arguments. Reading just ends.
         return { path: this.scope.path, error: this.unmatched, subcommands: [] };
-      }
-      // With a persistent help command, `cli help a help` is `cli a help`.
-      if (reading.command === help && !own?.includes(help)) {
-        const [root, ...entered] = this.scope.path;
-        return { path: [root, ...entered.slice(0, -1)], error: null, subcommands: [] };
       }
       if (this.pending) {
         await this.settle();
       }
     }
-    const subcommands = this.scope.subcommands();
-    if (this.scope.command.subcommands?.includes(help)) {
-      return { path: this.scope.path, error: null, subcommands };
-    }
-    // An inherited copy of help ends the names, so it leads nowhere new.
-    const next: LiveSubcommand[] = [];
-    for (let i = 0; i < subcommands.length; i++) {
-      if (subcommands[i].command !== help) {
-        next.push(subcommands[i]);
-      }
-    }
-    return { path: this.scope.path, error: null, subcommands: next };
+    return { path: this.scope.path, error: null, subcommands: this.scope.subcommands() };
   }
 }
 
@@ -1160,15 +1138,15 @@ export async function readNext(spec: Spec, before: readonly string[], partial: s
 }
 
 /**
- * Read `names`, the arguments of the help command that ends `path`, the way
- * the parser reads them in place of `help`. The names end at the first one
- * the parser doesn't read as a subcommand. That name is an error where the
- * parser reports it as an unknown or ambiguous command. Otherwise help ignores
- * it and the names after it, so `cli help completion zsh` prints the help of
- * `completion`.
+ * Read `names` after the last command on `path` as names of subcommands, the
+ * way the parser reads a token where no option can be. Each name that names
+ * a subcommand enters it, and the names end at the first one that doesn't.
+ * That name is an error where the parser reports it as an unknown or
+ * ambiguous command. Otherwise it's an argument, and the names after it are
+ * ignored. Every command on `path` must be loaded.
  */
-export function readHelpNames(path: CommandPath, names: readonly string[]): Promise<HelpNames> {
-  return new Scanner(path[0], true).readHelpNames(path, names);
+export function readNames(path: CommandPath, names: readonly string[]): Promise<NamesRead> {
+  return new Scanner(path[0], true).readNames(path, names);
 }
 
 /**
