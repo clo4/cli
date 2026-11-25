@@ -15,6 +15,7 @@ title: "Unreleased"
 
 - `@clo4/cli/analyze` reads a command line the way the parser does: what each token is, the argument it's for, every problem and the token it's in, and what the action gets. It's an entry point of its own, so a CLI that doesn't use it doesn't load it.
 - A suggestion can be `incomplete`, like `user@`, so the shell adds no space after it.
+- A spec check that a command that requires a subcommand has no `args`, which the parser never reads.
 
 ## Fixed
 

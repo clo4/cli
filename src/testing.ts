@@ -579,6 +579,23 @@ const specChecks: readonly SpecCheck[] = [
   },
   {
     /*
+     * A command that requires a subcommand takes no arguments, so its `args`
+     * are never read. The parser doesn't check this on each run, so a spec
+     * check does once.
+     */
+    sentence: "A command that requires a subcommand has no arguments",
+    name: "assertCommandsRequiringSubcommandsHaveNoArguments",
+    check(walk) {
+      for (const { command, path } of walk.commands) {
+        assert(
+          !(command.requiresSubcommand && command.args),
+          `${describeCommand(path)} requires a subcommand, so it takes no arguments, but it has \`args\`. Remove them, or remove \`requiresSubcommand\`.`,
+        );
+      }
+    },
+  },
+  {
+    /*
      * A positional argument with a default must be optional. A required option
      * argument's default is only used when the option is left out, so every
      * argument before it needs a default too, and the option can't be required.

@@ -766,6 +766,22 @@ test("testing: subcommand messages name the subcommand once, with its index", as
   ).rejects.toThrow("Subcommand `t a` (index 0) has no description");
 });
 
+test("testing: assertCommandsRequiringSubcommandsHaveNoArguments", async () => {
+  await runSpecCheck("assertCommandsRequiringSubcommandsHaveNoArguments", {
+    name: "test",
+    requiresSubcommand: true,
+    subcommands: [{ name: "a", args: { name: "x" } }],
+  });
+  await expect(
+    runSpecCheck("assertCommandsRequiringSubcommandsHaveNoArguments", {
+      name: "test",
+      subcommands: [
+        { name: "group", requiresSubcommand: true, args: { name: "x" }, subcommands: [{ name: "a" }] },
+      ],
+    }),
+  ).rejects.toThrow("Subcommand `test group` (index 0) requires a subcommand, so it takes no arguments");
+});
+
 test("testing: assertPrefixMatchCommandsHaveNoArguments", async () => {
   await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", { name: "test" });
   await runSpecCheck("assertPrefixMatchCommandsHaveNoArguments", {
@@ -826,6 +842,7 @@ test("testing: testSpec runs all default steps with sentence names", async () =>
   expect(steps).toEqual([
     "A command with a loadSpec sets only what its parent reads, and loads a command that agrees",
     "Required arguments don't follow optional arguments",
+    "A command that requires a subcommand has no arguments",
     "The parser can use every default",
     "Every default passes its argument's parser",
     "Every number range has a number in it",
@@ -855,6 +872,7 @@ test("testing: testSpec supports function-style step names", async () => {
   expect(steps).toEqual([
     "assertLoadedCommandsMatch",
     "assertRequiredArgumentsDoNotFollowOptionalArguments",
+    "assertCommandsRequiringSubcommandsHaveNoArguments",
     "assertDefaultsCanBeUsed",
     "assertDefaultsPassTheirParse",
     "assertRangesAreNotEmpty",
