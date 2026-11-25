@@ -447,8 +447,9 @@ function loadProblems(path: Subcommand[], loaded: Subcommand): string[] {
       `${where} loads a command named ${repr(loaded.name)}. Give the loaded command the same \`name\`, ${repr(command.name)}.`,
     );
   }
-  for (const key of ["description", "hidden", "isPersistent"] as const) {
-    if (loaded[key] !== undefined && loaded[key] !== command[key]) {
+  for (const key of stubKeys) {
+    // The name is compared above, by structure.
+    if (key !== "name" && loaded[key] !== undefined && loaded[key] !== command[key]) {
       problems.push(
         `${where} loads a command whose \`${key}\` is ${repr(loaded[key])}, but its own is ${repr(command[key]) ?? "not set"}, and its own is the one used. Make them the same, or leave \`${key}\` out of the loaded command.`,
       );
