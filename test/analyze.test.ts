@@ -104,6 +104,22 @@ test("analyze: says what each token is, and the argument each value is for", asy
   expect(result?.options.get("--jobs")).toBe(2);
 });
 
+test("analyze: a value after the wrong separator is attached, and the problem says so", async () => {
+  const mode: Option = { name: "--mode", args: { name: "mode" }, requiresSeparator: ":" };
+  const s: Spec = { name: "s", options: [mode], parserDirectives: { optionArgSeparators: ["=", ":"] } };
+  const { tokens, problems } = await analyze(s, ["--mode=fast"]);
+  expect(tokens).toEqual([
+    {
+      kind: "options",
+      uses: [{ option: mode, name: "--mode" }],
+      attached: { start: 7, separator: "=", arg: mode.args },
+    },
+  ]);
+  expect(problems).toEqual([
+    { message: "Incorrect separator, use ':' instead of '='", token: 0, start: undefined },
+  ]);
+});
+
 test("analyze: reads every token past a problem, and reports the first", async () => {
   const { tokens, problems } = await analyze(spec, ["--nope", "--token", "t", "build", "--nope"]);
   expect(tokens.map((t) => t.kind)).toEqual(["options", "options", "value", "subcommand", "options"]);
