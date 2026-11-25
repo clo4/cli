@@ -12,7 +12,7 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Path**: The commands from the root to the selected one.
 
-**Option**: A named token a command accepts, optionally followed by values. Help output calls these flags. _Avoid_: flag (outside help output)
+**Option**: A name a command accepts, optionally followed by values. Help output calls these flags. _Avoid_: flag (outside help output)
 
 **Persistent option**: An option that the descendants of the command defining it can use too. _Avoid_: global option
 
@@ -26,9 +26,9 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Directives**: A command's parsing switches, such as its option arg separators. A subcommand inherits each one until it sets its own.
 
-**Option arg separator**: What joins an option's name to a value in the same token, `=` by default.
+**Option arg separator**: What joins an option's name to a value in the same word, `=` by default.
 
-**Form**: How one name of an option is written with its value at one command: as a separate token, after a separator, or glued on.
+**Form**: How one name of an option is written with its value at one command: as a separate word, after a separator, or glued on.
 
 **Argument list**: What a command's or an option's `args` holds: one argument, a list of them, or none. It says how many values the command or option takes, and which defaults fill in for the arguments a use leaves out, once every required one is given.
 

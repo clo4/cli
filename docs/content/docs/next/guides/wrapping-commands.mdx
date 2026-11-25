@@ -1,6 +1,6 @@
 ---
 title: Wrap another executable
-description: Parse wrapper options and forward the remaining tokens to another program.
+description: Parse wrapper options and forward the remaining words to another program.
 ---
 
 A wrapper needs a boundary between its own options and another program's arguments. Set `optionsMustPrecedeArguments: true` so the first positional argument ends option parsing.
@@ -49,4 +49,4 @@ A `--` before the program also ends option parsing. After the first positional a
 
 Without the directive, users can still use `--` explicitly to separate wrapper options from positional values. Choose that form when the wrapper needs to accept its own options after other positional arguments.
 
-See [Parsing behavior](../reference/parsing-behavior.mdx) for token boundaries and [Actions](../concepts/actions.mdx#errors-and-exit-codes) for exit status handling.
+See [Parsing behavior](../reference/parsing-behavior.mdx) for word boundaries and [Actions](../concepts/actions.mdx#errors-and-exit-codes) for exit status handling.

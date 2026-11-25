@@ -237,7 +237,7 @@ test("readNext: doesn't require options or arguments", async () => {
   await expect(parse([], spec)).rejects.toThrow();
 });
 
-test("readNext: an option with room for values can take the next token", async () => {
+test("readNext: an option with room for values can take the next word", async () => {
   const option: Option = { name: "--tags", args: { isVariadic: true } };
   const spec: Spec = { name: "test", options: [option] };
   expect((await readNext(spec, ["--tags"], "")).value).toEqual({ option, arg: option.args, required: true });
@@ -257,7 +257,7 @@ test("readNext: '--' closes an open option", async () => {
   expect((await readNext(spec, ["--tags", "--", "b"], "")).value).toBeNull();
 });
 
-test("readNext: an option that requires a separator never takes the next token", async () => {
+test("readNext: an option that requires a separator never takes the next word", async () => {
   const option: Option = { name: "--option", args: {}, requiresSeparator: true };
   const spec: Spec = { name: "test", options: [option] };
   expect((await readNext(spec, ["--option"], "")).value).toBeNull();
@@ -335,7 +335,7 @@ test("a token: an argument past the command's last is for none", async () => {
   expect(await readToken(spec, ["one"], "two")).toEqual({ kind: "argument", arg: undefined });
 });
 
-test("readNext: lists the options the next token can use, with the names that read as each", async () => {
+test("readNext: lists the options the next word can use, with the names that read as each", async () => {
   const all: Option = { name: ["-a", "--all"], isPersistent: true };
   const shadow: Option = { name: "--all", hidden: true };
   const file: Option = { name: "--file", args: {}, requiresSeparator: true };

@@ -361,7 +361,7 @@ test("parse: chained options ignore separators", async () => {
   expect(result.options.options).toEqual(map({ "-a": [], "-b": ["c"] }));
 });
 
-test("parse: chained options can have arguments in the next token", async () => {
+test("parse: chained options can have arguments in the next word", async () => {
   const result = await parse(["-ab", "c"], {
     name: "test",
     options: [{ name: "-a" }, { name: "-b", args: {} }, { name: "-c" }],
@@ -369,7 +369,7 @@ test("parse: chained options can have arguments in the next token", async () => 
   expect(result.options.options).toEqual(map({ "-a": [], "-b": ["c"] }));
 });
 
-test("parse: tokens starting with '--' that don't match a option is an error", async () => {
+test("parse: words starting with '--' that don't match a option is an error", async () => {
   await expect(parse(["--fail"], { name: "test", args: {} })).rejects.toThrow();
 });
 
@@ -686,7 +686,7 @@ test("parse: option values don't count towards optionsMustPrecedeArguments", asy
   expect(result.args).toEqual(["x", "--b"]);
 });
 
-test("parse: '--' token causes all tokens after it to become args", async () => {
+test("parse: '--' causes all words after it to become args", async () => {
   const spec: Spec = {
     name: "command",
     options: [{ name: "--one" }, { name: "--two" }],
@@ -1113,7 +1113,7 @@ test("parse: a subcommand's own required option is still enforced", async () => 
   expect((await parse(["sub", "--name", "x"], spec)).options.options).toEqual(map({ "--name": ["x"] }));
 });
 
-test("parse: a long option splits at the first separator in the token", async () => {
+test("parse: a long option splits at the first separator in the word", async () => {
   const spec: Spec = {
     name: "test",
     parserDirectives: { optionArgSeparators: ["=", ":"] },
@@ -1485,7 +1485,7 @@ test("parse: a '+' option takes an attached value after a separator", async () =
   expect((await parse(["+o=1"], spec)).options.options).toEqual(map({ "+o": ["1"] }));
 });
 
-test("parse: an optional value in the middle of a chain takes the rest of the token", async () => {
+test("parse: an optional value in the middle of a chain takes the rest of the word", async () => {
   const spec: Spec = {
     name: "test",
     options: [{ name: "-a" }, { name: "-b", args: { isOptional: true } }, { name: "-c" }],
@@ -1493,7 +1493,7 @@ test("parse: an optional value in the middle of a chain takes the rest of the to
   expect((await parse(["-abc"], spec)).options.options).toEqual(map({ "-a": [], "-b": ["c"] }));
 });
 
-test("parse: an option waiting for a value takes unknown option-like tokens", async () => {
+test("parse: an option waiting for a value takes unknown option-like words", async () => {
   const spec: Spec = { name: "test", options: [{ name: "-o", args: {} }, { name: "-v" }] };
   expect((await parse(["-o", "-5"], spec)).options.options).toEqual(map({ "-o": ["-5"] }));
   expect((await parse(["-o", "--x"], spec)).options.options).toEqual(map({ "-o": ["--x"] }));
@@ -1612,7 +1612,7 @@ test("parse: a hidden command only matches its exact name in prefix mode", async
   expect((error as ParseError).didYouMean?.choices).toEqual([["build"]]);
 });
 
-test("parse: an empty token matches a command with an empty name", async () => {
+test("parse: an empty word matches a command with an empty name", async () => {
   const empty: Subcommand = { name: "" };
   const spec: Spec = {
     name: "test",

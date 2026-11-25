@@ -27,7 +27,7 @@ const switches = [
 ] as const;
 
 /**
- * How the next token can match a subcommand: by any name the command's
+ * How the next word can match a subcommand: by any name the command's
  * directives allow, or only by an exact name.
  */
 export interface SubcommandMatching {
@@ -45,7 +45,7 @@ export interface LiveOption {
   forms: OptionForm[];
 }
 
-/** A subcommand the next token can name, and the names that still refer to it. */
+/** A subcommand the next word can name, and the names that still refer to it. */
 export interface LiveSubcommand {
   command: Subcommand;
   names: readonly string[];
@@ -55,8 +55,8 @@ export interface LiveSubcommand {
 export interface OptionForm {
   name: string;
   /**
-   * What joins the name to the option's first value in the same token, or null
-   * if the value is the next token. It's the required separator for an option
+   * What joins the name to the option's first value in the same word, or null
+   * if the value is the next word. It's the required separator for an option
    * that requires one, and "" for an option named "-" or "+", which reads its
    * value straight after the name, like `-5`. It's null for an option without
    * arguments.
@@ -73,7 +73,7 @@ export interface OptionForm {
  * Moving to a subcommand replaces the local options and adds its persistent
  * options to the inherited ones. A name refers to one option: a local option
  * wins over a persistent one, and a later option wins over an earlier one in
- * the same list. A subcommand wins over an option where the next token can
+ * the same list. A subcommand wins over an option where the next word can
  * name a subcommand. The parser, help, completion and the spec checker all
  * ask this module what a name refers to, so they can't disagree.
  */
@@ -234,7 +234,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * The subcommands the next token can name, each with the names that still
+   * The subcommands the next word can name, each with the names that still
    * refer to it: the current command's own, then the inherited ones, nearest
    * first. Hidden ones are included.
    *
@@ -264,14 +264,14 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * Why `token` names no subcommand here, as an error message and suggestions.
+   * Why `word` names no subcommand here, as an error message and suggestions.
    * It's for a word {@link token} read as no subcommand, matched the same
    * way.
    */
-  unmatched(token: string, exactOnly: boolean): { message: string; didYouMean?: DidYouMean } {
+  unmatched(word: string, exactOnly: boolean): { message: string; didYouMean?: DidYouMean } {
     const allowPrefix = this.directives.subcommandsMatchUniquePrefix && !exactOnly;
-    const prefixOf = allowPrefix ? prefixMatches(this.command.subcommands ?? [], token) : [];
-    return unmatchedReason(token, prefixOf, this.subcommands());
+    const prefixOf = allowPrefix ? prefixMatches(this.command.subcommands ?? [], word) : [];
+    return unmatchedReason(word, prefixOf, this.subcommands());
   }
 
   /** The option `name` refers to, if any. */
@@ -312,7 +312,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    *
    * The word names one of the current command's own subcommands, or else an
    * inherited persistent one. An exact name always wins. With
-   * `subcommandsMatchUniquePrefix`, a token that's a prefix of exactly one of
+   * `subcommandsMatchUniquePrefix`, a word that's a prefix of exactly one of
    * the command's own names matches that command, unless `exactOnly`. A hidden
    * or inherited command only matches its exact name, so it can't make a
    * visible command's prefix ambiguous or take a prefix meant as an argument,
@@ -387,20 +387,20 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   }
 
   /**
-   * The inherited subcommand `token` names, or else the subcommand of the
-   * current command that `token` is a unique prefix of, when prefixes match.
+   * The inherited subcommand `word` names, or else the subcommand of the
+   * current command that `word` is a unique prefix of, when prefixes match.
    * See {@link token}. It's a method of its own so that a cold parse of a
    * spec without persistent subcommands or prefix matching doesn't compile it.
    */
-  private otherSubcommand(token: string, exactOnly: boolean): Subcommand | null {
+  private otherSubcommand(word: string, exactOnly: boolean): Subcommand | null {
     const inherited = this.inheritedSubcommands;
     for (let i = 0; i < inherited.length; i++) {
-      if (hasName(inherited[i].name, token)) {
+      if (hasName(inherited[i].name, word)) {
         return inherited[i];
       }
     }
     if (this.directives.subcommandsMatchUniquePrefix && !exactOnly) {
-      const matches = prefixMatches(this.command.subcommands ?? [], token);
+      const matches = prefixMatches(this.command.subcommands ?? [], word);
       if (matches.length === 1) {
         return matches[0];
       }
@@ -413,13 +413,13 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * It's a method of its own so that a cold parse of a line without one
    * doesn't compile it.
    */
-  private shortOptions(token: string): Extract<Token, { kind: "options" }> {
+  private shortOptions(word: string): Extract<Token, { kind: "options" }> {
     const separators = this.directives.optionArgSeparators;
-    // A single dash or plus option takes the rest of the token as its value
+    // A single dash or plus option takes the rest of the word as its value
     // if it takes arguments and the first character after it isn't an option.
-    const leadingChar = token[0];
+    const leadingChar = word[0];
     const dashOption = this.resolve(leadingChar);
-    if (dashOption?.args && !this.resolve(token.slice(0, 2))) {
+    if (dashOption?.args && !this.resolve(word.slice(0, 2))) {
       return {
         kind: "options",
         uses: [{ option: dashOption, name: leadingChar }],
@@ -427,26 +427,26 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       };
     }
     // Otherwise it's chained short options. An option that takes arguments
-    // takes the rest of the token as its value, after a separator if one
+    // takes the rest of the word as its value, after a separator if one
     // follows. So does an option without arguments that a separator follows,
     // so that `-v=1` fails like `--verbose=1`, unless the next character is
     // an option.
     const uses: { option: Option | null; name: string }[] = [];
-    for (let char = 1; char < token.length; char++) {
-      const name = leadingChar + token[char];
+    for (let char = 1; char < word.length; char++) {
+      const name = leadingChar + word[char];
       const option = this.resolve(name);
       uses.push({ option, name });
-      if (!option || char === token.length - 1) {
+      if (!option || char === word.length - 1) {
         continue;
       }
       let separator = "";
       for (let i = 0; i < separators.length; i++) {
-        if (token.startsWith(separators[i], char + 1)) {
+        if (word.startsWith(separators[i], char + 1)) {
           separator = separators[i];
           break;
         }
       }
-      if (option.args || (separator && !this.resolve(leadingChar + token[char + 1]))) {
+      if (option.args || (separator && !this.resolve(leadingChar + word[char + 1]))) {
         return {
           kind: "options",
           uses,
@@ -460,7 +460,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   /**
    * The options that can be used here, in definition order, each with the
    * forms of its live names: the names that still refer to it. Options with
-   * every name shadowed are left out. Where the next token can name a
+   * every name shadowed are left out. Where the next word can name a
    * subcommand, as `subcommands` says, a name that one matches is that
    * subcommand's.
    */
@@ -548,7 +548,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /*
    * How an option is written with its value, and how the parser splits a
-   * token into an option name and a value. Both use the option arg separators
+   * word into an option name and a value. Both use the option arg separators
    * in effect, so what help shows and completion offers is what the parser
    * reads, as long as every separator an option requires is one of them. The
    * spec checker reports one that isn't.
@@ -558,7 +558,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * What joins `option`, written as `name`, to its first value here. See
    * {@link OptionForm.join}. Help shows the forms, completion offers them,
    * and the spec checker reads each one back through the parser.
-   * {@link formStart} and {@link writeForm} turn a form into tokens.
+   * {@link formStart} and {@link writeForm} turn a form into words.
    */
   private join(option: Option, name: string): string | null {
     if (maxArgs(option.args) === 0) {
@@ -572,7 +572,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /**
    * The separator that must come between `option` and its value, or null if
-   * it can take a value as a separate token.
+   * it can take a value as a separate word.
    */
   requiredSeparator(option: Option): string | null {
     const required = option.requiresSeparator;
@@ -586,7 +586,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /**
    * Why `option`, used as `name`, can't take a value given after `separator`,
-   * or null if it can. A separate token has the separator "".
+   * or null if it can. A separate word has the separator "".
    */
   separatorProblem(option: Option, name: string, separator: string): string | null {
     const required = option.requiresSeparator;
@@ -681,15 +681,15 @@ export async function loadAll<C extends Spec | Subcommand>(
 
 /**
  * What a user types of `form` up to its first value: the name, and the join
- * too if the value goes in the same token.
+ * too if the value goes in the same word.
  */
 export function formStart(form: OptionForm): string {
   return form.join === null ? form.name : form.name + form.join;
 }
 
 /**
- * The tokens that write `form` with `values`. The first value goes in the
- * name's token if the form joins it, and the rest are tokens of their own.
+ * The words that write `form` with `values`. The first value goes in the
+ * name's word if the form joins it, and the rest are words of their own.
  */
 export function writeForm(form: OptionForm, values: readonly string[]): string[] {
   if (form.join === null || values.length === 0) {
@@ -722,28 +722,28 @@ function hasName(names: string | readonly string[], name: string): boolean {
 }
 
 /**
- * Why `token` names none of `subcommands`. `prefixOf` are the commands it's a
+ * Why `word` names none of `subcommands`. `prefixOf` are the commands it's a
  * prefix of a name of, where prefixes match. There is never exactly one of
- * them, since the token would name that one.
+ * them, since the word would name that one.
  */
 function unmatchedReason(
-  token: string,
+  word: string,
   prefixOf: readonly Subcommand[],
   subcommands: readonly LiveSubcommand[],
 ): { message: string; didYouMean?: DidYouMean } {
-  if (token === "") {
+  if (word === "") {
     return { message: emptyCommand };
   }
   if (prefixOf.length > 0) {
     const possible: string[] = [];
     for (const command of prefixOf) {
       for (const name of asArray(command.name)) {
-        if (name.startsWith(token)) {
+        if (name.startsWith(word)) {
           possible.push(name);
         }
       }
     }
-    return { message: ambiguousCommand(token, possible) };
+    return { message: ambiguousCommand(word, possible) };
   }
   const choices: (readonly string[])[] = [];
   for (const { command, names } of subcommands) {
@@ -751,15 +751,15 @@ function unmatchedReason(
       choices.push(names);
     }
   }
-  return { message: unknownCommand(token), didYouMean: { input: token, choices } };
+  return { message: unknownCommand(word), didYouMean: { input: word, choices } };
 }
 
-/** The visible commands that `token` is a prefix of a name of, each listed once. */
-function prefixMatches(subcommands: readonly Subcommand[], token: string): Subcommand[] {
-  if (token === "") {
+/** The visible commands that `word` is a prefix of a name of, each listed once. */
+function prefixMatches(subcommands: readonly Subcommand[], word: string): Subcommand[] {
+  if (word === "") {
     return [];
   }
   return subcommands.filter(
-    (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(token)),
+    (candidate) => !candidate.hidden && asArray(candidate.name).some((name) => name.startsWith(word)),
   );
 }

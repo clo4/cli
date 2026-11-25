@@ -35,7 +35,7 @@ export interface Given {
   end: number;
   /** The index of the token each typed value is in, from `start` on. */
   tokens: readonly number[];
-  /** Where a value attached to its option starts in its token. */
+  /** Where a value attached to its option starts in its word. */
   tokenStart?: number;
 }
 

@@ -216,7 +216,7 @@ test("complex: subcommandsMatchUniquePrefix dispatches on a unique prefix", asyn
   expect(unique.stdout).toBe("commit\n");
 });
 
-test("complex: optionsMustPrecedeArguments treats later option-like tokens as args", async () => {
+test("complex: optionsMustPrecedeArguments treats later option-like words as args", async () => {
   const spec: Spec = {
     name: "echo",
     parserDirectives: { optionsMustPrecedeArguments: true },

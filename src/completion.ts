@@ -365,7 +365,7 @@ export function script(spec: Spec, shell: Shell): string {
 
 /**
  * Hidden machine-facing subcommand the completion scripts call on every Tab.
- * The tokens after `--` are the command line; the last is the word being
+ * The words after `--` are the command line; the last is the word being
  * completed. Prints the lines {@link formatCandidates} makes for `--shell`.
  */
 const completeCommand: Subcommand = {
@@ -388,10 +388,10 @@ const completeCommand: Subcommand = {
     },
     {
       name: "--empty-word",
-      description: "The word being completed is empty, so every token is before it",
+      description: "The word being completed is empty, so every word is before it",
     },
   ],
-  args: { name: "tokens", isVariadic: true, isOptional: true },
+  args: { name: "words", isVariadic: true, isOptional: true },
   async action({ path, args, options }) {
     // Windows PowerShell drops an empty argument, so its script says the word
     // is empty with --empty-word instead of passing "".

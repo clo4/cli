@@ -37,47 +37,47 @@ export interface ParseResult {
 }
 
 /**
- * What the token after a command line can be, as the parser would read it.
+ * What the word after a command line can be, as the parser would read it.
  * The lists are functions, worked out the first time they're called, so a
  * completion that doesn't need one doesn't pay for it.
  */
 export interface NextToken {
-  /** What the line before the token gives a suggester. */
+  /** What the line before the word gives a suggester. */
   line: Omit<SuggestInit, "word">;
   /** The directives in effect. */
   directives: Readonly<Directives>;
-  /** Whether the token can be an option. */
+  /** Whether the word can be an option. */
   optionsAllowed: boolean;
   /**
-   * The subcommands the token can name, hidden ones included, each with the
+   * The subcommands the word can name, hidden ones included, each with the
    * names that still refer to it. While the open option can still take a
    * value, only an exact name matches.
    */
   subcommands(): readonly LiveSubcommand[];
   /**
-   * The options the token can use, hidden ones included, local options first.
-   * Empty when the token can't be an option.
+   * The options the word can use, hidden ones included, local options first.
+   * Empty when the word can't be an option.
    */
   options(): readonly UsableOption[];
-  /** The open option, if the token can be its value, and whether it must be. */
+  /** The open option, if the word can be its value, and whether it must be. */
   value: { option: Option; arg: Arg | undefined; required: boolean } | null;
-  /** The argument the token fills if it isn't an option, subcommand or value. */
+  /** The argument the word fills if it isn't an option, subcommand or value. */
   arg: Arg | undefined;
   /**
-   * The partial token, if the parser reads it as an option with a value
+   * The partial word, if the parser reads it as an option with a value
    * attached. `prefix` is everything before the value.
    */
   attached: { option: Option; arg: Arg; prefix: string; value: string } | null;
   /**
-   * Whether the parser reads the partial token as an option, known or
-   * unknown, or as `--`. If it doesn't, the token is a value, argument or
+   * Whether the parser reads the partial word as an option, known or
+   * unknown, or as `--`. If it doesn't, the word is a value, argument or
    * subcommand.
    */
   partialIsOption: boolean;
 }
 
 /**
- * An option the next token can use without going over its repeat limit or
+ * An option the next word can use without going over its repeat limit or
  * breaking an `exclusiveOn` rule.
  */
 export interface UsableOption {
@@ -141,8 +141,8 @@ function repeatLimit(option: Option): number {
 }
 
 /**
- * The last option used, which later tokens can be values of. `count` is how
- * many separate tokens it has taken as values, `min` how many it needs, and
+ * The last option used, which later words can be values of. `count` is how
+ * many separate words it has taken as values, `min` how many it needs, and
  * `separateMax` how many it can take.
  */
 interface OpenOption {
@@ -153,7 +153,7 @@ interface OpenOption {
   separateMax: number;
   /** The index of the option's token. */
   readonly token: number;
-  /** Where a value attached to the option's token starts, or -1. */
+  /** Where a value attached to the option's word starts, or -1. */
   attachedStart: number;
   /**
    * The option's values, attached ones included, until it ends and they're
@@ -387,15 +387,15 @@ export interface TokenReader {
   peek(word: string): Promise<Token>;
   /**
    * End the line, and resolve to what it was parsed as, like {@link parse}.
-   * Rejects with what {@link parse} would throw for the tokens read.
+   * Rejects with what {@link parse} would throw for the words read.
    */
   finish(): Promise<ParseResult>;
 }
 
 /**
- * The state of reading one command line, one token at a time. The scope says
- * what each token means at the current command, and this is the only code
- * that decides what the token is read as and keeps what that changes. A
+ * The state of reading one command line, one word at a time. The scope says
+ * what a name is at the current command, and this is the only code that
+ * decides the token each word is and keeps what that changes. A
  * read never throws: it skips whatever is invalid and keeps going, so
  * {@link readNext} can still read a line that's wrong at the moment. A
  * scanner that reports keeps the first problem it finds for {@link parse} to
@@ -423,22 +423,22 @@ class Scanner {
   private hasFoundArg = false;
   // The rules of the options used that have any, or null until one is used.
   private rules: UsedRules[] | null = null;
-  // Whether the next token can be an option. It can't after `--`, or after
+  // Whether the next word can be an option. It can't after `--`, or after
   // the first argument when the command's options must precede arguments.
   private optionsAllowed = true;
 
-  // The last option used. While it has room, a token that isn't an option or
+  // The last option used. While it has room, a word that isn't an option or
   // `--` becomes its value. A subcommand's exact name ends it unless a value
   // is required. `useOption` sets it, and `--` or a subcommand closes it.
   private open: OpenOption = noOpenOption;
 
-  // The first token that can't be read the way it's written, like an unknown
+  // The first word that can't be read the way it's written, like an unknown
   // option or a value an option doesn't take. `parse` stops there.
   problem: ParseError | null = null;
 
   // The load of the command just entered, if its `loadSpec` returned a
   // promise. Nothing can be read until it settles, so `settle` waits for it
-  // before the next token.
+  // before the next word.
   private pending: Promise<void> | null = null;
 
   // The first argument past the command's limit, and the first name of a
@@ -459,7 +459,7 @@ class Scanner {
 
   /**
    * Whether the scanner keeps the line's problems, to report them. A read that
-   * only asks what each token is, like completion's, doesn't describe them.
+   * only asks what each word is, like completion's, doesn't describe them.
    */
   private readonly reports: boolean;
 
@@ -470,13 +470,13 @@ class Scanner {
   }
 
   /**
-   * Read each of `tokens` in turn, waiting after each one for the command it
+   * Read each of `words` in turn, waiting after each one for the command it
    * entered to load. A scanner that reports throws the first problem as soon
    * as it's found.
    */
-  async readAll(tokens: readonly string[]): Promise<void> {
-    for (let i = 0; i < tokens.length; i++) {
-      this.read(tokens[i]);
+  async readAll(words: readonly string[]): Promise<void> {
+    for (let i = 0; i < words.length; i++) {
+      this.read(words[i]);
       if (this.problem) {
         throw this.problem;
       }
@@ -487,7 +487,7 @@ class Scanner {
   }
 
   /**
-   * Wait for the command the last token entered to load, so the next token
+   * Wait for the command the last word entered to load, so the next word
    * can be read. It's a method of its own so that a cold parse that waits for
    * nothing doesn't compile it.
    */
@@ -505,7 +505,7 @@ class Scanner {
 
   /**
    * Keep the problem `message` describes if it's the first and the scanner
-   * reports. It's in the token being read unless `token` says otherwise.
+   * reports. It's in the word being read unless `token` says otherwise.
    */
   private fail(message: string, token = this.at, start?: number): void {
     if (this.reports) {
@@ -526,7 +526,7 @@ class Scanner {
     }
   }
 
-  // Every token except an option's value, or an unknown option, ends the
+  // Every word except an option's value, or an unknown option, ends the
   // previous option. Then the defaults of the optional arguments that weren't
   // given are added, so a bare `--inspect` gets its port.
   private endOption(): void {
@@ -555,8 +555,8 @@ class Scanner {
    */
   private noteUse(values: string[], typedEnd: number): void {
     const { option, name, attachedStart, token, start } = this.open;
-    // A value attached to the option is in its token, and the rest each
-    // follow in a token of their own.
+    // A value attached to the option is in its word, and the rest each
+    // follow in a word of their own.
     const first = attachedStart === -1 ? token + 1 : token;
     const tokens: number[] = [];
     for (let i = start; i < typedEnd; i++) {
@@ -680,12 +680,12 @@ class Scanner {
   }
 
   /**
-   * Add the value attached to the open option's token after `separator`,
-   * starting at `start`. It's the option's only value, so no later token can
+   * Add the value attached to the open option's word after `separator`,
+   * starting at `start`. It's the option's only value, so no later word can
    * be one. The option accepts it if it takes values and `separator` is one
    * it can be written with. Otherwise the value is kept as a problem.
    */
-  private addAttachedValue(token: string, start: number, separator: string): void {
+  private addAttachedValue(word: string, start: number, separator: string): void {
     const open = this.open;
     const name = open.name;
     open.count += 1;
@@ -699,10 +699,10 @@ class Scanner {
     if (problem) {
       this.fail(problem);
     }
-    open.values.push(token.slice(start));
+    open.values.push(word.slice(start));
   }
 
-  /** Read `--`. Every token after it is an argument. */
+  /** Read `--`. Every word after it is an argument. */
   private argSeparator(): void {
     this.endOption();
     this.open = noOpenOption;
@@ -717,9 +717,9 @@ class Scanner {
   }
 
   /**
-   * How the next token can name a subcommand, its own or an inherited one, or
+   * How the next word can name a subcommand, its own or an inherited one, or
    * null if it can't. It can't once an argument is found, or while the open
-   * option needs the next token as its value. A required or variadic option
+   * option needs the next word as its value. A required or variadic option
    * value takes priority over a subcommand. A short optional value could be a
    * prefix of a subcommand's name, so only an exact name can end an option
    * that still has room.
@@ -746,7 +746,7 @@ class Scanner {
    */
   finish(): ParseResult | Promise<ParseResult> {
     // An option with an action, like --help, works however the rest of the
-    // command line is wrong, as long as every token could be read. So does the
+    // command line is wrong, as long as every word could be read. So does the
     // usage a command shows when no subcommand is named.
     const command = this.scope.command;
     const showsUsage = command.requiresSubcommand && !command.action && this.args.length === 0;
@@ -852,7 +852,7 @@ class Scanner {
     return false;
   }
 
-  /** The options the next token can use. See {@link NextToken.options}. */
+  /** The options the next word can use. See {@link NextToken.options}. */
   private usableOptions(): UsableOption[] {
     const used = usedKeys(this.seenOptions);
     const { local, persistent } = this.scope.live(this.subcommandMatching);
@@ -867,7 +867,7 @@ class Scanner {
   }
 
   /**
-   * What the next token can be, where `partial` is that token as typed so
+   * What the next word can be, where `partial` is that word as typed so
    * far. See {@link readNext}. It reads nothing, so the lists it gives are
    * worked out from the line as it stands when they're asked for.
    */
@@ -901,7 +901,7 @@ class Scanner {
       },
       directives: this.directives,
       optionsAllowed: this.optionsAllowed,
-      // Every token after `--` is an argument.
+      // Every word after `--` is an argument.
       subcommands: () =>
         (subcommands ??=
           this.argSeparatorIndex === -1 && this.subcommandMatching ? this.scope.subcommands() : []),
@@ -993,15 +993,15 @@ class Scanner {
     return token;
   }
 
-  /** Read `token` as an argument. */
-  private readArgument(token: string): void {
+  /** Read `word` as an argument. */
+  private readArgument(word: string): void {
     if (this.argSeparatorIndex === -1) {
-      // An argument before `--` stops later tokens from being subcommands.
-      // Where a subcommand could be, a token the command has no room for is
+      // An argument before `--` stops later words from being subcommands.
+      // Where a subcommand could be, a word the command has no room for is
       // a subcommand that didn't match.
       const subcommands = this.subcommandMatching;
       if (subcommands && this.args.length >= this.scope.argsLimit) {
-        this.failUnmatched(token, subcommands.exactOnly);
+        this.failUnmatched(word, subcommands.exactOnly);
       }
       this.hasFoundArg = true;
       // No subcommand follows an argument, so the directives can't change after this.
@@ -1011,21 +1011,21 @@ class Scanner {
     }
     this.endOption();
     if (this.args.length >= this.scope.argsLimit) {
-      this.failArgs(tooManyArguments(token));
+      this.failArgs(tooManyArguments(word));
     }
-    this.args.push(token);
+    this.args.push(word);
     this.argTokens.push(this.at);
   }
 
   /**
-   * Keep why `token` names no subcommand, if it's the first, the scanner
+   * Keep why `word` names no subcommand, if it's the first, the scanner
    * reports, and the current command has subcommands of its own or requires
    * one.
    */
-  private failUnmatched(token: string, exactOnly: boolean): void {
+  private failUnmatched(word: string, exactOnly: boolean): void {
     const command = this.scope.command;
     if (this.reports && !this.unmatched && (command.subcommands?.length || command.requiresSubcommand)) {
-      const { message, didYouMean } = this.scope.unmatched(token, exactOnly);
+      const { message, didYouMean } = this.scope.unmatched(word, exactOnly);
       this.unmatched = new ParseError(this.ctx(), message, didYouMean);
     }
   }
@@ -1055,8 +1055,8 @@ class Scanner {
 }
 
 /**
- * Start reading a command line for `spec`, to say what each token is read as
- * in turn. A token that's wrong doesn't stop it: it keeps reading, the way
+ * Start reading a command line for `spec`, to say what each word is read as
+ * in turn. A word that's wrong doesn't stop it: it keeps reading, the way
  * {@link readNext} does, and {@link TokenReader.finish} reports the problem.
  */
 export function tokenReader(spec: Spec): TokenReader {
@@ -1081,7 +1081,7 @@ export function tokenReader(spec: Spec): TokenReader {
 }
 
 /**
- * Work out what the token after `before` can be, and how the parser reads
+ * Work out what the word after `before` can be, and how the parser reads
  * `partial`: whether it's an option, and if so, whether it has a value
  * attached. Reads leniently, so a line that's wrong at the moment still has
  * an answer. Completion is built on this.
@@ -1094,7 +1094,7 @@ export async function readNext(spec: Spec, before: readonly string[], partial: s
 
 /**
  * Read `names` after the last command on `path` as names of subcommands, the
- * way the parser reads a token where no option can be. Each name that names
+ * way the parser reads a word where no option can be. Each name that names
  * a subcommand enters it, and the names end at the first one that doesn't.
  * That name is an error where the parser reports it as an unknown or
  * ambiguous command. Otherwise it's an argument, and the names after it are
@@ -1105,7 +1105,7 @@ export function readNames(path: CommandPath, names: readonly string[]): Promise<
 }
 
 /**
- * Parse the input tokens using the given CLI spec.
+ * Parse the input words using the given CLI spec.
  *
  * This resolves to a `ParseResult`, which contains the array of subcommands
  * used, the provided options, the arguments, and the action to run. If

@@ -39,8 +39,8 @@ class CommandVisit {
   constructor(
     /** The commands from the root to this one. */
     readonly path: [Subcommand, ...Subcommand[]],
-    /** The tokens that enter the path: a name the parser reads as each command after the root. */
-    readonly tokens: string[],
+    /** The words that enter the path: a name the parser reads as each command after the root. */
+    readonly words: string[],
     /**
      * Whether every command on the path is one of its parent's own
      * subcommands. Otherwise the path enters a persistent subcommand from
@@ -109,7 +109,7 @@ class CommandVisit {
  * The paths the spec checks follow through one spec, walked once for all the
  * checks of a run.
  *
- * The command scope says which subcommands the next token can name at each
+ * The command scope says which subcommands the next word can name at each
  * command, so a path can enter a persistent subcommand from below the command
  * that defines it.
  *
@@ -139,8 +139,8 @@ class SpecWalk {
       for (const { command, names } of visit.scope.subcommands()) {
         const isOwn = own.includes(command);
         if ((isOwn || visit.isDefinition) && !visit.path.includes(command)) {
-          const tokens = [...visit.tokens, names[0]];
-          walk(new CommandVisit([...visit.path, command], tokens, visit.isDefinition && isOwn, visit));
+          const words = [...visit.words, names[0]];
+          walk(new CommandVisit([...visit.path, command], words, visit.isDefinition && isOwn, visit));
         }
       }
     };
@@ -385,20 +385,20 @@ function everyValue(option: Option, value: string): string[] {
 async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
   const root = walk.spec as Spec;
   for (const { option, where, scope, forms, path, visit } of walk.optionUses) {
-    const before = visit.tokens;
+    const before = visit.words;
     const values = everyValue(option, visit.placeholder);
     for (const form of forms) {
-      const tokens = writeForm(form, values);
+      const words = writeForm(form, values);
       const reader = tokenReader(root);
-      for (const token of before) {
-        await reader.read(token);
+      for (const word of before) {
+        await reader.read(word);
       }
-      // A name joined to its value by a separator is a token by itself too.
+      // A name joined to its value by a separator is a word by itself too.
       const name = form.join ? await reader.peek(form.name) : null;
-      const first = await reader.read(tokens[0]);
-      // A name joined to its value with nothing between isn't a token by itself.
+      const first = await reader.read(words[0]);
+      // A name joined to its value with nothing between isn't a word by itself.
       if (form.join !== "") {
-        // Without a join, the first token is the name.
+        // Without a join, the first word is the name.
         const token = name ?? first;
         assert(
           readsAs(token, option),
@@ -416,14 +416,14 @@ async function assertOptionFormsReadBack(walk: SpecWalk): Promise<void> {
         const joined = first.kind === "options" && first.attached !== null;
         assert(
           readsAs(first, option) && joined,
-          `${written}, but the parser reads '${tokens[0]}' as ${describeToken(first, path)}${joined ? "" : " without a value"}`,
+          `${written}, but the parser reads '${words[0]}' as ${describeToken(first, path)}${joined ? "" : " without a value"}`,
         );
       }
-      for (let index = 1; index < tokens.length; index++) {
-        const token = await reader.read(tokens[index]);
+      for (let index = 1; index < words.length; index++) {
+        const token = await reader.read(words[index]);
         assert(
           token.kind === "value" && token.option === option,
-          `${written}, but in '${tokens.join(" ")}' the parser reads '${tokens[index]}' as ${describeToken(token, path)}`,
+          `${written}, but in '${words.join(" ")}' the parser reads '${words[index]}' as ${describeToken(token, path)}`,
         );
       }
     }
@@ -937,10 +937,10 @@ const specChecks: readonly SpecCheck[] = [
     name: "assertNamesReadBack",
     async check(walk) {
       const root = walk.spec as Spec;
-      for (const { path, scope, tokens: before } of walk.paths) {
+      for (const { path, scope, words: before } of walk.paths) {
         const reader = tokenReader(root);
-        for (const token of before) {
-          await reader.read(token);
+        for (const word of before) {
+          await reader.read(word);
         }
         // An inherited subcommand is checked by the names that still refer to it.
         for (const { command: subcommand, names } of scope.subcommands()) {

@@ -27,7 +27,7 @@ export interface Problem {
    * the command. Undefined for a problem in no token, like an invalid default.
    */
   token: number | undefined;
-  /** Where the value starts in the token, for a value attached to its option. */
+  /** Where the value starts in the word, for a value attached to its option. */
   start: number | undefined;
 }
 

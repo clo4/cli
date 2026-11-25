@@ -373,7 +373,7 @@ test("every problem with a readable command line is reported together", async ()
   }
 });
 
-test("a token the parser can't read is still reported alone", async () => {
+test("a word the parser can't read is still reported alone", async () => {
   let thrown: unknown;
   try {
     await parse(["http", "--nope", "-t", "maybe"], serve);

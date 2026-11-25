@@ -12,7 +12,7 @@ export interface ErrorContext {
    * invalid default.
    */
   token?: number;
-  /** Where the value starts in the token, for a value attached to its option. */
+  /** Where the value starts in the word, for a value attached to its option. */
   start?: number;
 }
 
@@ -47,7 +47,7 @@ export class ParseError {
 
 const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
 
-/** A token written like an option that names none here. */
+/** A word written like an option that names none here. */
 export function unknownOption(option: string, choices: readonly Choice[], context: ErrorContext): ParseError {
   return new ParseError(context, `${repr(option)} looks like a flag, but is unknown in this context`, {
     input: option,
@@ -100,10 +100,10 @@ export const incorrectSeparator = (required: string, separator: string) =>
 
 export const emptyCommand = "Expected a command, but the value was empty";
 
-export const ambiguousCommand = (token: string, names: readonly string[]) =>
-  `Ambiguous command '${token}', could be: ${names.join(", ")}`;
+export const ambiguousCommand = (word: string, names: readonly string[]) =>
+  `Ambiguous command '${word}', could be: ${names.join(", ")}`;
 
-export const unknownCommand = (token: string) => `Unknown command '${token}'`;
+export const unknownCommand = (word: string) => `Unknown command '${word}'`;
 
 /**
  * A value that its argument's parser rejected. `target` is what the value is
@@ -132,7 +132,7 @@ export function invalidValue(
 
 /**
  * The error for `problems`: the problem itself if there's one, or all of them
- * together. The parser stops at a token it can't read, and reports that alone.
+ * together. The parser stops at a word it can't read, and reports that alone.
  * Once it has read the whole line, what's missing and what an argument's
  * parser rejected don't depend on each other, so it reports all of it for the
  * user to fix in one go. `run` prints each message on a line of its own, then

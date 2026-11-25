@@ -572,7 +572,7 @@ test("runtime: required options are annotated", async () => {
   expect(first.description).toMatch(/\[required\]/);
 });
 
-test("runtime: optionsNeedDash hides options until the token starts with a dash", async () => {
+test("runtime: optionsNeedDash hides options until the word starts with a dash", async () => {
   // Ungated (default): options show on a bare token.
   expect(values(await resolve(fixture, ["build"], ""))).toContain("--out");
 
@@ -810,7 +810,7 @@ test("complete subcommand honors --gate-options", async () => {
   expectIncludes(ungated.stdout, "--out");
 });
 
-test("complete subcommand reads every token as before an empty word with --empty-word", async () => {
+test("complete subcommand reads every word as before an empty word with --empty-word", async () => {
   const result = await captureConsole(() =>
     run(fixture, ["completion", "complete", "--shell", "fish", "--empty-word", "--", "remote"]),
   );

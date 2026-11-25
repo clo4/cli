@@ -379,7 +379,7 @@ test("loadSpec: help for a path whose loadSpec gives a promise says it isn't loa
   expect(result.stderr).toContain("'sub' isn't loaded");
 });
 
-test("loadSpec: reading tokens one at a time waits for a loadSpec that gives a promise", async () => {
+test("loadSpec: reading words one at a time waits for a loadSpec that gives a promise", async () => {
   const spec: Spec = {
     name: "cli",
     subcommands: [
