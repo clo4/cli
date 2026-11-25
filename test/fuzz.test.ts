@@ -19,7 +19,7 @@ import { asArray } from "../src/util.js";
 import { TIMEOUT, caseNumbers, caseSeed, report } from "./fuzz/cases.js";
 import { OPTION_NAMES, generator, shrink } from "./fuzz/generate.js";
 import type { GenerateOptions } from "./fuzz/generate.js";
-import { attempt } from "./fuzz/snapshot.js";
+import { attempt, difference } from "./fuzz/snapshot.js";
 import { specCheckError } from "./helpers.js";
 
 vi.setConfig({ testTimeout: TIMEOUT });
@@ -174,6 +174,44 @@ test("readNext and parse keep their invariants on random specs", async () => {
     }
     const small = await shrink(spec, input, async (s, i) => (await violation(s, i)) !== null);
     expect.fail(report(n, small.spec, small.input, (await violation(small.spec, small.input)) ?? ""));
+  }
+});
+
+/** Parse `input` with a token reader, one token at a time. */
+async function readAndFinish(input: readonly string[], spec: Spec) {
+  const reader = tokenReader(spec);
+  for (const token of input) {
+    await reader.read(token);
+  }
+  return reader.finish();
+}
+
+/** Where a problem is, from the outcome of a parse that threw. */
+function where(outcome: Awaited<ReturnType<typeof attempt>>): string {
+  if (outcome.ok) {
+    return "";
+  }
+  const { problems, context } = outcome.error as unknown as ParseError;
+  return JSON.stringify((problems ?? [{ context }]).map((p) => [p.context.token, p.context.start]));
+}
+
+test("a token reader finishes the line the way parse does", async () => {
+  const property = async (spec: Spec, input: string[]) => {
+    const parsed = await attempt(parse, input, spec);
+    const read = await attempt(readAndFinish, input, spec);
+    return (
+      difference(parsed, read) ?? (where(parsed) === where(read) ? null : "problems are in other tokens")
+    );
+  };
+  for (const n of caseNumbers()) {
+    const gen = generator(caseSeed(n), shapes);
+    const spec = gen.spec();
+    const input = gen.input(spec);
+    if ((await property(spec, input)) === null) {
+      continue;
+    }
+    const small = await shrink(spec, input, async (s, i) => (await property(s, i)) !== null);
+    expect.fail(report(n, small.spec, small.input, (await property(small.spec, small.input)) ?? ""));
   }
 });
 

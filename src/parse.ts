@@ -414,6 +414,11 @@ export interface TokenReader {
   read(token: string): Promise<TokenReading>;
   /** Say what {@link read} would read `token` as, without reading it. */
   peek(token: string): Promise<TokenReading>;
+  /**
+   * End the line, and resolve to what it was parsed as, like {@link parse}.
+   * Rejects with what {@link parse} would throw for the tokens read.
+   */
+  finish(): Promise<ParseResult>;
 }
 
 /**
@@ -458,7 +463,7 @@ class Scanner {
 
   // The first token that can't be read the way it's written, like an unknown
   // option or a value an option doesn't take. `parse` stops there.
-  private problem: ParseError | null = null;
+  problem: ParseError | null = null;
 
   // The load of the command just entered, if its `loadSpec` returned a
   // promise. Nothing can be read until it settles, so `settle` waits for it
@@ -1121,10 +1126,11 @@ class Scanner {
 
 /**
  * Start reading a command line for `spec`, to say what each token is read as
- * in turn. Reads leniently, like {@link readNext}.
+ * in turn. A token that's wrong doesn't stop it: it keeps reading, the way
+ * {@link readNext} does, and {@link TokenReader.finish} reports the problem.
  */
 export function tokenReader(spec: Spec): TokenReader {
-  const s = new Scanner(spec, false);
+  const s = new Scanner(spec, true);
   return {
     async read(token) {
       await s.settle();
@@ -1135,6 +1141,13 @@ export function tokenReader(spec: Spec): TokenReader {
     async peek(token) {
       await s.settle();
       return s.peek(token);
+    },
+    async finish() {
+      await s.settle();
+      if (s.problem) {
+        throw s.problem;
+      }
+      return s.finish();
     },
   };
 }
