@@ -114,8 +114,11 @@ const unknownReading: TokenReading = Object.freeze({ kind: "unknown" });
 /** What {@link Scanner.classify} says a token is that's a value of the open option. */
 const valueMark = Object.freeze({ kind: "value" as const });
 
-/** What a token is that {@link CommandScope.meaning} doesn't decide. */
-type Classified = typeof separatorReading | typeof argumentReading | typeof valueMark;
+/**
+ * What {@link Scanner.classify} says a token is: what {@link CommandScope.meaning}
+ * decides, or else `--`, an argument, or a value of the open option.
+ */
+type Classified = TokenMeaning | typeof separatorReading | typeof argumentReading | typeof valueMark;
 
 /**
  * Where the value attached to the token `meaning` reads as options starts, if
@@ -132,9 +135,9 @@ function attachedAt(
   if (value === null) {
     return null;
   }
-  const { option, name } = meaning.uses[meaning.uses.length - 1];
-  return maxArgs(option!.args) > 0 && scope.separatorProblem(option!, name, value.separator) === null
-    ? { option: option!, start: value.start }
+  const { option, name, start, separator } = value;
+  return maxArgs(option.args) > 0 && scope.separatorProblem(option, name, separator) === null
+    ? { option, start }
     : null;
 }
 
@@ -158,7 +161,7 @@ function repeatLimit(option: Option): number {
  * `separateMax` how many it can take.
  */
 interface OpenOption {
-  readonly option: Option | null;
+  readonly option: Option;
   readonly name: string;
   count: number;
   min: number;
@@ -177,9 +180,12 @@ interface OpenOption {
   readonly start: number;
 }
 
-/** The state when no option is open. It's frozen because every scanner shares it. */
+/**
+ * The state when no option is open. It has no room for a value, so nothing
+ * reads its option. It's frozen because every scanner shares it.
+ */
 const noOpenOption: OpenOption = Object.freeze({
-  option: null,
+  option: Object.freeze({ name: "" }),
   name: "",
   count: 0,
   min: 0,
@@ -246,7 +252,8 @@ function checkOptionRules(
   problems: ParseError[] | null,
 ): ParseError[] | null {
   const used = usedKeys(seenOptions);
-  const isUsed = (name: RuleName) => name.option !== null && used.has(optionKey(name.option));
+  const isUsed = (name: RuleName): name is { name: string; option: Option } =>
+    name.option !== null && used.has(optionKey(name.option));
   for (const { option, token, needs } of rules) {
     for (const need of needs) {
       if (!isUsed(need)) {
@@ -258,7 +265,7 @@ function checkOptionRules(
   for (let i = 0; i < rules.length; i++) {
     const { option, token, excludes } = rules[i];
     for (const excluded of excludes) {
-      if (isUsed(excluded) && !excludedBefore(rules, i, excluded.option!)) {
+      if (isUsed(excluded) && !excludedBefore(rules, i, excluded.option)) {
         const message = `${asArray(option.name).join("/")} can't be used together with ${excluded.name}`;
         (problems ??= []).push(new ParseError(contextAt(path, token), message));
       }
@@ -545,7 +552,7 @@ class Scanner {
     const values = open.values;
     if (values) {
       open.values = null;
-      const args = open.option!.args;
+      const args = open.option.args;
       const typedEnd = values.length;
       const given = typedEnd - open.start;
       if (given < minArgs(args)) {
@@ -574,7 +581,7 @@ class Scanner {
       tokens.push(first + i - start);
     }
     (this.uses ??= []).push({
-      args: option!.args,
+      args: option.args,
       option: name,
       values,
       start,
@@ -592,7 +599,7 @@ class Scanner {
    */
   private failTooFewValues(): void {
     const { name, option, token } = this.open;
-    this.fail(tooFewOptionArguments(name, minArgs(option!.args), maxArgs(option!.args)), token);
+    this.fail(tooFewOptionArguments(name, minArgs(option.args), maxArgs(option.args)), token);
   }
 
   private useOption(option: Option, name: string): void {
@@ -705,7 +712,7 @@ class Scanner {
       this.fail(takesNoArguments(name), this.at, start);
       return;
     }
-    const problem = this.scope.separatorProblem(open.option!, name, separator);
+    const problem = this.scope.separatorProblem(open.option, name, separator);
     if (problem) {
       this.fail(problem);
     }
@@ -935,7 +942,7 @@ class Scanner {
    * open option, or an argument. It changes nothing, so {@link read} and
    * {@link peek} decide the same way.
    */
-  private classify(token: string): TokenMeaning | Classified {
+  private classify(token: string): Classified {
     // Every token after `--` is an argument.
     if (this.argSeparatorIndex !== -1) {
       return argumentReading;
@@ -965,17 +972,16 @@ class Scanner {
     const meaning = this.classify(token);
     if (meaning.kind === "options") {
       const used: Option[] = [];
-      const uses = meaning.uses;
-      for (let i = 0; i < uses.length; i++) {
-        if (uses[i].option) {
-          used.push(uses[i].option!);
+      for (const { option } of meaning.uses) {
+        if (option) {
+          used.push(option);
         }
       }
       return used.length === 0
         ? unknownReading
         : { kind: "options", options: used, attached: attachedAt(meaning, this.scope) };
     }
-    return meaning.kind === "value" ? { kind: "value", option: this.open.option! } : meaning;
+    return meaning.kind === "value" ? { kind: "value", option: this.open.option } : meaning;
   }
 
   /**
@@ -983,7 +989,7 @@ class Scanner {
    * names is loaded; {@link settle} before the next token. {@link peek} says
    * more about the token, without reading it.
    */
-  read(token: string): TokenMeaning | Classified {
+  read(token: string): Classified {
     this.at++;
     const meaning = this.classify(token);
     const kind = meaning.kind;

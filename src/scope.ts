@@ -39,10 +39,10 @@ export type TokenMeaning =
       /** Each name the token uses, in order. */
       uses: OptionUse[];
       /**
-       * Where the value attached to the last option starts, and the separator
-       * before it, which is "" if there's none.
+       * The last option, if the token has a value attached to it: where the
+       * value starts, and the separator before it, which is "" if there's none.
        */
-      attached: { start: number; separator: string } | null;
+      attached: { option: Option; name: string; start: number; separator: string } | null;
     };
 
 /** A name a token uses, and the option it refers to, or null if none. */
@@ -389,7 +389,8 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     if (!option && noncompliant) {
       return null;
     }
-    const attached = option && separator ? { start: index + separator.length, separator } : null;
+    const attached =
+      option && separator ? { option, name, start: index + separator.length, separator } : null;
     return { kind: "options", uses: [{ option, name }], attached };
   }
 
@@ -430,7 +431,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
       return {
         kind: "options",
         uses: [{ option: dashOption, name: leadingChar }],
-        attached: { start: 1, separator: "" },
+        attached: { option: dashOption, name: leadingChar, start: 1, separator: "" },
       };
     }
     // Otherwise it's chained short options. An option that takes arguments
@@ -454,7 +455,11 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
         }
       }
       if (option.args || (separator && !this.resolve(leadingChar + token[char + 1]))) {
-        return { kind: "options", uses, attached: { start: char + separator.length + 1, separator } };
+        return {
+          kind: "options",
+          uses,
+          attached: { option, name, start: char + separator.length + 1, separator },
+        };
       }
     }
     return { kind: "options", uses, attached: null };
