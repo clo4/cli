@@ -301,9 +301,7 @@ function checkRequiredOptions(
 ): ParseError[] | null {
   // Checking local options first reports a missing local option before a
   // missing persistent one.
-  const { local, persistent } = scope;
-  for (let i = 0; i < local.length + persistent.length; i++) {
-    const option = i < local.length ? local[i] : persistent[i - local.length];
+  for (const option of [...scope.local, ...scope.persistent]) {
     if (!option.isRequired) {
       continue;
     }
@@ -315,7 +313,7 @@ function checkRequiredOptions(
       }
     }
     if (missing !== undefined) {
-      const definedAt = i < local.length ? path.length - 1 : definerIndex(path, option);
+      const definedAt = option.isPersistent ? definerIndex(path, option) : path.length - 1;
       (problems ??= []).push(new ParseError(contextAt(path, entered[definedAt]), missingOption(missing)));
     }
   }
@@ -813,9 +811,7 @@ class Scanner {
     const unused: Option[] = [];
     if (this.scope.hasParse) {
       const used = usedKeys(this.seenOptions);
-      const { local, persistent } = this.scope;
-      for (let i = 0; i < local.length + persistent.length; i++) {
-        const option = i < local.length ? local[i] : persistent[i - local.length];
+      for (const option of [...this.scope.local, ...this.scope.persistent]) {
         if (hasParse(option.args) && !used.has(optionKey(option))) {
           unused.push(option);
         }

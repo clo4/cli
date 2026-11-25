@@ -308,9 +308,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * name.
    */
   withRef(ref: string): Option | null {
-    const { local, persistent } = this;
-    for (let i = 0; i < local.length + persistent.length; i++) {
-      const option = i < local.length ? local[i] : persistent[i - local.length];
+    for (const option of [...this.local, ...this.persistent]) {
       if (option.ref === ref) {
         return option;
       }
@@ -485,13 +483,8 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   suggestionNames(): string[][] {
     const { local, persistent } = this.liveOptions(null, false);
     const names: string[][] = [];
-    for (let i = 0; i < local.length + persistent.length; i++) {
-      const { forms } = i < local.length ? local[i] : persistent[i - local.length];
-      const each: string[] = [];
-      for (let j = 0; j < forms.length; j++) {
-        each.push(forms[j].name);
-      }
-      names.push(each);
+    for (const { forms } of [...local, ...persistent]) {
+      names.push(forms.map((form) => form.name));
     }
     return names;
   }
@@ -513,8 +506,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     // Which option each name refers to, built in one pass so the later and the
     // local options overwrite the ones they shadow. Same answer as `resolve`.
     const owner = new Map<string, Option>();
-    for (let i = 0; i < persistent.length + local.length; i++) {
-      const option = i < persistent.length ? persistent[i] : local[i - persistent.length];
+    for (const option of [...persistent, ...local]) {
       const names = asArray(option.name);
       for (let j = 0; j < names.length; j++) {
         owner.set(names[j], option);
