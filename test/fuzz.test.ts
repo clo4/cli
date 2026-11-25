@@ -58,7 +58,7 @@ function expectedDirectives(path: readonly (Spec | Subcommand)[]): Directives {
  * after the spec is a subcommand of the one before it, or a persistent
  * subcommand of a command further up. A persistent subcommand entered from
  * below its parent, or a hidden one, only matches its exact name, so one of
- * its names is an input token.
+ * its names is an input word.
  */
 function invalidPath(
   path: readonly (Spec | Subcommand)[],
@@ -86,7 +86,7 @@ function invalidPath(
   return null;
 }
 
-/** The names of every option the lenient read uses, token by token. */
+/** The names of every option the lenient read uses, word by word. */
 async function usedNames(spec: Spec, input: readonly string[]): Promise<Set<string>> {
   const names = new Set<string>();
   const reader = tokenReader(spec);
@@ -128,12 +128,12 @@ async function violation(spec: Spec, input: string[]): Promise<string | null> {
   const strict = await attempt(parse, input, spec);
   if (strict.ok) {
     const result = strict.result;
-    // Every argument is a whole input token, in order.
+    // Every argument is a whole input word, in order.
     let from = 0;
     for (const arg of result.args) {
       const at = input.indexOf(arg as string, from);
       if (at === -1) {
-        return `argument ${JSON.stringify(arg)} isn't an input token after index ${from}`;
+        return `argument ${JSON.stringify(arg)} isn't an input word after index ${from}`;
       }
       from = at + 1;
     }
@@ -177,11 +177,11 @@ test("readNext and parse keep their invariants on random specs", async () => {
   }
 });
 
-/** Parse `input` with a token reader, one token at a time. */
+/** Parse `input` with a token reader, one word at a time. */
 async function readAndFinish(input: readonly string[], spec: Spec) {
   const reader = tokenReader(spec);
-  for (const token of input) {
-    await reader.read(token);
+  for (const word of input) {
+    await reader.read(word);
   }
   return reader.finish();
 }
@@ -433,21 +433,21 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
       if (!offered.has(name)) {
         continue;
       }
-      const reading = await readToken(spec, before, name);
-      if (reading.kind !== "subcommand" || reading.command !== command) {
+      const token = await readToken(spec, before, name);
+      if (token.kind !== "subcommand" || token.command !== command) {
         return `subcommand ${JSON.stringify(name)} is offered, but isn't read as that subcommand`;
       }
     }
   }
   for (const { option, forms } of next.options()) {
     for (const form of forms) {
-      const token = formStart(form);
-      if (!offered.has(token)) {
+      const word = formStart(form);
+      if (!offered.has(word)) {
         continue;
       }
-      const read = await readToken(spec, before, token);
+      const read = await readToken(spec, before, word);
       if (read.kind !== "options" || read.uses.length !== 1 || read.uses[0].option !== option) {
-        return `option ${JSON.stringify(token)} is offered, but isn't read as that option`;
+        return `option ${JSON.stringify(word)} is offered, but isn't read as that option`;
       }
     }
   }
@@ -458,16 +458,16 @@ async function offeredButMisread(spec: Spec, before: string[]): Promise<string |
 async function enteredButNotListed(spec: Spec, input: readonly string[]): Promise<string | null> {
   for (let i = 0; i < input.length; i++) {
     const before = input.slice(0, i);
-    const token = input[i];
-    const reading = await readToken(spec, before, token);
-    if (reading.kind !== "subcommand" || !asArray(reading.command.name).includes(token)) {
+    const word = input[i];
+    const token = await readToken(spec, before, word);
+    if (token.kind !== "subcommand" || !asArray(token.command.name).includes(word)) {
       continue;
     }
     const listed = (await readNext(spec, before, ""))
       .subcommands()
-      .some(({ command, names }) => command === reading.command && names.includes(token));
+      .some(({ command, names }) => command === token.command && names.includes(word));
     if (!listed) {
-      return `token ${i}, ${JSON.stringify(token)}, enters a subcommand that readNext doesn't list by that name`;
+      return `word ${i}, ${JSON.stringify(word)}, enters a subcommand that readNext doesn't list by that name`;
     }
   }
   return null;

@@ -70,7 +70,7 @@ const SUBCOMMAND_NAMES = [
 ];
 const SEPARATORS = ["=", ":", "==", ["=", ":"], [":", "="], ["=", "=="], ["==", "="], []] as const;
 const VALUES = ["1", "", "a=b", "-a", "b"];
-const LOOSE_TOKENS = [
+const LOOSE_WORDS = [
   "--",
   "",
   "-",
@@ -344,7 +344,7 @@ export function generator(seed: number, options: GenerateOptions = {}) {
     };
     collect(s);
 
-    const token = (): string => {
+    const word = (): string => {
       if (r.chance(0.5) && (optionNames.length || subcommandNames.length)) {
         const kind = r.int(6);
         if (subcommandNames.length && kind < 2) {
@@ -363,7 +363,7 @@ export function generator(seed: number, options: GenerateOptions = {}) {
       }
       const kind = r.int(10);
       if (kind < 3) {
-        return r.pick(LOOSE_TOKENS);
+        return r.pick(LOOSE_WORDS);
       }
       if (kind < 5) {
         return r.pick(SUBCOMMAND_NAMES);
@@ -382,8 +382,8 @@ export function generator(seed: number, options: GenerateOptions = {}) {
       return r.pick(["-", "+"]) + Array.from({ length: 1 + r.int(3) }, () => r.pick(chars)).join("");
     };
 
-    const tokens = Array.from({ length: r.int(7) }, token);
-    return options.persistentSubcommands && kinds.chance(WALK_RATE) ? [...walk(s), ...tokens] : tokens;
+    const words = Array.from({ length: r.int(7) }, word);
+    return options.persistentSubcommands && kinds.chance(WALK_RATE) ? [...walk(s), ...words] : words;
   };
 
   return { spec, input, random: r };

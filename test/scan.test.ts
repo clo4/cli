@@ -8,7 +8,7 @@ import { map, readToken } from "./helpers.js";
 const unknownOption = /looks like a flag, but is unknown/;
 const takesNoArguments = /doesn't take arguments/;
 
-// How each input token is classified, checked through the result of `parse`.
+// The token each input word is, checked through the result of `parse`.
 
 test("scan: empty", async () => {
   expect((await parse([], { name: "test" })).args).toEqual([]);

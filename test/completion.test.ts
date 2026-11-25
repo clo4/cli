@@ -573,16 +573,16 @@ test("runtime: required options are annotated", async () => {
 });
 
 test("runtime: optionsNeedDash hides options until the word starts with a dash", async () => {
-  // Ungated (default): options show on a bare token.
+  // Ungated (default): options show on a bare word.
   expect(values(await resolve(fixture, ["build"], ""))).toContain("--out");
 
-  // Gated + bare token: subcommands/positionals only, no options.
+  // Gated + bare word: subcommands/positionals only, no options.
   const bare = values(await resolve(fixture, ["build"], "", true));
   expect(bare).not.toContain("--out");
   expect(bare).not.toContain("--help");
   expect(bare).toContain("package.json"); // positional template still completes
 
-  // Gated + dashed token: options only.
+  // Gated + dashed word: options only.
   const dashed = values(await resolve(fixture, ["build"], "-", true));
   expect(dashed).toContain("--out");
   expect(dashed).toContain("--help");

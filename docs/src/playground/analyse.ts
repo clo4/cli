@@ -1,6 +1,6 @@
 import * as CLI from "@clo4/cli";
 import type { Spec } from "@clo4/cli";
-import { analyze, type ParseResult, type Token as CliToken } from "@clo4/cli/analyze";
+import * as Analyze from "@clo4/cli/analyze";
 import type { Piece } from "./tree";
 import { words, type Word } from "./words";
 
@@ -36,7 +36,7 @@ export interface Printed {
   text: string;
 }
 
-export type { ParseResult };
+export type ParseResult = Analyze.ParseResult;
 
 export interface Analysis {
   tokens: Token[];
@@ -76,7 +76,7 @@ export async function analyse(
   program.pieces = [spec];
 
   const argv = rest.map((token) => token.text);
-  const { tokens: read, problems: found, result } = await analyze(spec, argv);
+  const { tokens: read, problems: found, result } = await Analyze.analyze(spec, argv);
   read.forEach((token, i) => {
     rest[i].kind = kindOf(token);
     rest[i].pieces = pieces(token);
@@ -88,7 +88,7 @@ export async function analyse(
 }
 
 /** What a word read as `token` is. Options where no name refers to an option are unknown. */
-function kindOf(token: CliToken): Kind {
+function kindOf(token: Analyze.Token): Kind {
   if (token.kind !== "options") {
     return token.kind;
   }
@@ -96,7 +96,7 @@ function kindOf(token: CliToken): Kind {
 }
 
 /** The pieces of the spec a word read as `token` is. */
-function pieces(token: CliToken): Piece[] {
+function pieces(token: Analyze.Token): Piece[] {
   switch (token.kind) {
     case "subcommand":
       return [token.command];
