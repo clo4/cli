@@ -46,6 +46,10 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Label**: A name that `as` gives a parser. A pattern shows it in the parser's place, like `<width>x<height>`.
 
+**Reading**: What the parser reads one token as: a subcommand, one or more options, a value of the open option, an argument, `--`, or an option that doesn't exist. A value or argument's reading says which argument it's for. _Avoid_: token kind
+
+**Analysis**: How a spec reads a whole command line: each token's reading, every problem and the token it's in, and what the action gets. `analyze` gives it, from `@clo4/cli/analyze`.
+
 **Completion**: A value the word being typed can become, as the parser reads the line before it. `complete` gives them, and each shell's completion script is an adapter of it. _Avoid_: candidate (outside the shell adapters)
 
 **Suggestion**: A value an argument offers for completion, as a spec author writes it: in `suggestions`, or returned by a suggester. A suggestion is one source of a completion.
