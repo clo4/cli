@@ -308,7 +308,7 @@ function checkRequiredOptions(
 ): ParseError[] | null {
   // Checking local options first reports a missing local option before a
   // missing persistent one.
-  for (const option of [...scope.local, ...scope.persistent]) {
+  for (const option of scope.local.concat(scope.persistent)) {
     if (!option.isRequired) {
       continue;
     }
@@ -818,7 +818,7 @@ class Scanner {
     const unused: Option[] = [];
     if (this.scope.hasParse) {
       const used = usedKeys(this.seenOptions);
-      for (const option of [...this.scope.local, ...this.scope.persistent]) {
+      for (const option of this.scope.local.concat(this.scope.persistent)) {
         if (hasParse(option.args) && !used.has(optionKey(option))) {
           unused.push(option);
         }
@@ -874,7 +874,7 @@ class Scanner {
     const used = usedKeys(this.seenOptions);
     const { local, persistent } = this.scope.live(this.subcommandMatching);
     const usable: UsableOption[] = [];
-    for (const { option, forms } of [...local, ...persistent]) {
+    for (const { option, forms } of local.concat(persistent)) {
       if (this.conflicts(option, used)) {
         continue;
       }

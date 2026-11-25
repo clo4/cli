@@ -308,7 +308,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * name.
    */
   withRef(ref: string): Option | null {
-    for (const option of [...this.local, ...this.persistent]) {
+    for (const option of this.local.concat(this.persistent)) {
       if (option.ref === ref) {
         return option;
       }
@@ -488,7 +488,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   suggestionNames(): string[][] {
     const { local, persistent } = this.liveOptions(null, false);
     const names: string[][] = [];
-    for (const { forms } of [...local, ...persistent]) {
+    for (const { forms } of local.concat(persistent)) {
       names.push(forms.map((form) => form.name));
     }
     return names;
@@ -511,7 +511,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     // Which option each name refers to, built in one pass so the later and the
     // local options overwrite the ones they shadow. Same answer as `resolve`.
     const owner = new Map<string, Option>();
-    for (const option of [...persistent, ...local]) {
+    for (const option of persistent.concat(local)) {
       const names = asArray(option.name);
       for (let j = 0; j < names.length; j++) {
         owner.set(names[j], option);
