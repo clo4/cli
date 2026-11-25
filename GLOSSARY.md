@@ -36,13 +36,11 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Parser description**: What an argument's parser says about the values it takes: the strings it lists, the range of numbers it takes, what help shows, and what completion offers. A built-in parser describes itself, and another Standard Schema is described by the JSON Schema it gives.
 
-**Built-in parser**: A `Parser` object, which is what `number`, `choice`, `seq` and the other parser functions return.
+**Built-in parser**: A `Parser` object, which is what `number`, `choice`, `seq` and the other parser functions return. Each kind, such as a number, a choice or a `seq`, is a subclass of `Parser` that reads the value and describes the parser.
 
 **Command-line parser**: The part of the library that reads the command line against the spec. "The parser" on its own means this one. Where a sentence mentions an argument's parser too, it's written out in full.
 
 **Part**: A piece of a parser: a string that must appear exactly as written, or another parser.
-
-**Atom**: The kind of a parser, such as a number, a choice or a `seq`. It reads the value and describes the parser.
 
 **Pattern**: A parser as help shows it, like `<integer>(s|m|h|d)`.
 

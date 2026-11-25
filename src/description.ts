@@ -5,7 +5,7 @@
  * Completion also asks {@link parserCompletions} what a partly typed value
  * could become, which only completion needs.
  *
- * A built-in parser describes itself from its atom. Any other Standard
+ * A built-in parser describes itself. Any other Standard
  * Schema is described by the JSON Schema it gives, if it gives one.
  *
  * @module
@@ -59,8 +59,8 @@ export function describeParser(arg: Arg): ParserDescription | undefined {
 }
 
 /**
- * A built-in parser, which describes itself from its atom: as the JSON Schema
- * the atom gives, with what JSON Schema has no words for added.
+ * A built-in parser, which describes itself: as the JSON Schema it gives,
+ * with what JSON Schema has no words for added.
  */
 function builtIn(parser: Parser<unknown>): ParserDescription {
   const described = standard(schemaOf(parser));

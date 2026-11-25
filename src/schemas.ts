@@ -1,9 +1,10 @@
 /**
- * `number` and `choice`, and the {@link Parser} class they return.
+ * `number` and `choice`, and the {@link Parser} class every built-in parser
+ * extends.
  *
- * A {@link Parser} holds an {@link Atom} and what the atom reads. Help shows
- * it as a pattern, and completion offers the text that can come next.
- * `./combinators.js` has the functions that combine them, like `seq`.
+ * A parser reads a value and describes itself: help shows it as a pattern,
+ * and completion offers the text that can come next. `./combinators.js` has
+ * the functions that combine them, like `seq`.
  *
  * @module
  */
@@ -11,37 +12,27 @@
 import type { StandardResult } from "./types.js";
 
 /**
- * One reading of a value. An atom leaves the value it read in `out`. `want`
- * is everything that was expected at `far`, the furthest place an atom
+ * What a reading wanted at a place in the value: a string as written, one of
+ * a choice's values, a value a parser describes, something in words, or a
+ * complaint about text that was read, like a number too large to give.
+ */
+export type Want =
+  | { readonly kind: "text"; readonly text: string }
+  | { readonly kind: "choice"; readonly values: readonly Part[] }
+  | { readonly kind: "parser"; readonly parser: Parser<unknown> }
+  | { readonly kind: "words"; readonly words: string }
+  | { readonly kind: "problem"; readonly problem: string; readonly text: string };
+
+/**
+ * One reading of a value. A parser leaves the value it read in `out`. `want`
+ * is everything that was wanted at `far`, the furthest place a parser
  * failed. Each reading gets a state of its own, so a parser made by one copy
  * of this library can read with a part made by another.
  */
 export interface State {
   out: unknown;
   far: number;
-  want: unknown[] | undefined;
-}
-
-/** One kind of parser. A parser's `atom` reads the value and describes the parser. */
-export interface Atom {
-  /**
-   * Read `input` from `start` for the parser `self`. Returns where it
-   * stopped, or -1, and leaves its value in `state.out`.
-   */
-  run(self: Parser<any>, input: string, start: number, state: State): number;
-  /** The parser as help shows it, like `<int>` or `(s|m|h|d)`. */
-  pattern(self: Parser<any>): string;
-  /**
-   * What the parser takes as JSON Schema, if JSON Schema has words for it.
-   * A message says what a number or a choice of strings expects from this.
-   */
-  schema?(self: Parser<any>): Record<string, unknown> | undefined;
-  /** Each value the parser accepts, for a parser that help shows as a list of them. */
-  list?(self: Parser<any>): string[] | undefined;
-  /** The strings the parser lists among its values, as the user types them. */
-  choices?(self: Parser<any>): string[] | undefined;
-  /** Whether the value can leave the part out. Help shows its label in brackets, like `[<to>]`. */
-  optional?: boolean;
+  want: Want[] | undefined;
 }
 
 /** A piece of a parser: a string that must appear exactly as written, or another parser. */
@@ -50,18 +41,13 @@ export type Part = string | Parser<unknown>;
 /** What a part gives: a string gives itself, and a parser gives its value. */
 export type ValueOf<P> = P extends string ? P : P extends Parser<infer T> ? T : never;
 
-/**
- * Note that `what` was expected at `at`, and return -1 for the atom to
- * return. `what` is a string that has to be there as written, the values of
- * a choice, a parser, or an object with the words as its `label`. An object
- * with a `problem` is a complaint about text that was read. See {@link tooBig}.
- */
-export function fail(state: State, at: number, what: unknown): -1 {
+/** Note that `want` was wanted at `at`, and return -1 for the parser to return. */
+export function fail(state: State, at: number, want: Want): -1 {
   if (at > state.far) {
     state.far = at;
-    state.want = [what];
+    state.want = [want];
   } else if (at === state.far) {
-    state.want!.push(what);
+    state.want!.push(want);
   }
   return -1;
 }
@@ -95,22 +81,24 @@ function wordsOf(parser: Parser<unknown>): string | undefined {
   return `${schema.type === "integer" ? "an integer" : "a number"}${describeRange("", bounds)}`;
 }
 
-/** Something that was expected, in words for a message. */
-function expected(what: unknown): string {
-  if (typeof what === "string") {
-    return JSON.stringify(what);
+/** What was wanted, in words for a message. A complaint isn't something wanted, and says "". */
+function wanted(want: Want): string {
+  switch (want.kind) {
+    case "text":
+      return JSON.stringify(want.text);
+    case "choice":
+      // A parser among a choice's values has said what it wanted itself.
+      return want.values
+        .filter((value) => typeof value === "string")
+        .map(describeChoice)
+        .join(" | ");
+    case "parser":
+      return wordsOf(want.parser) ?? patternOf(want.parser);
+    case "words":
+      return want.words;
+    case "problem":
+      return "";
   }
-  if (Array.isArray(what)) {
-    // A parser among a choice's values has said what it expected itself.
-    return what
-      .filter((value) => typeof value === "string")
-      .map(describeChoice)
-      .join(" | ");
-  }
-  if (isParser(what)) {
-    return wordsOf(what) ?? patternOf(what);
-  }
-  return (what as { label: string }).label;
 }
 
 /**
@@ -118,7 +106,7 @@ function expected(what: unknown): string {
  * reading all of it. It's a function of its own so that a value the parser
  * accepts never compiles it.
  */
-function explain(self: Parser<any>, state: State, input: unknown, end: number): StandardResult<never> {
+function explain(self: Parser<unknown>, state: State, input: unknown, end: number): StandardResult<never> {
   if (typeof input !== "string") {
     return { issues: [{ message: "expected a string" }] };
   }
@@ -131,13 +119,14 @@ function explain(self: Parser<any>, state: State, input: unknown, end: number): 
     message = words === undefined ? `unexpected ${JSON.stringify(input.slice(end))}` : `expected ${words}`;
   } else {
     const wants: string[] = [];
-    for (const what of state.want ?? []) {
-      // A number that was read and can't be given says so in place of what was expected.
-      const { problem, text } = what as { problem?: string; text?: string };
-      if (problem !== undefined) {
-        return { issues: [{ message: text === input ? problem : `${text} is ${problem}` }] };
+    for (const want of state.want ?? []) {
+      // A number that was read and can't be given says so in place of what was wanted.
+      if (want.kind === "problem") {
+        return {
+          issues: [{ message: want.text === input ? want.problem : `${want.text} is ${want.problem}` }],
+        };
       }
-      const words = expected(what);
+      const words = wanted(want);
       if (words !== "" && !wants.includes(words)) {
         wants.push(words);
       }
@@ -160,22 +149,41 @@ function explain(self: Parser<any>, state: State, input: unknown, end: number): 
  * @typeParam T - What the parser gives.
  * @typeParam L - The label `as` gave the parser. Inferred, so do not supply it explicitly.
  */
-export class Parser<T, L extends string | undefined = string | undefined> {
-  /** How the parser reads a value. */
-  declare readonly atom: Atom;
-  /** What the atom reads, such as a choice's values, a `seq`'s parts or the parser that `map` wraps. */
-  declare readonly of: any;
-  /** What else the atom needs, like the function of a `map`. */
-  declare readonly fn: any;
+export abstract class Parser<T, L extends string | undefined = string | undefined> {
   /** The name `as` gave the parser. */
-  declare readonly label: L;
+  readonly label: L;
   declare readonly types?: { readonly input: string; readonly output: T } | undefined;
 
-  constructor(atom: Atom, of?: unknown, fn?: unknown, label?: L) {
-    this.atom = atom;
-    this.of = of;
-    this.fn = fn;
+  constructor(label?: L) {
     this.label = label as L;
+  }
+
+  /** Read `input` from `start`. Returns where it stopped, or -1, and leaves its value in `state.out`. */
+  abstract read(input: string, start: number, state: State): number;
+
+  /** The parser as help shows it without its label, like `<int>` or `(s|m|h|d)`. */
+  abstract pattern(): string;
+
+  /**
+   * What the parser takes as JSON Schema, if JSON Schema has words for it.
+   * A message says what a number or a choice of strings expects from this.
+   */
+  schema?(): Record<string, unknown> | undefined;
+
+  /** Each value the parser accepts, for a parser that help shows as a list of them. */
+  list?(): string[] | undefined;
+
+  /** The strings the parser lists among its values, as the user types them. */
+  choices?(): string[] | undefined;
+
+  /** The parser without the `map`s around it, which describes it. See {@link bare}. */
+  bare(): Parser<unknown> {
+    return this;
+  }
+
+  /** Whether a value can leave the parser's part out. Help shows its label in brackets, like `[<to>]`. */
+  get optional(): boolean {
+    return false;
   }
 
   /**
@@ -184,7 +192,19 @@ export class Parser<T, L extends string | undefined = string | undefined> {
    * an object in place of the tuple. The new parser keeps the label.
    */
   map<U>(fn: (value: T) => U): Parser<U, L> {
-    return new Parser(mapAtom, this, fn, this.label);
+    // The new parser is this one with the value passed through `fn`, so it
+    // describes itself as this one does. It isn't a subclass, because a
+    // bundler keeps a class that a method of the class it extends refers to.
+    const mapped: Parser<U, L> = Object.create(this);
+    mapped.read = (input, start, state) => {
+      const end = this.read(input, start, state);
+      if (end >= 0) {
+        state.out = fn(state.out as T);
+      }
+      return end;
+    };
+    mapped.bare = () => this.bare();
+    return mapped;
   }
 
   /**
@@ -194,7 +214,7 @@ export class Parser<T, L extends string | undefined = string | undefined> {
    * in `asObject`.
    */
   as<const Label extends string>(label: Label): Parser<T, Label> {
-    return new Parser(this.atom, this.of, this.fn, label);
+    return Object.assign(Object.create(Object.getPrototypeOf(this)), this, { label });
   }
 
   /** Returns the parser itself, so reading this allocates nothing. */
@@ -205,7 +225,7 @@ export class Parser<T, L extends string | undefined = string | undefined> {
   /** Gives the value, or what was expected as `issues`. */
   validate(input: unknown): StandardResult<T> {
     const state: State = { out: undefined, far: -1, want: undefined };
-    const end = typeof input === "string" ? this.atom.run(this, input, 0, state) : -1;
+    const end = typeof input === "string" ? this.read(input, 0, state) : -1;
     return end === (input as string).length ? { value: state.out as T } : explain(this, state, input, end);
   }
 
@@ -231,19 +251,20 @@ export class Parser<T, L extends string | undefined = string | undefined> {
 
 /** Whether `value` is a {@link Parser}, from this copy of the library or another. */
 export function isParser(value: unknown): value is Parser<unknown> {
-  return typeof (value as Parser<unknown> | undefined)?.atom?.run === "function";
+  const parser = value as Parser<unknown> | undefined;
+  return typeof parser?.read === "function" && typeof parser.pattern === "function";
 }
 
 /**
  * A parser as help shows it: its label in angle brackets, or else its
- * atom's pattern. The label of a part that can be left out is in brackets
- * too, like `[<to>]`.
+ * pattern. The label of a part that can be left out is in brackets too,
+ * like `[<to>]`.
  */
 export function patternOf(parser: Parser<unknown>): string {
   if (parser.label === undefined) {
-    return parser.atom.pattern(parser);
+    return parser.pattern();
   }
-  return bare(parser).atom.optional ? `[<${parser.label}>]` : `<${parser.label}>`;
+  return bare(parser).optional ? `[<${parser.label}>]` : `<${parser.label}>`;
 }
 
 /**
@@ -252,23 +273,22 @@ export function patternOf(parser: Parser<unknown>): string {
  * choices are the wrapped parser's.
  */
 export function bare(parser: Parser<unknown>): Parser<unknown> {
-  let inner = parser;
-  while (inner.atom === mapAtom) {
-    inner = inner.of;
-  }
-  return inner;
+  return parser.bare();
 }
 
 /** What `parser` takes as JSON Schema, if JSON Schema has words for it. */
 export function schemaOf(parser: Parser<unknown>): Record<string, unknown> | undefined {
-  const inner = bare(parser);
-  return inner.atom.schema?.(inner);
+  return bare(parser).schema?.();
 }
 
 /** The strings `parser` lists among its values, as the user types them. */
 export function choicesOf(parser: Parser<unknown>): string[] | undefined {
-  const inner = bare(parser);
-  return inner.atom.choices?.(inner);
+  return bare(parser).choices?.();
+}
+
+/** Each value `parser` accepts as help lists them, unless it has a label or isn't shown as a list. */
+export function listOf(parser: Parser<unknown>): string[] | undefined {
+  return parser.label === undefined ? bare(parser).list?.() : undefined;
 }
 
 /**
@@ -279,18 +299,6 @@ export function choicesOf(parser: Parser<unknown>): string[] | undefined {
 export function literal(text: string): string {
   return text === "" || text.includes("...") || /[\t\n\r|()[\]<>"']/.test(text) ? JSON.stringify(text) : text;
 }
-
-export const mapAtom: Atom = {
-  run(self, input, start, state) {
-    const inner: Parser<unknown> = self.of;
-    const end = inner.atom.run(inner, input, start, state);
-    if (end >= 0) {
-      state.out = self.fn(state.out);
-    }
-    return end;
-  },
-  pattern: (self) => patternOf(self.of),
-};
 
 /** The least and greatest numbers a schema accepts, and whether each is itself left out. */
 export interface Bounds {
@@ -325,36 +333,10 @@ interface NumberOptions {
 }
 
 /**
- * Read a number that {@link numberAtom} can't add up digit by digit: one
- * with a decimal point, or with more than 15 digits. `stop` is where its
- * whole digits end.
- */
-function slowNumber(self: Parser<number>, input: string, start: number, stop: number, state: State): number {
-  const options: NumberOptions | undefined = self.of;
-  let digits = stop - start - (input.charCodeAt(start) === 45 ? 1 : 0);
-  // A dot is the number's only if a digit follows it, so `1..5` can be two numbers.
-  const afterDot = input.charCodeAt(stop + 1);
-  if (input.charCodeAt(stop) === 46 && !options?.int && afterDot >= 48 && afterDot <= 57) {
-    for (stop++; input.charCodeAt(stop) >= 48 && input.charCodeAt(stop) <= 57; stop++) {
-      digits++;
-    }
-  }
-  const value = Number(input.slice(start, stop));
-  if (digits === 0 || (options !== undefined && (value < options.min! || value > options.max!))) {
-    return fail(state, start, self);
-  }
-  if (!Number.isFinite(value) || (options?.int && !Number.isSafeInteger(value))) {
-    return tooBig(state, input, start, stop, value, options?.int);
-  }
-  state.out = value;
-  return stop;
-}
-
-/**
  * Note that the digits from `start` to `stop` are a number too far from zero
  * to give: a whole number that a JavaScript number can't hold exactly, or
- * any number that reads as infinity. Returns -1 for the atom to return. The
- * message says so in place of what was expected, like
+ * any number that reads as infinity. Returns -1 for the parser to return.
+ * The message says so in place of what was expected, like
  * `too large, the limit is 9007199254740991`.
  */
 export function tooBig(
@@ -367,6 +349,7 @@ export function tooBig(
 ): -1 {
   const size = value > 0 ? "large" : "small";
   return fail(state, start, {
+    kind: "problem",
     problem: int
       ? `too ${size}, the limit is ${value > 0 ? "" : "-"}${Number.MAX_SAFE_INTEGER}`
       : `too ${size} to be a number`,
@@ -374,9 +357,13 @@ export function tooBig(
   });
 }
 
-const numberAtom: Atom = {
-  run(self, input, start, state) {
-    const options: NumberOptions | undefined = self.of;
+/** What {@link number} returns. */
+class NumberParser extends Parser<number> {
+  constructor(readonly options: NumberOptions | undefined) {
+    super();
+  }
+
+  read(input: string, start: number, state: State): number {
     let at = start;
     const negative = input.charCodeAt(at) === 45;
     if (negative) {
@@ -389,24 +376,62 @@ const numberAtom: Atom = {
     }
     // A sum of more than 15 digits might not be the number that was typed.
     if (at - first > 15 || input.charCodeAt(at) === 46) {
-      return slowNumber(self, input, start, at, state);
+      return this.readSlowly(input, start, at, state);
     }
     if (at === first) {
-      return fail(state, start, self);
+      return fail(state, start, { kind: "parser", parser: this });
     }
     if (negative) {
       value = -value;
     }
-    // A bound that's left out is undefined, and no number is less or more than that.
-    if (options !== undefined && (value < options.min! || value > options.max!)) {
-      return fail(state, start, self);
+    if (this.outside(value)) {
+      return fail(state, start, { kind: "parser", parser: this });
     }
     state.out = value;
     return at;
-  },
-  pattern: (self) => (self.of?.int ? "<int>" : "<number>"),
-  schema(self) {
-    const options: NumberOptions = self.of ?? {};
+  }
+
+  /**
+   * Read a number that {@link read} can't add up digit by digit: one with a
+   * decimal point, or with more than 15 digits. `stop` is where its whole
+   * digits end.
+   */
+  private readSlowly(input: string, start: number, stop: number, state: State): number {
+    const int = this.options?.int;
+    let digits = stop - start - (input.charCodeAt(start) === 45 ? 1 : 0);
+    // A dot is the number's only if a digit follows it, so `1..5` can be two numbers.
+    const afterDot = input.charCodeAt(stop + 1);
+    if (input.charCodeAt(stop) === 46 && !int && afterDot >= 48 && afterDot <= 57) {
+      for (stop++; input.charCodeAt(stop) >= 48 && input.charCodeAt(stop) <= 57; stop++) {
+        digits++;
+      }
+    }
+    const value = Number(input.slice(start, stop));
+    if (digits === 0 || this.outside(value)) {
+      return fail(state, start, { kind: "parser", parser: this });
+    }
+    if (!Number.isFinite(value) || (int && !Number.isSafeInteger(value))) {
+      return tooBig(state, input, start, stop, value, int);
+    }
+    state.out = value;
+    return stop;
+  }
+
+  /**
+   * Whether `value` is outside the bounds. A bound that's left out is
+   * undefined, and no number is less or more than that.
+   */
+  private outside(value: number): boolean {
+    const options = this.options;
+    return options !== undefined && (value < options.min! || value > options.max!);
+  }
+
+  pattern(): string {
+    return this.options?.int ? "<int>" : "<number>";
+  }
+
+  schema(): Record<string, unknown> {
+    const options: NumberOptions = this.options ?? {};
     const schema: Record<string, unknown> = { type: options.int ? "integer" : "number" };
     if (options.min !== undefined) {
       schema.minimum = options.min;
@@ -415,12 +440,17 @@ const numberAtom: Atom = {
       schema.maximum = options.max;
     }
     return schema;
-  },
-};
+  }
+}
 
-const choiceAtom: Atom = {
-  run(self, input, start, state) {
-    const values: readonly Part[] = self.of;
+/** What {@link choice} returns. */
+class ChoiceParser<T> extends Parser<T> {
+  constructor(readonly values: readonly Part[]) {
+    super();
+  }
+
+  read(input: string, start: number, state: State): number {
+    const values = this.values;
     let end = -1;
     let chosen;
     for (let i = 0; i < values.length; i++) {
@@ -431,7 +461,7 @@ const choiceAtom: Atom = {
           chosen = value;
         }
       } else {
-        const stop = value.atom.run(value, input, start, state);
+        const stop = value.read(input, start, state);
         if (stop > end) {
           end = stop;
           chosen = state.out;
@@ -439,31 +469,33 @@ const choiceAtom: Atom = {
       }
     }
     if (end < 0) {
-      return fail(state, start, values);
+      return fail(state, start, { kind: "choice", values });
     }
     if (end === start) {
       // Only a value that reads nothing fit, so completion can still offer the rest.
-      fail(state, start, values);
+      fail(state, start, { kind: "choice", values });
     }
     state.out = chosen;
     return end;
-  },
-  pattern: (self) =>
-    `(${self.of.map((value: Part) => (typeof value === "string" ? literal(value) : patternOf(value))).join("|")})`,
-  schema: (self) =>
-    self.of.every((value: Part) => typeof value === "string")
-      ? { type: "string", enum: [...self.of] }
-      : undefined,
-  list: (self) =>
-    self.of.map((value: Part) => (typeof value === "string" ? describeChoice(value) : patternOf(value))),
-  choices: (self) =>
-    self.of.flatMap((value: Part) => (typeof value === "string" ? [value] : (choicesOf(value) ?? []))),
-};
+  }
 
-/** Each value `parser` accepts as help lists them, unless it has a label or isn't shown as a list. */
-export function listOf(parser: Parser<unknown>): string[] | undefined {
-  const inner = bare(parser);
-  return parser.label === undefined ? inner.atom.list?.(inner) : undefined;
+  pattern(): string {
+    return `(${this.values.map((value) => (typeof value === "string" ? literal(value) : patternOf(value))).join("|")})`;
+  }
+
+  schema(): Record<string, unknown> | undefined {
+    return this.values.every((value) => typeof value === "string")
+      ? { type: "string", enum: [...this.values] }
+      : undefined;
+  }
+
+  list(): string[] {
+    return this.values.map((value) => (typeof value === "string" ? describeChoice(value) : patternOf(value)));
+  }
+
+  choices(): string[] {
+    return this.values.flatMap((value) => (typeof value === "string" ? [value] : (choicesOf(value) ?? [])));
+  }
 }
 
 /**
@@ -483,7 +515,7 @@ export function listOf(parser: Parser<unknown>): string[] | undefined {
  * @returns A parser that gives a number.
  */
 export const number = (options?: { min?: number; max?: number; int?: boolean }): Parser<number> =>
-  new Parser(numberAtom, options);
+  new NumberParser(options);
 
 /**
  * A parser that accepts one of `values` and rejects anything else. A value
@@ -505,13 +537,13 @@ export const number = (options?: { min?: number; max?: number; int?: boolean }):
  */
 export const choice = <const T extends readonly [Part, ...Part[]]>(
   ...values: T
-): Parser<ValueOf<T[number]>> => new Parser(choiceAtom, values);
+): Parser<ValueOf<T[number]>> => new ChoiceParser(values);
 
 /** Add to `found` what `typed` could become that starts with `partial`. */
 function addCompletions(found: string[], parser: Parser<unknown>, typed: string, partial: string): void {
   const state: State = { out: undefined, far: -1, want: undefined };
   try {
-    parser.atom.run(parser, typed, 0, state);
+    parser.read(typed, 0, state);
   } catch {
     // A `map` function that can't take a value that's only partly typed.
   }
@@ -520,14 +552,25 @@ function addCompletions(found: string[], parser: Parser<unknown>, typed: string,
   }
   const read = typed.slice(0, state.far);
   const rest = typed.slice(state.far);
-  for (const what of state.want!) {
-    for (const text of Array.isArray(what) ? what : [what]) {
-      if (typeof text !== "string" || !text.startsWith(rest)) {
-        continue;
-      }
-      const value = read + text;
-      if (value.length > typed.length && value.startsWith(partial) && !found.includes(value)) {
-        found.push(value);
+  const offer = (text: string) => {
+    const value = read + text;
+    if (
+      text.startsWith(rest) &&
+      value.length > typed.length &&
+      value.startsWith(partial) &&
+      !found.includes(value)
+    ) {
+      found.push(value);
+    }
+  };
+  for (const want of state.want!) {
+    if (want.kind === "text") {
+      offer(want.text);
+    } else if (want.kind === "choice") {
+      for (const value of want.values) {
+        if (typeof value === "string") {
+          offer(value);
+        }
       }
     }
   }
@@ -563,7 +606,7 @@ export function completionsOf(parser: Parser<unknown>, partial: string): string[
 /** Whether `parser` reads all of `value`. */
 export function accepts(parser: Parser<unknown>, value: string): boolean {
   try {
-    return parser.atom.run(parser, value, 0, { out: undefined, far: -1, want: undefined }) === value.length;
+    return parser.read(value, 0, { out: undefined, far: -1, want: undefined }) === value.length;
   } catch {
     return false;
   }
