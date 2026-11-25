@@ -156,13 +156,13 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
   /**
    * Move to `command`, a subcommand of the current one. A command with a
-   * `loadSpec` is loaded first, unless `load` is false, and the scope moves
-   * to the command that stands in its place. If the `loadSpec` gives a
+   * `loadSpec` is loaded first, and the scope moves to the command that
+   * stands in its place. If the `loadSpec` gives a
    * promise, so does this, and the scope stays at the current command until
    * it settles.
    */
-  enter(command: Subcommand, load = true): Promise<void> | null {
-    if (command.loadSpec !== undefined && load) {
+  enter(command: Subcommand): Promise<void> | null {
+    if (command.loadSpec !== undefined) {
       const loaded = loadCommand(command);
       if (typeof (loaded as Promise<Subcommand>).then === "function") {
         return (loaded as Promise<Subcommand>).then((whole) => this.move(whole));

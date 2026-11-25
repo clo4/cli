@@ -676,18 +676,8 @@ class Scanner {
     this.values.push(token.slice(start));
   }
 
-  private addArg(value: string): TokenReading {
-    this.endOption();
-    if (this.args.length >= this.scope.argsLimit) {
-      this.failArgs(tooManyArguments(value));
-    }
-    this.args.push(value);
-    this.argTokens.push(this.at);
-    return argumentReading;
-  }
-
   /** Read `--`. Every token after it is an argument. */
-  private argSeparator(): TokenReading {
+  private argSeparator(): void {
     this.endOption();
     this.open = noOpenOption;
     this.optionsAllowed = false;
@@ -698,7 +688,6 @@ class Scanner {
       this.failArgs("Unexpected argument '--', did you mean to use an option instead?");
     }
     this.argSeparatorIndex = this.args.length;
-    return separatorReading;
   }
 
   /**
@@ -955,68 +944,67 @@ class Scanner {
   }
 
   /**
-   * Read `token`, and say what it was read as. A subcommand it names is
-   * loaded unless `load` is false; {@link settle} before the next token.
+   * Read `token`, and say what {@link classify} made of it. A subcommand it
+   * names is loaded; {@link settle} before the next token. {@link peek} says
+   * more about the token, without reading it.
    */
-  read(token: string, load = true): TokenReading {
+  read(token: string): TokenMeaning | Classified {
     this.at++;
     const meaning = this.classify(token);
     const kind = meaning.kind;
     if (kind === "value") {
-      const open = this.open;
-      open.count += 1;
+      this.open.count += 1;
       this.values!.push(token);
-      return { kind: "value", option: open.option! };
-    }
-    if (kind === "subcommand") {
+    } else if (kind === "subcommand") {
       this.endOption();
       this.open = noOpenOption;
       this.entered.push(this.at);
-      this.pending = this.scope.enter(meaning.command, load);
-      return meaning;
-    }
-    if (kind === "options") {
-      const used: Option[] = [];
+      this.pending = this.scope.enter(meaning.command);
+    } else if (kind === "options") {
       const uses = meaning.uses;
       for (let i = 0; i < uses.length; i++) {
         const { option, name } = uses[i];
         if (option) {
           this.useOption(option, name);
-          used.push(option);
         } else {
           this.unknownOption(name);
         }
       }
-      if (used.length === 0) {
-        return unknownReading;
-      }
+      // Only a known option has a value attached.
       const value = meaning.attached;
-      if (value === null) {
-        return { kind: "options", options: used, attached: null };
+      if (value !== null) {
+        this.addAttachedValue(token, value.start, value.separator);
       }
-      const attached = attachedAt(meaning, this.scope);
-      this.addAttachedValue(token, value.start, value.separator);
-      return { kind: "options", options: used, attached };
+    } else if (kind === "separator") {
+      this.argSeparator();
+    } else {
+      this.readArgument(token);
     }
-    if (kind === "separator") {
-      return this.argSeparator();
+    return meaning;
+  }
+
+  /** Read `token` as an argument. */
+  private readArgument(token: string): void {
+    if (this.argSeparatorIndex === -1) {
+      // An argument before `--` stops later tokens from being subcommands.
+      // Where a subcommand could be, a token the command has no room for is
+      // a subcommand that didn't match.
+      const subcommands = this.subcommandMatching;
+      if (subcommands && this.args.length >= this.scope.argsLimit) {
+        this.failUnmatched(token, subcommands.exactOnly);
+      }
+      this.hasFoundArg = true;
+      // No subcommand follows an argument, so the directives can't change after this.
+      if (this.directives.optionsMustPrecedeArguments) {
+        this.optionsAllowed = false;
+      }
     }
-    if (this.argSeparatorIndex !== -1) {
-      return this.addArg(token);
+    this.endOption();
+    if (this.args.length >= this.scope.argsLimit) {
+      this.failArgs(tooManyArguments(token));
     }
-    // An argument before `--` stops later tokens from being subcommands. Where
-    // a subcommand could be, a token the command has no room for is a
-    // subcommand that didn't match.
-    const subcommands = this.subcommandMatching;
-    if (subcommands && this.args.length >= this.scope.argsLimit) {
-      this.failUnmatched(token, subcommands.exactOnly);
-    }
-    this.hasFoundArg = true;
-    // No subcommand follows an argument, so the directives can't change after this.
-    if (this.directives.optionsMustPrecedeArguments) {
-      this.optionsAllowed = false;
-    }
-    return this.addArg(token);
+    this.args.push(token);
+    this.argTokens.push(this.at);
   }
 
   /**
@@ -1087,7 +1075,9 @@ export function tokenReader(spec: Spec): TokenReader {
   return {
     async read(token) {
       await s.settle();
-      return s.read(token);
+      const reading = s.peek(token);
+      s.read(token);
+      return reading;
     },
     async peek(token) {
       await s.settle();
