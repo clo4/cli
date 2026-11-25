@@ -12,13 +12,27 @@ import { complete } from "./complete.js";
 import { choice } from "./schemas.js";
 import { print } from "./util.js";
 
-export const SHELLS = ["bash", "zsh", "fish", "powershell", "nushell"] as const;
+/**
+ * What one shell's completion needs: the script that registers a CLI's
+ * completion with it, and the lines that script reads back on each Tab.
+ */
+interface ShellAdapter {
+  /**
+   * The script for the CLI `name`: a thin shim that forwards the line to
+   * `completion complete`. `id` is `name` as a fragment of a shell identifier.
+   */
+  script(name: string, id: string): string;
+  /** The lines the script reads for `candidates`, the values `word` can become. */
+  lines(candidates: readonly Candidate[], word: string): string[];
+}
 
-/** Shells supported by the built-in `completion` subcommand. */
-export type Shell = (typeof SHELLS)[number];
-
-/** Accepts a supported shell. Help lists the shells and completion offers them. */
-const shellSchema = /* @__PURE__ */ choice(...SHELLS);
+/** One value a suggestion offers, as a shell gets it. */
+interface Candidate {
+  value: string;
+  /** The suggestion's description, on one line, or "". */
+  description: string;
+  incomplete: boolean | undefined;
+}
 
 /** Turn an arbitrary name into a safe shell identifier fragment. */
 const sanitize = (value: string): string => value.replace(/[^A-Za-z0-9]+/g, "_");
@@ -52,108 +66,25 @@ function nuQuote(value: string): string {
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
-// Candidate lines {{{
-
-/**
- * Write suggestions as the lines a shell's completion script reads, one line
- * per name. `word` is the word being completed, as the script passed it. Each
- * name of a suggestion gets its description, so fish and zsh show the names
- * that share it together, as they do for their own completions.
- *
- * - bash: the quoted value, then a space unless the value is incomplete. Bash
- *   inserts a candidate as written and doesn't filter, so this keeps the
- *   values whose quoted form starts with the word.
- * - zsh: `value:description` for `_describe`, with `\` and `:` escaped in the
- *   value, then a tab if the value is incomplete. Zsh filters and quotes the
- *   values itself.
- * - fish: `value<Tab>description`. Fish filters and quotes the values itself.
- *   It adds a space after the only value that starts with the word, and has
- *   no way to be told not to. So an incomplete value that would be the only one
- *   is followed by the same value with a `.` after it. Fish then has two
- *   values, and inserts what they share with no space.
- * - powershell: `text<Tab>value<Tab>tooltip`, the arguments of a
- *   CompletionResult. Only values that start with the word, ignoring case.
- * - nushell: `text<Tab>description`. Only values that start with the word,
- *   ignoring case.
- *
- * A value with a tab or line break doesn't fit on a line, so it's left out.
- * A description's tabs and line breaks become spaces.
- */
-export function formatCandidates(suggestions: readonly Suggestion[], shell: Shell, word: string): string[] {
-  const candidates = suggestions.flatMap(({ name, description, incomplete }) =>
-    (typeof name === "string" ? [name] : name).map((value) => ({ value, description, incomplete })),
-  );
-  const lines: string[] = [];
-  const lowerWord = word.toLowerCase();
-  const startsWithWord = (value: string) => value.slice(0, word.length).toLowerCase() === lowerWord;
-  // The one value fish would insert with a space after it. Fish takes the
-  // values that start with the word as written, or else in any case.
-  let only: (typeof candidates)[number] | undefined;
-  if (shell === "fish") {
-    for (const sameCase of [true, false]) {
-      const matches = candidates.filter(
-        ({ value }) =>
-          value !== "" &&
-          !/[\t\n\r]/.test(value) &&
-          (sameCase ? value.startsWith(word) : startsWithWord(value)),
-      );
-      if (matches.length > 0) {
-        only = matches.length === 1 ? matches[0] : undefined;
-        break;
-      }
-    }
-  }
-  for (const candidate of candidates) {
-    const value = candidate.value;
-    if (value === "" || /[\t\n\r]/.test(value)) {
-      continue;
-    }
-    const description = candidate.description?.replace(/\s*[\t\n\r]\s*/g, " ").trim() ?? "";
-    if (shell === "bash") {
-      const text = value.replace(/[ '"\\$`|&;()<>{}*?[!#~]/g, "\\$&");
-      if (text.startsWith(word)) {
-        lines.push(candidate.incomplete ? text : `${text} `);
-      }
-    } else if (shell === "zsh") {
-      // `_describe` splits at the first colon without a backslash before it,
-      // then removes the backslashes from both parts.
-      const text = value.replace(/[\\:]/g, "\\$&");
-      const line = description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text;
-      lines.push(candidate.incomplete ? `${line}\t` : line);
-    } else if (shell === "fish") {
-      lines.push(description ? `${value}\t${description}` : value);
-      if (candidate === only && candidate.incomplete) {
-        lines.push(`${value}.`);
-      }
-    } else if (startsWithWord(value)) {
-      if (shell === "powershell") {
-        // A CompletionResult needs a tooltip, so the value stands in for a
-        // missing description.
-        const text = /[\s'"`$&|;,(){}<>@#\u2018-\u201e]/.test(value) ? psQuote(value) : value;
-        lines.push(`${text}\t${value}\t${description || value}`);
-      } else {
-        const text = /[\s'"`$|;#()[\]{}]/.test(value) ? nuQuote(value) : value;
-        lines.push(description ? `${text}\t${description}` : text);
-      }
-    }
-  }
-  return lines;
+/** Whether `value` starts with `word`, ignoring case. */
+function startsWithAnyCase(value: string, word: string): boolean {
+  return value.slice(0, word.length).toLowerCase() === word.toLowerCase();
 }
 
-// }}}
-
-// Completion scripts {{{
+/*
+ * Each shell's script runs the CLI as it was typed, so `./pack` works, and
+ * does nothing if there's no such command, so a missing command means no
+ * completion instead of an error. It passes `--shell`, so the CLI prints
+ * lines ready for that shell.
+ */
 
 /**
- * The script for `shell`: a thin shim that forwards the line to `completion complete`. The
- * binary is invoked as typed (so `./pack` works) and guarded so a missing
- * command degrades to no completion instead of an error. Each shim passes
- * `--shell`, so the CLI prints lines ready for that shell.
+ * Bash: the quoted value, then a space unless the value is incomplete. Bash
+ * inserts a candidate as written and doesn't filter, so only the values whose
+ * quoted form starts with the word are kept.
  */
-export function script(spec: Spec, shell: Shell): string {
-  const id = sanitize(spec.name);
-  const name = spec.name;
-  if (shell === "bash") {
+const bash: ShellAdapter = {
+  script(name, id) {
     // Each line is one reply. Reading the lines into the array keeps them as
     // written. compgen -W would run the expansions in them, such as $(...).
     //
@@ -196,8 +127,26 @@ export function script(spec: Spec, shell: Shell): string {
   while IFS= read -r line; do COMPREPLY+=( "\${line#"$before"}" ); done < <(SHELL_COMPLETION_GENERATOR=bash "$bin" completion complete --shell bash --gate-options -- "\${words[@]:1}" 2>/dev/null)
 }
 complete -o nospace -F _${id}_complete ${shQuote(name)}`;
-  }
-  if (shell === "zsh") {
+  },
+  lines(candidates, word) {
+    const lines: string[] = [];
+    for (const { value, incomplete } of candidates) {
+      const text = value.replace(/[ '"\\$`|&;()<>{}*?[!#~]/g, "\\$&");
+      if (text.startsWith(word)) {
+        lines.push(incomplete ? text : `${text} `);
+      }
+    }
+    return lines;
+  },
+};
+
+/**
+ * Zsh: `value:description` for `_describe`, with `\` and `:` escaped in the
+ * value, then a tab if the value is incomplete. Zsh filters and quotes the
+ * values itself.
+ */
+const zsh: ShellAdapter = {
+  script(name, id) {
     // The CLI gets the words without their quotes. Zsh leaves the quote that
     // opens the word being completed out of $PREFIX, and (Q) removes the rest.
     // A line that ends with a tab is a value that needs more text, and -S ''
@@ -223,8 +172,62 @@ if (( \${+compstate} )); then
 else
   compdef _${id}_complete ${shQuote(name)}
 fi`;
-  }
-  if (shell === "powershell") {
+  },
+  lines(candidates) {
+    return candidates.map(({ value, description, incomplete }) => {
+      // `_describe` splits at the first colon without a backslash before it,
+      // then removes the backslashes from both parts.
+      const text = value.replace(/[\\:]/g, "\\$&");
+      const line = description ? `${text}:${description.replaceAll("\\", "\\\\")}` : text;
+      return incomplete ? `${line}\t` : line;
+    });
+  },
+};
+
+/**
+ * Fish: `value<Tab>description`. Fish filters and quotes the values itself.
+ * It adds a space after the only value that starts with the word, and has no
+ * way to be told not to. So an incomplete value that would be the only one is
+ * followed by the same value with a `.` after it. Fish then has two values,
+ * and inserts what they share with no space.
+ */
+const fish: ShellAdapter = {
+  script(name, id) {
+    return `function __${id}_complete
+  set -l toks (commandline -opc)
+  set -l cur (commandline -ct)
+  set -l bin $toks[1]
+  command -q -- $bin; or test -x "$bin"; or return
+  set -lx SHELL_COMPLETION_GENERATOR fish
+  $bin completion complete --shell fish --gate-options -- $toks[2..-1] $cur 2>/dev/null
+end
+complete -c ${fishQuote(name)} -f -a '(__${id}_complete)'`;
+  },
+  lines(candidates, word) {
+    // Fish takes the values that start with the word as written, or else in any case.
+    let matches = candidates.filter(({ value }) => value.startsWith(word));
+    if (matches.length === 0) {
+      matches = candidates.filter(({ value }) => startsWithAnyCase(value, word));
+    }
+    const only = matches.length === 1 ? matches[0] : undefined;
+    const lines: string[] = [];
+    for (const candidate of candidates) {
+      const { value, description } = candidate;
+      lines.push(description ? `${value}\t${description}` : value);
+      if (candidate === only && candidate.incomplete) {
+        lines.push(`${value}.`);
+      }
+    }
+    return lines;
+  },
+};
+
+/**
+ * PowerShell: `text<Tab>value<Tab>tooltip`, the arguments of a
+ * CompletionResult. Only values that start with the word, ignoring case.
+ */
+const powershell: ShellAdapter = {
+  script(name) {
     // The arguments go through an array so that PowerShell passes `--` on to
     // the CLI. Windows PowerShell drops an empty argument, so an empty word is
     // passed as --empty-word. The word is passed without the quote it was
@@ -264,8 +267,24 @@ fi`;
     [System.Management.Automation.CompletionResult]::new($text, $value, 'ParameterValue', $tooltip)
   }
 }`;
-  }
-  if (shell === "nushell") {
+  },
+  lines(candidates, word) {
+    const lines: string[] = [];
+    for (const { value, description } of candidates) {
+      if (startsWithAnyCase(value, word)) {
+        const text = /[\s'"`$&|;,(){}<>@#\u2018-\u201e]/.test(value) ? psQuote(value) : value;
+        // A CompletionResult needs a tooltip, so the value stands in for a
+        // missing description.
+        lines.push(`${text}\t${value}\t${description || value}`);
+      }
+    }
+    return lines;
+  },
+};
+
+/** Nushell: `text<Tab>description`. Only values that start with the word, ignoring case. */
+const nushell: ShellAdapter = {
+  script(name, id) {
     // Nushell has one completer for every external command, so the script
     // keeps the completer that was set before and hands it other commands.
     // The spans keep the quotes they were typed with, the command's included,
@@ -294,20 +313,55 @@ $env.config.completions.external.completer = {|spans|
       { value: $parts.0, description: ($parts | get 1? | default "") }
     }
 }`;
+  },
+  lines(candidates, word) {
+    const lines: string[] = [];
+    for (const { value, description } of candidates) {
+      if (startsWithAnyCase(value, word)) {
+        const text = /[\s'"`$|;#()[\]{}]/.test(value) ? nuQuote(value) : value;
+        lines.push(description ? `${text}\t${description}` : text);
+      }
+    }
+    return lines;
+  },
+};
+
+const shellNames = ["bash", "zsh", "fish", "powershell", "nushell"] as const;
+
+/** Shells supported by the built-in `completion` subcommand. */
+export type Shell = (typeof shellNames)[number];
+
+const shells: Record<Shell, ShellAdapter> = { bash, zsh, fish, powershell, nushell };
+
+/** Accepts a supported shell. Help lists the shells and completion offers them. */
+const shellSchema = /* @__PURE__ */ choice(...shellNames);
+
+/**
+ * Write suggestions as the lines `shell`'s completion script reads, one line
+ * per name. `word` is the word being completed, as the script passed it. Each
+ * name of a suggestion gets its description, so fish and zsh show the names
+ * that share it together, as they do for their own completions.
+ *
+ * A value with a tab or line break doesn't fit on a line, so it's left out.
+ * A description's tabs and line breaks become spaces.
+ */
+export function formatCandidates(suggestions: readonly Suggestion[], shell: Shell, word: string): string[] {
+  const candidates: Candidate[] = [];
+  for (const { name, description, incomplete } of suggestions) {
+    const shown = description?.replace(/\s*[\t\n\r]\s*/g, " ").trim() ?? "";
+    for (const value of typeof name === "string" ? [name] : name) {
+      if (value !== "" && !/[\t\n\r]/.test(value)) {
+        candidates.push({ value, description: shown, incomplete });
+      }
+    }
   }
-  // fish
-  return `function __${id}_complete
-  set -l toks (commandline -opc)
-  set -l cur (commandline -ct)
-  set -l bin $toks[1]
-  command -q -- $bin; or test -x "$bin"; or return
-  set -lx SHELL_COMPLETION_GENERATOR fish
-  $bin completion complete --shell fish --gate-options -- $toks[2..-1] $cur 2>/dev/null
-end
-complete -c ${fishQuote(name)} -f -a '(__${id}_complete)'`;
+  return shells[shell].lines(candidates, word);
 }
 
-// }}}
+/** The completion script of `spec` for `shell`. */
+export function script(spec: Spec, shell: Shell): string {
+  return shells[shell].script(spec.name, sanitize(spec.name));
+}
 
 // Completion commands {{{
 
@@ -381,6 +435,6 @@ export const completion: Subcommand = {
   subcommands: [completeCommand],
   action({ path, args }) {
     const shell = args[0] as Shell | undefined;
-    print(shell ? script(path[0], shell) : `Supported shells: ${SHELLS.join(", ")}`);
+    print(shell ? script(path[0], shell) : `Supported shells: ${shellNames.join(", ")}`);
   },
 };
