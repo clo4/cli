@@ -2,13 +2,17 @@ import type { Action, Arg, CommandPath, Option, OptionArgs, Spec, Subcommand, Su
 import { addDefaults, argAt, hasParse, maxArgs, minArgs, unusedDefaults } from "./args.js";
 import { asArray } from "./util.js";
 import {
+  excludesOption,
   missingOption,
   ParseError,
   problemsError,
+  requiresOption,
+  separatorAfterArguments,
   takesNoArguments,
   tooFewArguments,
   tooFewOptionArguments,
   tooManyArguments,
+  tooManyRepetitions,
   unknownOption,
 } from "./errors.js";
 import type { ErrorContext } from "./errors.js";
@@ -264,8 +268,7 @@ function checkOptionRules(
   for (const { option, token, needs } of rules) {
     for (const need of needs) {
       if (!isUsed(need)) {
-        const message = `${asArray(option.name).join("/")} requires ${need.name}, add it to fix this error`;
-        (problems ??= []).push(new ParseError(contextAt(path, token), message));
+        (problems ??= []).push(new ParseError(contextAt(path, token), requiresOption(option, need.name)));
       }
     }
   }
@@ -273,8 +276,7 @@ function checkOptionRules(
     const { option, token, excludes } = rules[i];
     for (const excluded of excludes) {
       if (isUsed(excluded) && !excludedBefore(rules, i, excluded.option)) {
-        const message = `${asArray(option.name).join("/")} can't be used together with ${excluded.name}`;
-        (problems ??= []).push(new ParseError(contextAt(path, token), message));
+        (problems ??= []).push(new ParseError(contextAt(path, token), excludesOption(option, excluded.name)));
       }
     }
   }
@@ -697,7 +699,7 @@ class Scanner {
       repeatedUses.set(key, uses);
     }
     if (uses.count >= repeatLimit(option)) {
-      this.fail("Too many repetitions");
+      this.fail(tooManyRepetitions);
     }
     uses.count += 1;
     return uses.values;
@@ -734,7 +736,7 @@ class Scanner {
     // any argument after it.
     const command = this.scope.command;
     if (this.args.length >= this.scope.argsLimit && !command.requiresSubcommand) {
-      this.failArgs("Unexpected argument '--', did you mean to use an option instead?");
+      this.failArgs(separatorAfterArguments);
     }
     this.argSeparatorIndex = this.args.length;
   }

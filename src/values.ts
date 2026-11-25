@@ -8,12 +8,12 @@
  */
 
 import type { Arg, Option, StandardResult, StandardSchemaV1 } from "./types.js";
-import { invalidValue, problemsError } from "./errors.js";
+import { invalidValue, optionNames, problemsError } from "./errors.js";
 import { describeParser } from "./description.js";
 import type { ErrorContext, ParseError } from "./errors.js";
 import { argAt, argName, unusedDefaults } from "./args.js";
 import type { ArgList } from "./args.js";
-import { asArray, describeThrown } from "./util.js";
+import { describeThrown } from "./util.js";
 
 /**
  * Values the parser read for an argument list: a command's positional
@@ -147,7 +147,7 @@ export async function parseValues({
     const values = unusedDefaults(option);
     if (values) {
       (defaults ??= new Map()).set(option, values);
-      const name = asArray(option.name).join("/");
+      const name = optionNames(option);
       addJobs(jobs, {
         args: option.args,
         option: name,

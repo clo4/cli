@@ -1,4 +1,11 @@
 import type { Option, Spec, Subcommand } from "./types.js";
+import {
+  ambiguousCommand,
+  emptyCommand,
+  incorrectSeparator,
+  missingSeparator,
+  unknownCommand,
+} from "./errors.js";
 import type { DidYouMean } from "./errors.js";
 import { hasParse, maxArgs, minArgs } from "./args.js";
 import { asArray } from "./util.js";
@@ -584,10 +591,12 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    */
   requiredSeparator(option: Option): string | null {
     const required = option.requiresSeparator;
-    if (required === true) {
-      return this.directives.optionArgSeparators[0] ?? "=";
-    }
-    return required ?? null;
+    return required === true ? this.firstSeparator : (required ?? null);
+  }
+
+  /** The separator an option that requires any of them is written with: the first one in effect. */
+  private get firstSeparator(): string {
+    return this.directives.optionArgSeparators[0] ?? "=";
   }
 
   /**
@@ -597,12 +606,10 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   separatorProblem(option: Option, name: string, separator: string): string | null {
     const required = option.requiresSeparator;
     if (required === true) {
-      return separator === ""
-        ? `Missing separator, use '${this.requiredSeparator(option)}' between ${name} and its value`
-        : null;
+      return separator === "" ? missingSeparator(this.firstSeparator, name) : null;
     }
     if (required !== undefined && separator !== required) {
-      return `Incorrect separator, use '${required}' instead of '${separator}'`;
+      return incorrectSeparator(required, separator);
     }
     return null;
   }
@@ -740,7 +747,7 @@ function unmatchedReason(
   subcommands: readonly LiveSubcommand[],
 ): { message: string; didYouMean?: DidYouMean } {
   if (token === "") {
-    return { message: "Expected a command, but the value was empty" };
+    return { message: emptyCommand };
   }
   if (prefixOf.length > 0) {
     const possible: string[] = [];
@@ -751,7 +758,7 @@ function unmatchedReason(
         }
       }
     }
-    return { message: `Ambiguous command '${token}', could be: ${possible.join(", ")}` };
+    return { message: ambiguousCommand(token, possible) };
   }
   const choices: (readonly string[])[] = [];
   for (const { command, names } of subcommands) {
@@ -759,7 +766,7 @@ function unmatchedReason(
       choices.push(names);
     }
   }
-  return { message: `Unknown command '${token}'`, didYouMean: { input: token, choices } };
+  return { message: unknownCommand(token), didYouMean: { input: token, choices } };
 }
 
 /** The visible commands that `token` is a prefix of a name of, each listed once. */

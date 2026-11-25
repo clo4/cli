@@ -1,4 +1,4 @@
-import type { CommandPath } from "./types.js";
+import type { CommandPath, Option } from "./types.js";
 import type { Choice } from "./suggest.js";
 
 const repr = JSON.stringify as (str: string) => string;
@@ -76,6 +76,34 @@ export const tooFewOptionArguments = (option: string, min: number, max: number) 
 export const tooFewArguments = (min: number, max: number) => `Expected ${howMany(min, max)}`;
 
 export const missingOption = (name: string) => `Option ${name} is required, but wasn't found`;
+
+/** An option as a message names it, by all its names, like `-v/--verbose`. */
+export function optionNames(option: Option): string {
+  return typeof option.name === "string" ? option.name : option.name.join("/");
+}
+
+export const requiresOption = (option: Option, name: string) =>
+  `${optionNames(option)} requires ${name}, add it to fix this error`;
+
+export const excludesOption = (option: Option, name: string) =>
+  `${optionNames(option)} can't be used together with ${name}`;
+
+export const tooManyRepetitions = "Too many repetitions";
+
+export const separatorAfterArguments = "Unexpected argument '--', did you mean to use an option instead?";
+
+export const missingSeparator = (separator: string, name: string) =>
+  `Missing separator, use '${separator}' between ${name} and its value`;
+
+export const incorrectSeparator = (required: string, separator: string) =>
+  `Incorrect separator, use '${required}' instead of '${separator}'`;
+
+export const emptyCommand = "Expected a command, but the value was empty";
+
+export const ambiguousCommand = (token: string, names: readonly string[]) =>
+  `Ambiguous command '${token}', could be: ${names.join(", ")}`;
+
+export const unknownCommand = (token: string) => `Unknown command '${token}'`;
 
 /**
  * A value that its argument's parser rejected. `target` is what the value is
