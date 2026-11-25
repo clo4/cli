@@ -176,10 +176,10 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   enter(command: Subcommand): Promise<void> | null {
     if (command.loadSpec !== undefined) {
       const loaded = loadCommand(command);
-      if (typeof (loaded as Promise<Subcommand>).then === "function") {
-        return (loaded as Promise<Subcommand>).then((whole) => this.move(whole));
+      if (loaded instanceof Promise) {
+        return loaded.then((whole) => this.move(whole));
       }
-      command = loaded as Subcommand;
+      command = loaded;
     }
     this.move(command);
     return null;
@@ -611,7 +611,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
 
 /**
  * Call the `loadSpec` of `stub` and give the command the parser carries on
- * with in its place, as a promise only if `loadSpec` gave one. It's a function
+ * with in its place, as a native promise only if `loadSpec` gave one. It's a function
  * of its own so that a cold parse of a spec without `loadSpec` doesn't compile
  * it.
  */
