@@ -1,6 +1,7 @@
 import type { ActionInit, Spec } from "./types.js";
 import { getHelp, printUsageError } from "./help.js";
 import { ParseError } from "./errors.js";
+import { host } from "./host.js";
 import { parse } from "./parse.js";
 import { describeThrown, print, printError } from "./util.js";
 import type { ParseResult } from "./parse.js";
@@ -43,11 +44,10 @@ export interface RunOptions {
  * @returns The selected action's exit code, or 1 on a reported error.
  */
 export async function run(spec: Spec, options?: RunOptions): Promise<number> {
-  const node = (globalThis as { process?: { argv?: readonly string[]; exitCode?: number } }).process;
   let code = 1;
   let result: ParseResult | null = null;
   try {
-    result = await parse(options?.argv ?? node?.argv?.slice(2) ?? [], spec);
+    result = await parse(options?.argv ?? host.argv(), spec);
   } catch (error) {
     reportParseError(error);
   }
@@ -67,8 +67,8 @@ export async function run(spec: Spec, options?: RunOptions): Promise<number> {
       printError(describeThrown(error));
     }
   }
-  if (node && options?.setExitCode !== false) {
-    node.exitCode = code;
+  if (options?.setExitCode !== false) {
+    host.setExitCode(code);
   }
   return code;
 }

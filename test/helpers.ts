@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { run as runAndSetExitCode } from "../src/run.js";
 import { testSpec } from "../src/testing.js";
 import type { Spec, Subcommand } from "../src/types.js";
-import { output } from "../src/util.js";
+import { host } from "../src/host.js";
 
 /**
  * Runs the spec checks with these function-style step names on `spec`, through
@@ -63,8 +63,8 @@ export async function captureConsole(
     stderr += `${args.join(" ")}\n`;
   };
   // The library writes to the file descriptors directly; actions use console.
-  const originalWrite = output.write;
-  output.write = (fd, text) => {
+  const originalWrite = host.write;
+  host.write = (fd, text) => {
     if (fd === 1) {
       stdout += text;
     } else {
@@ -77,7 +77,7 @@ export async function captureConsole(
   } finally {
     console.log = originalLog;
     console.error = originalError;
-    output.write = originalWrite;
+    host.write = originalWrite;
   }
 }
 

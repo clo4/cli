@@ -16,6 +16,7 @@ import { shownDescription } from "./help.js";
 import { readNext } from "./parse.js";
 import type { NextToken } from "./parse.js";
 import { formStart } from "./scope.js";
+import { host } from "./host.js";
 import { asArray, singleOrArray } from "./util.js";
 
 /** The first line of a description as help shows it. */
@@ -44,29 +45,18 @@ function offered(suggestion: Suggestion | string): Suggestion {
 }
 
 /** The file system entries that `word` could become, for a path template. */
-async function paths(word: string, template: Template): Promise<Suggestion[]> {
-  // Imported through a variable so the Node-free `src` build doesn't need
-  // @types/node. Only completion reads the file system.
-  const specifier = "node:fs";
-  const { readdirSync } = (await import(specifier)) as {
-    readdirSync(path: string, options: { withFileTypes: true }): { name: string; isDirectory(): boolean }[];
-  };
+function paths(word: string, template: Template): Suggestion[] {
   // Windows paths can use either separator. Elsewhere `\` is part of a name.
-  const isWindows = (globalThis as { process?: { platform?: string } }).process?.platform === "win32";
+  const isWindows = host.windows();
   const slash = Math.max(word.lastIndexOf("/"), isWindows ? word.lastIndexOf("\\") : -1);
   const dir = slash >= 0 ? word.slice(0, slash + 1) : "";
   const base = slash >= 0 ? word.slice(slash + 1) : word;
   // A folder ends with the separator the user typed last.
   const separator = slash >= 0 ? word[slash] : "/";
   const foldersOnly = template === "folders";
-  let entries: { name: string; isDirectory(): boolean }[];
-  try {
-    entries = readdirSync((isWindows ? dir.replaceAll("\\", "/") : dir) || ".", { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  const entries = host.entries((isWindows ? dir.replaceAll("\\", "/") : dir) || ".");
   const found: Suggestion[] = [];
-  for (const entry of entries) {
+  for (const entry of entries ?? []) {
     if (!entry.name.startsWith(base)) {
       continue;
     }
@@ -101,7 +91,7 @@ async function argValues(arg: Arg, init: SuggestInit): Promise<Suggestion[]> {
     }
   }
   if (arg.template) {
-    found.push(...(await paths(init.word, arg.template)));
+    found.push(...paths(init.word, arg.template));
   }
   if (arg.suggestions === undefined && suggest === undefined && arg.template === undefined) {
     found.push(...parserCompletions(arg, init.word));
