@@ -1734,9 +1734,10 @@ function answers(options: OptionArgs<unknown>, name: string): [boolean, unknown,
 test("options: a bare flag is there with no values", async () => {
   const spec: Spec = { name: "test", options: [{ name: ["-f", "--force"] }, { name: "--dry-run" }] };
   const { options } = await parse(["-f"], spec);
-  // count counts values, and a flag that isn't repeatable stores none.
-  expect(answers(options, "-f")).toEqual([true, undefined, [], 0]);
-  expect(answers(options, "--force")).toEqual([true, undefined, [], 0]);
+  // A flag that isn't repeatable stores no values, and counts once however often it's given.
+  expect(answers(options, "-f")).toEqual([true, undefined, [], 1]);
+  expect(answers(options, "--force")).toEqual([true, undefined, [], 1]);
+  expect(answers((await parse(["-f", "--force"], spec)).options, "-f")).toEqual([true, undefined, [], 1]);
   expect(answers(options, "--dry-run")).toEqual([false, undefined, [], 0]);
 });
 
@@ -1796,7 +1797,7 @@ test("options: an option whose first argument is optional only gets its default 
     ["never"],
     1,
   ]);
-  expect(answers((await parse(["--log"], spec)).options, "--log")).toEqual([true, undefined, [], 0]);
+  expect(answers((await parse(["--log"], spec)).options, "--log")).toEqual([true, undefined, [], 1]);
 });
 
 test("options: an option shared with a parent command answers after the subcommand", async () => {
@@ -1889,7 +1890,7 @@ test("options: options on sibling commands with the same ref are each read by it
   };
   const options = (await parse(["-C", "dir", "switch", "-C", "topic"], spec)).options;
   expect(answers(options, "directory")).toEqual([true, "dir", ["dir"], 1]);
-  expect(answers(options, "create")).toEqual([true, undefined, [], 0]);
+  expect(answers(options, "create")).toEqual([true, undefined, [], 1]);
   expect((await parse(["-C", "dir", "branch", "old", "new"], spec)).options.has("create")).toBe(false);
 });
 

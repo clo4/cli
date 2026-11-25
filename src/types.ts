@@ -79,6 +79,8 @@ export interface OptionArgs<Value = string> {
 
   /**
    * Count supplied values. For a repeatable flag, count occurrences instead.
+   * An option supplied without values, like a flag that isn't repeatable,
+   * counts 1.
    *
    * An option with multiple arguments can contribute several values per use.
    * An omitted option returns 0, even when it has defaults.

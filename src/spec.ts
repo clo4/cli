@@ -225,7 +225,7 @@ interface OptionReader<Name, ValueName, Value, Values, Other = string> {
   /** Whether an option was supplied. Defaults don't count. */
   has(name: Name): boolean;
 
-  /** How many values an option has, or how many times a repeatable option without arguments was used. */
+  /** How many values an option has, or how many times a repeatable flag was used. A use without values counts 1. */
   count(name: Name): number;
 }
 

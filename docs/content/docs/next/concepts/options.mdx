@@ -50,12 +50,12 @@ Short flags can share a token. If `-a`, `-b` and `-c` are flags, `-abc` means `-
 
 An action reads options through four methods:
 
-| Method        | Result                                                              |
-| ------------- | ------------------------------------------------------------------- |
-| `has(name)`   | Whether the user supplied the option.                               |
-| `get(name)`   | Its first value, or a default if applicable.                        |
-| `all(name)`   | All its values, or defaults if applicable.                          |
-| `count(name)` | The number of supplied values, or occurrences of a repeatable flag. |
+| Method        | Result                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `has(name)`   | Whether the user supplied the option.                                                              |
+| `get(name)`   | Its first value, or a default if applicable.                                                       |
+| `all(name)`   | All its values, or defaults if applicable.                                                         |
+| `count(name)` | The number of supplied values, or occurrences of a repeatable flag. A use without values counts 1. |
 
 Use `has` for flags. Flags have no argument value, so the inferred types reject `get` and `all` for them.
 
@@ -172,7 +172,7 @@ $ node demo.ts
 
 A positive integer limits the number of uses. `isRepeatable: 2` accepts two uses and rejects a third with `Too many repetitions`.
 
-For a repeatable flag, `count` counts occurrences. A repeatable `-v` flag accepts `-vvv`, and `options.count("-v")` returns `3`.
+For a repeatable flag, `count` counts occurrences. A repeatable `-v` flag accepts `-vvv`, and `options.count("-v")` returns `3`. A flag that isn't repeatable counts `1` once it's used.
 
 For an option with arguments, `count` counts values. An option that takes two values contributes two to the count each time it appears.
 

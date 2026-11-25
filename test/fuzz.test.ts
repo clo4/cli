@@ -296,7 +296,9 @@ async function defaultsViolation(spec: Spec, input: string[]): Promise<string | 
     const first = asArray(option?.args)[0];
     const defaults = first && !first.isOptional ? leadingDefaults(option!.args, 0) : [];
     const all = stored ?? defaults;
-    const want = JSON.stringify([stored !== undefined, all[0], all, stored?.length ?? 0]);
+    // A use without values counts once.
+    const count = stored === undefined ? 0 : Math.max(stored.length, 1);
+    const want = JSON.stringify([stored !== undefined, all[0], all, count]);
     const got = JSON.stringify([
       options.has(name),
       options.get(name),

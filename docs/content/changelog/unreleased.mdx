@@ -17,5 +17,6 @@ title: "Unreleased"
 
 ## Fixed
 
+- `options.count()` of an option used without values, like a flag that isn't repeatable, is 1. It was 0.
 - An option that requires a separator, like `--mode=`, completes without a space after it in Bash and Fish.
 - Every name of a suggestion is offered. Only the first was.

@@ -340,8 +340,11 @@ function optionArgs(
     get: <Read>(name: string) => (options.get(name) ?? unusedValues(scope, name, defaults))?.[0] as Read,
     all: <Read>(name: string) => (options.get(name) ?? unusedValues(scope, name, defaults) ?? []) as Read[],
     // A repeatable option without arguments stores an empty string for each
-    // use, so its values count the uses.
-    count: (name) => options.get(name)?.length ?? 0,
+    // use, so its values count the uses. One used without values counts once.
+    count: (name) => {
+      const values = options.get(name);
+      return values === undefined ? 0 : Math.max(values.length, 1);
+    },
   };
 }
 
