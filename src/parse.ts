@@ -167,6 +167,14 @@ interface OpenOption {
   readonly token: number;
   /** Where a value attached to the option's token starts, or -1. */
   attachedStart: number;
+  /**
+   * The option's values, attached ones included, until it ends and they're
+   * checked against its arguments. Null for an option that takes none, or
+   * once it has ended. A repeatable option keeps adding to the same array,
+   * so this use's values start at `start`.
+   */
+  values: string[] | null;
+  readonly start: number;
 }
 
 /** The state when no option is open. It's frozen because every scanner shares it. */
@@ -178,6 +186,8 @@ const noOpenOption: OpenOption = Object.freeze({
   separateMax: 0,
   token: -1,
   attachedStart: -1,
+  values: null,
+  start: 0,
 });
 
 /**
@@ -415,16 +425,6 @@ class Scanner {
   // is required. `useOption` sets it, and `--` or a subcommand closes it.
   private open: OpenOption = noOpenOption;
 
-  // The values of the last option, checked against its arity when it ends.
-  // Unlike the open option's counts, this includes values attached with a separator.
-  // A repeatable option keeps adding to the same array, so this use's values
-  // start at `valuesStart`.
-  private values: string[] | null = null;
-  private valuesStart = 0;
-  private valuesMin = 0;
-  private valuesMax = 0;
-  private valueArgs: Option["args"] = undefined;
-
   // The first token that can't be read the way it's written, like an unknown
   // option or a value an option doesn't take. `parse` stops there.
   private problem: ParseError | null = null;
@@ -523,20 +523,22 @@ class Scanner {
   // previous option. Then the defaults of the optional arguments that weren't
   // given are added, so a bare `--inspect` gets its port.
   private endOption(): void {
-    const values = this.values;
+    const open = this.open;
+    const values = open.values;
     if (values) {
+      open.values = null;
+      const args = open.option!.args;
       const typedEnd = values.length;
-      const given = typedEnd - this.valuesStart;
-      if (given < this.valuesMin) {
+      const given = typedEnd - open.start;
+      if (given < minArgs(args)) {
         this.failTooFewValues();
       } else {
-        addDefaults(values, this.valueArgs, given);
+        addDefaults(values, args, given);
       }
-      if (hasParse(this.valueArgs)) {
+      if (hasParse(args)) {
         this.noteUse(values, typedEnd);
       }
     }
-    this.values = null;
   }
 
   /**
@@ -545,14 +547,14 @@ class Scanner {
    * option doesn't compile it.
    */
   private noteUse(values: string[], typedEnd: number): void {
-    const { option, name } = this.open;
+    const { option, name, attachedStart, token, start } = this.open;
     (this.uses ??= []).push({
       option: option!,
       name,
       values,
-      token: this.open.attachedStart === -1 ? this.open.token + 1 : this.open.token,
-      tokenStart: this.open.attachedStart === -1 ? undefined : this.open.attachedStart,
-      start: this.valuesStart,
+      token: attachedStart === -1 ? token + 1 : token,
+      tokenStart: attachedStart === -1 ? undefined : attachedStart,
+      start,
       typedEnd,
       end: values.length,
     });
@@ -564,16 +566,12 @@ class Scanner {
    * option gets its values doesn't compile it.
    */
   private failTooFewValues(): void {
-    this.fail(tooFewOptionArguments(this.open.name, this.valuesMin, this.valuesMax), this.open.token);
+    const { name, option, token } = this.open;
+    this.fail(tooFewOptionArguments(name, minArgs(option!.args), maxArgs(option!.args)), token);
   }
 
   private useOption(option: Option, name: string): void {
     this.endOption();
-    const valuesMin = minArgs(option.args);
-    const valuesMax = maxArgs(option.args);
-    // Options that require a separator only take attached values.
-    const separateMax = option.requiresSeparator ? 0 : valuesMax;
-    this.open = { option, name, count: 0, min: valuesMin, separateMax, token: this.at, attachedStart: -1 };
     this.seenOptions.push(option);
     if (option.action) {
       this.optionAction = option.action;
@@ -600,19 +598,23 @@ class Scanner {
     if (option.ref !== undefined) {
       this.options.set(option.ref, optionValues);
     }
+    const max = maxArgs(option.args);
+    this.open = {
+      option,
+      name,
+      count: 0,
+      min: minArgs(option.args),
+      // Options that require a separator only take attached values.
+      separateMax: option.requiresSeparator ? 0 : max,
+      token: this.at,
+      attachedStart: -1,
+      values: max > 0 ? optionValues : null,
+      start: optionValues.length,
+    };
     // Each use of a repeatable option without arguments adds an empty string,
     // so its values count the uses.
     if (option.isRepeatable && !option.args) {
       optionValues.push("");
-      return;
-    }
-
-    this.valuesMin = valuesMin;
-    this.valuesMax = valuesMax;
-    if (valuesMax > 0) {
-      this.values = optionValues;
-      this.valuesStart = optionValues.length;
-      this.valueArgs = option.args;
     }
   }
 
@@ -664,7 +666,7 @@ class Scanner {
     open.count += 1;
     open.min = open.separateMax = 0;
     open.attachedStart = start;
-    if (!this.values) {
+    if (!open.values) {
       this.fail(takesNoArguments(name), this.at, start);
       return;
     }
@@ -672,7 +674,7 @@ class Scanner {
     if (problem) {
       this.fail(problem);
     }
-    this.values.push(token.slice(start));
+    open.values.push(token.slice(start));
   }
 
   /** Read `--`. Every token after it is an argument. */
@@ -953,7 +955,7 @@ class Scanner {
     const kind = meaning.kind;
     if (kind === "value") {
       this.open.count += 1;
-      this.values!.push(token);
+      this.open.values!.push(token);
     } else if (kind === "subcommand") {
       this.endOption();
       this.open = noOpenOption;
