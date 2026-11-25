@@ -15,7 +15,7 @@ import type { ErrorContext } from "./errors.js";
 import { anyName, CommandScope, exactName, optionKey } from "./scope.js";
 import type { Directives, LiveSubcommand, OptionForm, SubcommandMatching, TokenMeaning } from "./scope.js";
 import { parseValues } from "./values.js";
-import type { ParsedUse } from "./values.js";
+import type { Given } from "./values.js";
 
 export interface ParseResult {
   /** The positional arguments: each one a string, or what its parser gave. */
@@ -462,7 +462,7 @@ class Scanner {
   private unmatched: ParseError | null = null;
 
   // Each use of an option whose argument has a parser, or null until one is used.
-  private uses: ParsedUse[] | null = null;
+  private uses: Given[] | null = null;
 
   // The uses of each repeatable option, keyed by `optionKey`, or null until
   // one is used. A subcommand's copy of a parent's option has the same names,
@@ -568,15 +568,22 @@ class Scanner {
    */
   private noteUse(values: string[], typedEnd: number): void {
     const { option, name, attachedStart, token, start } = this.open;
+    // A value attached to the option is in its token, and the rest each
+    // follow in a token of their own.
+    const first = attachedStart === -1 ? token + 1 : token;
+    const tokens: number[] = [];
+    for (let i = start; i < typedEnd; i++) {
+      tokens.push(first + i - start);
+    }
     (this.uses ??= []).push({
-      option: option!,
-      name,
+      args: option!.args,
+      option: name,
       values,
-      token: attachedStart === -1 ? token + 1 : token,
-      tokenStart: attachedStart === -1 ? undefined : attachedStart,
       start,
       typedEnd,
       end: values.length,
+      tokens,
+      tokenStart: attachedStart === -1 ? undefined : attachedStart,
     });
   }
 
@@ -814,16 +821,17 @@ class Scanner {
         }
       }
     }
-    const defaults = await parseValues({
-      context: this.ctx(),
-      problems,
-      args: this.args,
-      argTokens: this.argTokens,
-      typedArgs,
-      argSpecs: this.scope.command.args,
-      uses: this.uses,
-      unused,
-    });
+    const args: Given = {
+      args: this.scope.command.args,
+      option: null,
+      values: this.args,
+      start: 0,
+      typedEnd: typedArgs,
+      end: this.args.length,
+      tokens: this.argTokens,
+    };
+    const given = this.uses ? [args, ...this.uses] : [args];
+    const defaults = await parseValues({ context: this.ctx(), problems, given, unused });
     return this.result(defaults);
   }
 

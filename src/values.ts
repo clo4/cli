@@ -15,42 +15,37 @@ import { argAt, argName, unusedDefaults } from "./args.js";
 import type { ArgList } from "./args.js";
 import { asArray, describeThrown } from "./util.js";
 
-/** The values one use of an option took, for an option with a parser. */
-export interface ParsedUse {
-  option: Option;
-  /** The name the option was used by. */
-  name: string;
-  /**
-   * The index of the token this use's first value is in. Values in tokens of
-   * their own follow it. A value attached to the option starts at `tokenStart`.
-   */
-  token: number;
-  tokenStart: number | undefined;
-  /** The option's values. A repeatable option keeps the values of every use here. */
-  values: string[];
-  /** Where this use's values start in `values`, where the ones the user typed end, and where the defaults after them end. */
+/**
+ * Values the parser read for an argument list: a command's positional
+ * arguments, one use of an option, or the defaults of an option that wasn't
+ * used. Each value is parsed in place, so every name an option's values are
+ * stored under, and every use of a repeatable option, reads what they parsed
+ * to.
+ */
+export interface Given {
+  /** The arguments the values are for, from `start` on. */
+  args: ArgList;
+  /** The option the values are for, as the user would write it, or null for positional arguments. */
+  option: string | null;
+  /** The values. A repeatable option keeps the values of every use here. */
+  values: unknown[];
+  /** Where these values start in `values`, where the ones the user typed end, and where the defaults after them end. */
   start: number;
   typedEnd: number;
   end: number;
+  /** The index of the token each typed value is in, from `start` on. */
+  tokens: readonly number[];
+  /** Where a value attached to its option starts in its token. */
+  tokenStart?: number;
 }
 
-/**
- * What the parser hands over: the strings it read, and where each came from.
- * Each value is parsed in place, so every name an option's values are stored
- * under, and every use of a repeatable option, reads what they parsed to.
- */
+/** What {@link parseValues} reads. */
 export interface Unparsed {
   context: ErrorContext;
   /** What's wrong with the command line so far. Rejected values are added to it. */
   problems: ParseError[] | null;
-  /** The positional arguments, with defaults from index `typedArgs` on. */
-  args: unknown[];
-  /** The index of the token each typed argument came from. */
-  argTokens: readonly number[];
-  typedArgs: number;
-  /** The arguments of the selected command. */
-  argSpecs: ArgList;
-  uses: readonly ParsedUse[] | null;
+  /** The values typed for arguments with a parser, positional arguments first. */
+  given: readonly Given[];
   /** The options that weren't used, whose defaults an action can still read. */
   unused: readonly Option[];
 }
@@ -60,18 +55,11 @@ export class Rejected {
   constructor(readonly reason: string) {}
 }
 
-/** One string to parse, at `values[index]`, where what it parses to goes. */
+/** One value to parse: `given.values[index]`, which is for `arg`. What it parses to goes in its place. */
 interface Job {
   arg: Arg & { parse: StandardSchemaV1 };
-  raw: string;
-  /** What the value is for, as the user would write it. */
-  target: string;
-  isDefault: boolean;
-  values: unknown[];
+  given: Given;
   index: number;
-  /** Where the value was typed. Undefined for a default. */
-  token: number | undefined;
-  tokenStart: number | undefined;
 }
 
 function readResult(result: StandardResult<unknown>): unknown {
@@ -98,37 +86,28 @@ export async function apply(schema: StandardSchemaV1, raw: string): Promise<unkn
   }
 }
 
-/**
- * The jobs for the values from `start` to `end` of `values`, which are the
- * arguments `args` in order. `tokenOf` gives the index of the token each typed
- * value is in.
- */
-function addJobs(
-  jobs: Job[],
-  args: ArgList,
-  values: unknown[],
-  start: number,
-  typedEnd: number,
-  end: number,
-  target: string | null,
-  tokenOf: (index: number) => number,
-  tokenStart?: number,
-): void {
-  for (let i = start; i < end; i++) {
-    const arg = argAt(args, i - start);
+/** Add a job for each of the values in `given` whose argument has a parser. */
+function addJobs(jobs: Job[], given: Given): void {
+  for (let i = given.start; i < given.end; i++) {
+    const arg = argAt(given.args, i - given.start);
     if (arg?.parse !== undefined) {
-      jobs.push({
-        arg: arg as Job["arg"],
-        raw: values[i] as string,
-        target: targetOf(target, args, arg, i - start),
-        isDefault: i >= typedEnd,
-        values,
-        index: i,
-        token: i < typedEnd ? tokenOf(i) : undefined,
-        tokenStart: i < typedEnd ? tokenStart : undefined,
-      });
+      jobs.push({ arg: arg as Job["arg"], given, index: i });
     }
   }
+}
+
+/** The problem with the value of `job`, which its parser rejected for `reason`. */
+function rejection({ arg, given, index }: Job, reason: string, context: ErrorContext): ParseError {
+  const at = index - given.start;
+  const typed = index < given.typedEnd;
+  return invalidValue(
+    given.values[index] as string,
+    targetOf(given.option, given.args, arg, at),
+    reason,
+    !typed,
+    { ...context, token: typed ? given.tokens[at] : undefined, start: typed ? given.tokenStart : undefined },
+    describeParser(arg)?.choices,
+  );
 }
 
 /**
@@ -153,54 +132,46 @@ function targetOf(option: string | null, args: ArgList, arg: Arg, index: number)
  * option parsed to. Rejects with every problem together, the ones the
  * command-line parser found and each value its parser rejected.
  */
-export async function parseValues(unparsed: Unparsed): Promise<Map<Option, unknown[]> | null> {
+export async function parseValues({
+  context,
+  problems,
+  given,
+  unused,
+}: Unparsed): Promise<Map<Option, unknown[]> | null> {
   const jobs: Job[] = [];
-  const { args } = unparsed;
-  const { argTokens } = unparsed;
-  addJobs(jobs, unparsed.argSpecs, args, 0, unparsed.typedArgs, args.length, null, (i) => argTokens[i]);
-  for (const use of unparsed.uses ?? []) {
-    const tokenOf = (i: number) => use.token + i - use.start;
-    addJobs(
-      jobs,
-      use.option.args,
-      use.values,
-      use.start,
-      use.typedEnd,
-      use.end,
-      use.name,
-      tokenOf,
-      use.tokenStart,
-    );
+  for (const each of given) {
+    addJobs(jobs, each);
   }
   let defaults: Map<Option, unknown[]> | null = null;
-  for (const option of unparsed.unused) {
+  for (const option of unused) {
     const values = unusedDefaults(option);
     if (values) {
       (defaults ??= new Map()).set(option, values);
-      addJobs(jobs, option.args, values, 0, 0, values.length, asArray(option.name).join("/"), () => -1);
+      const name = asArray(option.name).join("/");
+      addJobs(jobs, {
+        args: option.args,
+        option: name,
+        values,
+        start: 0,
+        typedEnd: 0,
+        end: values.length,
+        tokens: [],
+      });
     }
   }
 
-  const results = await Promise.all(jobs.map((job) => apply(job.arg.parse, job.raw)));
-  let problems = unparsed.problems;
+  const results = await Promise.all(
+    jobs.map((job) => apply(job.arg.parse, job.given.values[job.index] as string)),
+  );
   // Positional arguments first, then options in the order used, whichever
   // parser settled first.
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
     const result = results[i];
     if (result instanceof Rejected) {
-      (problems ??= []).push(
-        invalidValue(
-          job.raw,
-          job.target,
-          result.reason,
-          job.isDefault,
-          { ...unparsed.context, token: job.token, start: job.tokenStart },
-          describeParser(job.arg)?.choices,
-        ),
-      );
+      (problems ??= []).push(rejection(job, result.reason, context));
     } else {
-      job.values[job.index] = result;
+      job.given.values[job.index] = result;
     }
   }
   if (problems) {
