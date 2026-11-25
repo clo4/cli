@@ -57,12 +57,6 @@ export interface LiveOption {
   forms: OptionForm[];
 }
 
-/** An option, and the names that still refer to it. */
-interface NamedOption {
-  option: Option;
-  names: string[];
-}
-
 /** A subcommand the next token can name, and the names that still refer to it. */
 export interface LiveSubcommand {
   command: Subcommand;
@@ -476,7 +470,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * subcommand's.
    */
   live(subcommands: SubcommandMatching | null = null): { local: LiveOption[]; persistent: LiveOption[] } {
-    return this.withForms(this.liveOptions(subcommands, true));
+    return this.liveOptions(subcommands, true);
   }
 
   /**
@@ -484,36 +478,20 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    * {@link live} ones that aren't hidden, without the names a subcommand takes.
    */
   visible(): { local: LiveOption[]; persistent: LiveOption[] } {
-    return this.withForms(this.liveOptions(this.hasSubcommands ? anyName : null, false));
-  }
-
-  /** Each of `options`, with how each of its names is written here. */
-  private withForms({ local, persistent }: { local: NamedOption[]; persistent: NamedOption[] }): {
-    local: LiveOption[];
-    persistent: LiveOption[];
-  } {
-    return { local: this.writeEach(local), persistent: this.writeEach(persistent) };
-  }
-
-  /** See {@link withForms}. It uses a loop instead of a callback, like {@link liveOptions}. */
-  private writeEach(options: readonly NamedOption[]): LiveOption[] {
-    const written: LiveOption[] = [];
-    for (let i = 0; i < options.length; i++) {
-      const { option, names } = options[i];
-      written.push({ option, forms: this.forms(option, names) });
-    }
-    return written;
+    return this.liveOptions(this.hasSubcommands ? anyName : null, false);
   }
 
   /** The live names of each option a user could have meant, for "did you mean" suggestions. */
   suggestionNames(): string[][] {
     const { local, persistent } = this.liveOptions(null, false);
     const names: string[][] = [];
-    for (let i = 0; i < local.length; i++) {
-      names.push(local[i].names);
-    }
-    for (let i = 0; i < persistent.length; i++) {
-      names.push(persistent[i].names);
+    for (let i = 0; i < local.length + persistent.length; i++) {
+      const { forms } = i < local.length ? local[i] : persistent[i - local.length];
+      const each: string[] = [];
+      for (let j = 0; j < forms.length; j++) {
+        each.push(forms[j].name);
+      }
+      names.push(each);
     }
     return names;
   }
@@ -527,7 +505,7 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
   private liveOptions(
     subcommands: SubcommandMatching | null,
     hidden: boolean,
-  ): { local: NamedOption[]; persistent: NamedOption[] } {
+  ): { local: LiveOption[]; persistent: LiveOption[] } {
     const { local, persistent } = this;
     if (local.length === 0 && persistent.length === 0) {
       return { local: [], persistent: [] };
@@ -548,32 +526,32 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
     };
   }
 
-  /** Each of `options` with its live names, as {@link liveOptions} lists them. */
+  /** Each of `options` with the forms of its live names, as {@link liveOptions} lists them. */
   private pickLive(
     options: readonly Option[],
     owner: ReadonlyMap<string, Option>,
     subcommands: SubcommandMatching | null,
     hidden: boolean,
-  ): NamedOption[] {
-    const picked: NamedOption[] = [];
+  ): LiveOption[] {
+    const picked: LiveOption[] = [];
     for (let i = 0; i < options.length; i++) {
       const option = options[i];
       if (option.hidden && !hidden) {
         continue;
       }
-      const all = asArray(option.name);
-      const names: string[] = [];
-      for (let j = 0; j < all.length; j++) {
-        const name = all[j];
+      const names = asArray(option.name);
+      const forms: OptionForm[] = [];
+      for (let j = 0; j < names.length; j++) {
+        const name = names[j];
         if (
           owner.get(name) === option &&
           !(subcommands && this.meaning(name, subcommands, false)?.kind === "subcommand")
         ) {
-          names.push(name);
+          forms.push({ name, join: this.join(option, name) });
         }
       }
-      if (names.length > 0) {
-        picked.push({ option, names });
+      if (forms.length > 0) {
+        picked.push({ option, forms });
       }
     }
     return picked;
@@ -588,27 +566,19 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    */
 
   /**
-   * How each of `names` is written with `option`'s value here. Help shows
-   * these, completion offers them, and the spec checker reads each one back
-   * through the parser. {@link formStart} and {@link writeForm} turn a form
-   * into tokens.
+   * What joins `option`, written as `name`, to its first value here. See
+   * {@link OptionForm.join}. Help shows the forms, completion offers them,
+   * and the spec checker reads each one back through the parser.
+   * {@link formStart} and {@link writeForm} turn a form into tokens.
    */
-  private forms(option: Option, names: readonly string[]): OptionForm[] {
-    const takesArgs = maxArgs(option.args) !== 0;
-    const forms: OptionForm[] = [];
-    for (let i = 0; i < names.length; i++) {
-      const name = names[i];
-      let join: string | null = null;
-      if (takesArgs) {
-        if (option.requiresSeparator) {
-          join = this.requiredSeparator(option);
-        } else if (!this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+")) {
-          join = "";
-        }
-      }
-      forms.push({ name, join });
+  private join(option: Option, name: string): string | null {
+    if (maxArgs(option.args) === 0) {
+      return null;
     }
-    return forms;
+    if (option.requiresSeparator) {
+      return this.requiredSeparator(option);
+    }
+    return !this.directives.flagsArePosixNoncompliant && (name === "-" || name === "+") ? "" : null;
   }
 
   /**
