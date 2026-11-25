@@ -183,12 +183,12 @@ export interface Subcommand {
   parserDirectives?: {
     /**
      * Read option names literally instead of chaining short names. Unknown
-     * option-like words become positional arguments. Default: `false`.
+     * option-like tokens become positional arguments. Default: `false`.
      */
     flagsArePosixNoncompliant?: boolean;
 
     /**
-     * Stop option parsing after the first positional argument. Later words,
+     * Stop option parsing after the first positional argument. Later tokens,
      * including `--`, are positional values. Default: `false`.
      */
     optionsMustPrecedeArguments?: boolean;

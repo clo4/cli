@@ -96,8 +96,8 @@ export interface UsableOption {
 }
 
 /**
- * A token of the command line: a word as the parser reads it. A token says
- * what the word was read as, and a problem says what's wrong with it. See
+ * What the parser read one token of the command line as. It says what the
+ * token was read as, and a problem says what's wrong with it. See
  * {@link tokenReader}.
  */
 export type Token =
@@ -110,7 +110,7 @@ export type Token =
       kind: "options";
       uses: readonly { readonly option: Option | null; readonly name: string }[];
       /**
-       * The value the word has after its last use, valid or not: where it
+       * The value the token has after its last use, valid or not: where it
        * starts, the separator before it, which is "" if there's none, and the
        * argument it's for, which is undefined if the option takes none.
        */

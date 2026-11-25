@@ -99,7 +99,7 @@ $ node pixels.ts --size 800*600
 Error: Invalid value "800*600" for --size: expected "x" after "800"
 ```
 
-The parser must consume the entire argument value. `800x600x2` fails with `unexpected "x2" after "800x600"`. A parser reads one argument value, so it does not combine separate words such as `--size 800 600`.
+The parser must consume the entire argument value. `800x600x2` fails with `unexpected "x2" after "800x600"`. A parser reads one argument value, so it does not combine separate tokens such as `--size 800 600`.
 
 ## Transform the result
 

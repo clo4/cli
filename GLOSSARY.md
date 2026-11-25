@@ -46,7 +46,7 @@ A declarative CLI framework: one spec describes a command line, and the parser, 
 
 **Label**: A name that `as` gives a parser. A pattern shows it in the parser's place, like `<width>x<height>`.
 
-**Word**: A string of the command line, before the parser reads it. `argv` is the words after the program's name.
+**Word**: A string of the command line, before the parser reads it. `argv` is the words after the program's name. The docs, and the comments a CLI author sees in their editor, call it a token, the term readers know.
 
 **Token**: A word as the parser reads it: a subcommand, one or more options, `--`, a value of the open option, or an argument. A token says what the word was read as, and a problem says what's wrong with it, so an option that doesn't exist is a use with no option. A value's or argument's token says which argument it's for. _Avoid_: reading, token kind
 

@@ -115,7 +115,7 @@ Read the [introduction](https://clo4.net/cli/docs/next) or go directly to a topi
 - [Actions](https://clo4.net/cli/docs/next/concepts/actions): input types, errors and exit codes.
 - [Help and completion](https://clo4.net/cli/docs/next/concepts/help-and-completion): built-ins, suggestions and shell setup.
 - [Testing](https://clo4.net/cli/docs/next/guides/testing): validate a spec against the parser's rules.
-- [Parser settings](https://clo4.net/cli/docs/next/concepts/parser-settings): word parsing, abbreviations and separators.
+- [Parser settings](https://clo4.net/cli/docs/next/concepts/parser-settings): token parsing, abbreviations and separators.
 - [Performance](https://clo4.net/cli/docs/next/introduction/performance): benchmarks and loading commands on demand.
 - [Choosing a CLI library](https://clo4.net/cli/docs/next/introduction/choosing-a-cli-library): features and application responsibilities.
 

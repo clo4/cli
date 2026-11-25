@@ -45,7 +45,7 @@ Completion stops suggesting an option at its repeat limit. It also stops suggest
 
 ## Name resolution
 
-A word is interpreted in the command scope where it appears. Entering a subcommand changes which options and commands its names select.
+A token is interpreted in the command scope where it appears. Entering a subcommand changes which options and commands its names select.
 
 | Situation                                            | Resolution                                                                       |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -54,25 +54,25 @@ A word is interpreted in the command scope where it appears. Entering a subcomma
 | A local and an inherited subcommand share a name.    | The local subcommand wins for that name.                                         |
 | A subcommand name also names an option.              | The subcommand wins where a subcommand can be selected.                          |
 | A name is an alias that no nearer definition takes.  | That alias continues to select its original definition.                          |
-| A word follows the first positional argument.        | It cannot select a subcommand. Option parsing can continue unless disabled.      |
+| A token follows the first positional argument.       | It cannot select a subcommand. Option parsing can continue unless disabled.      |
 
 A nonpersistent parent option can be supplied before entering a child, but cannot be supplied after entering it. Persistent options remain available in descendant scopes.
 
 Parsed values remain available under their recorded keys. When different options share a name, that shared lookup key reads the option used last. A unique `ref` always reads its own option. Spec checks require refs for these collisions.
 
-## Word boundaries
+## Token boundaries
 
 | Input or rule                                                      | Effect                                                                                                                 |
 | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `--` while option parsing is enabled                               | Ends option and subcommand parsing. Remaining words are positional values, subject to argument limits.                 |
-| First positional argument with `optionsMustPrecedeArguments: true` | Ends option parsing. Later `--` words are positional values too.                                                       |
-| An attached option value, such as `--port=3000`                    | Ends that option's values in the same word. Later words cannot supply additional values for that use.                  |
+| `--` while option parsing is enabled                               | Ends option and subcommand parsing. Remaining tokens are positional values, subject to argument limits.                |
+| First positional argument with `optionsMustPrecedeArguments: true` | Ends option parsing. Later `--` tokens are positional values too.                                                      |
+| An attached option value, such as `--port=3000`                    | Ends that option's values in the same token. Later tokens cannot supply additional values for that use.                |
 | An open option requires another separate value.                    | A subcommand name is read as that value. A recognized option can still interrupt it and produce a missing-value error. |
-| An open option has a variadic argument.                            | Non-option words remain its values rather than selecting subcommands.                                                  |
+| An open option has a variadic argument.                            | Non-option tokens remain its values rather than selecting subcommands.                                                 |
 
-An option-like word that does not match a known option can be a value of an open option. This permits values such as negative numbers. With no open option, unknown option-like words normally fail parsing.
+An option-like token that does not match a known option can be a value of an open option. This permits values such as negative numbers. With no open option, unknown option-like tokens normally fail parsing.
 
-With `flagsArePosixNoncompliant: true`, unrecognized option-like words become positional arguments instead. The declared argument limits still apply.
+With `flagsArePosixNoncompliant: true`, unrecognized option-like tokens become positional arguments instead. The declared argument limits still apply.
 
 ## Action selection and validation
 
@@ -93,7 +93,7 @@ An option action receives broader types because required inputs can be missing. 
 
 ## Error reporting
 
-The parser stops at the first word it can't read, such as an unknown option or a value for an option that takes none. It reports that problem alone, because it can't tell what the words after it mean.
+The parser stops at the first token it can't read, such as an unknown option or a value for an option that takes none. It reports that problem alone, because it can't tell what the tokens after it mean.
 
 Once it has read the whole command line, the command-line parser runs the remaining checks and every argument's [parser](../concepts/arguments.mdx#parsing-values), then reports each failure on a line of its own:
 

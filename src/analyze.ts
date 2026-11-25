@@ -1,6 +1,6 @@
 /**
- * How a spec reads a command line: the token each word is, the argument it's
- * for, every problem the parser finds and the word it's in, and what the
+ * How a spec reads a command line: what each token is, the argument it's
+ * for, every problem the parser finds and the token it's in, and what the
  * action gets. It's for tools built around a spec, like an editor, a linter
  * for scripts that call a CLI, or the playground on the site.
  *
@@ -27,13 +27,13 @@ export interface Problem {
    * the command. Undefined for a problem in no token, like an invalid default.
    */
   token: number | undefined;
-  /** Where the value starts in the word, for a value attached to its option. */
+  /** Where the value starts in the token, for a value attached to its option. */
   start: number | undefined;
 }
 
 /** How a spec reads a command line. See {@link analyze}. */
 export interface Analysis {
-  /** The token each word was read as, in order. */
+  /** What the parser read each token as, in order. */
   tokens: Token[];
   /** Everything `run` would report about the line. Empty if it parses. */
   problems: Problem[];
@@ -42,10 +42,9 @@ export interface Analysis {
 }
 
 /**
- * How `spec` reads `argv`, the words after the program's name. Every word is
- * read, even after one that's wrong, so each has a token. The
- * problems are the ones `run` would print, and the result is what its action
- * would get.
+ * How `spec` reads `argv`, the command line after the program's name. Every
+ * token is read, even after one that's wrong. The problems are the ones `run`
+ * would print, and the result is what its action would get.
  *
  * Rejects only if a `loadSpec` does.
  */

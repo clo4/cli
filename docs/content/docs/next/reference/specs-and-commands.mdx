@@ -72,14 +72,14 @@ The commands below this one.
 
 ### `parserDirectives` [#subcommand-parserdirectives]
 
-How the parser reads words at this command. Each field is inherited on its own, so a subcommand changes one by setting it, and turns a boolean off with `false`. [Parser settings](../concepts/parser-settings.mdx) explains each with examples.
+How the parser reads tokens at this command. Each field is inherited on its own, so a subcommand changes one by setting it, and turns a boolean off with `false`. [Parser settings](../concepts/parser-settings.mdx) explains each with examples.
 
-| Field                          | Type                       | Default | Effect                                                                                                                                                            |
-| ------------------------------ | -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `flagsArePosixNoncompliant`    | `boolean`                  | `false` | Read option names literally instead of chaining short names, so `-abc` is one option. A word that looks like an option but names none is a positional argument.   |
-| `optionsMustPrecedeArguments`  | `boolean`                  | `false` | Stop reading options after the first positional argument. Later words, including `--`, are arguments.                                                             |
-| `optionArgSeparators`          | `string \| [] \| string[]` | `"="`   | What joins an option's name to its value in one word. A subcommand's list replaces the inherited one. An empty array turns them off, though `-p3000` still works. |
-| `subcommandsMatchUniquePrefix` | `boolean`                  | `false` | Accept an unambiguous start of a visible local subcommand's name, like `bu` for `build`. Hidden and inherited subcommands still need their exact names.           |
+| Field                          | Type                       | Default | Effect                                                                                                                                                             |
+| ------------------------------ | -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `flagsArePosixNoncompliant`    | `boolean`                  | `false` | Read option names literally instead of chaining short names, so `-abc` is one option. A token that looks like an option but names none is a positional argument.   |
+| `optionsMustPrecedeArguments`  | `boolean`                  | `false` | Stop reading options after the first positional argument. Later tokens, including `--`, are arguments.                                                             |
+| `optionArgSeparators`          | `string \| [] \| string[]` | `"="`   | What joins an option's name to its value in one token. A subcommand's list replaces the inherited one. An empty array turns them off, though `-p3000` still works. |
+| `subcommandsMatchUniquePrefix` | `boolean`                  | `false` | Accept an unambiguous start of a visible local subcommand's name, like `bu` for `build`. Hidden and inherited subcommands still need their exact names.            |
 
 ### `hidden` [#subcommand-hidden]
 

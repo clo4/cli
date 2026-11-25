@@ -98,7 +98,7 @@ options: [
 
 `--size 80 24` supplies both values. In the action, `options.all("--size")` reads them and `options.get("--size")` reads the first.
 
-An attached value, such as `--size=80`, ends that option's values in the same word. It cannot supply both required arguments. Use separate words for options that take several values.
+An attached value, such as `--size=80`, ends that option's values in the same token. It cannot supply both required arguments. Use separate tokens for options that take several values.
 
 Optional option arguments have different default behavior from required option arguments. [Options](./options.mdx#defaults) explains both cases.
 
@@ -260,7 +260,7 @@ Inside `CLI.spec`, an option made by a function typed `CLI.Option` is read as a 
 
 ## Values that look like options
 
-The `--` separator makes every remaining word a positional argument, even if it matches an option or subcommand. For a command that accepts a filename, `demo -- --help` passes the filename `"--help"`.
+The `--` separator makes every remaining token a positional argument, even if it matches an option or subcommand. For a command that accepts a filename, `demo -- --help` passes the filename `"--help"`.
 
 The action's `argSeparatorIndex` identifies the first value after `--`. It is `-1` when the user did not supply the separator. [Wrap another executable](../guides/wrapping-commands.mdx) shows how to pass through the rest of a command line without requiring `--`.
 
