@@ -97,28 +97,35 @@ export type TokenReading =
   | { kind: "subcommand"; command: Subcommand }
   /**
    * One option, or several chained short options, in the order used. If the
-   * token also carries a value the option accepts, `attached` says where it starts.
+   * token also carries a value the option accepts, `attached` says which
+   * option, the argument the value is for, and where it starts.
    */
-  | { kind: "options"; options: readonly Option[]; attached: { option: Option; start: number } | null }
-  /** A value of the option before it. */
-  | { kind: "value"; option: Option }
-  | { kind: "argument" }
+  | {
+      kind: "options";
+      options: readonly Option[];
+      attached: { option: Option; arg: Arg; start: number } | null;
+    }
+  /** A value of the option before it, for `arg`. */
+  | { kind: "value"; option: Option; arg: Arg | undefined }
+  /** A positional argument of the command, for `arg`, or for none if the command has no room for it. */
+  | { kind: "argument"; arg: Arg | undefined }
   /** An option that doesn't exist. */
   | { kind: "unknown" };
 
 // The readings that carry nothing else, made once and shared.
 const separatorReading = Object.freeze({ kind: "separator" as const });
-const argumentReading = Object.freeze({ kind: "argument" as const });
 const unknownReading: TokenReading = Object.freeze({ kind: "unknown" });
 
-/** What {@link Scanner.classify} says a token is that's a value of the open option. */
+// What {@link Scanner.classify} says a token is that's an argument, or a value
+// of the open option. {@link Scanner.peek} adds the argument it's for.
+const argumentMark = Object.freeze({ kind: "argument" as const });
 const valueMark = Object.freeze({ kind: "value" as const });
 
 /**
  * What {@link Scanner.classify} says a token is: what {@link CommandScope.meaning}
  * decides, or else `--`, an argument, or a value of the open option.
  */
-type Classified = TokenMeaning | typeof separatorReading | typeof argumentReading | typeof valueMark;
+type Classified = TokenMeaning | typeof separatorReading | typeof argumentMark | typeof valueMark;
 
 /**
  * Where the value attached to the token `meaning` reads as options starts, if
@@ -130,15 +137,14 @@ type Classified = TokenMeaning | typeof separatorReading | typeof argumentReadin
 function attachedAt(
   meaning: Extract<TokenMeaning, { kind: "options" }>,
   scope: CommandScope,
-): { option: Option; start: number } | null {
+): { option: Option; arg: Arg; start: number } | null {
   const value = meaning.attached;
   if (value === null) {
     return null;
   }
   const { option, name, start, separator } = value;
-  return maxArgs(option.args) > 0 && scope.separatorProblem(option, name, separator) === null
-    ? { option, start }
-    : null;
+  const arg = argAt(option.args, 0);
+  return arg && scope.separatorProblem(option, name, separator) === null ? { option, arg, start } : null;
 }
 
 /** The values a repeatable option has collected, and how many times it's been used. */
@@ -899,11 +905,10 @@ class Scanner {
       partialIsOption =
         reading.kind === "options" || reading.kind === "unknown" || reading.kind === "separator";
       const found = reading.kind === "options" ? reading.attached : null;
-      const arg = found && argAt(found.option.args, 0);
-      if (found && arg) {
+      if (found) {
         attached = {
           option: found.option,
-          arg,
+          arg: found.arg,
           prefix: partial.slice(0, found.start),
           value: partial.slice(found.start),
         };
@@ -945,7 +950,7 @@ class Scanner {
   private classify(token: string): Classified {
     // Every token after `--` is an argument.
     if (this.argSeparatorIndex !== -1) {
-      return argumentReading;
+      return argumentMark;
     }
     // "--" disables option & subcommand parsing, so it's checked first.
     // Once options must stop, it's an argument like any other token.
@@ -964,7 +969,7 @@ class Scanner {
     // The token isn't `--`, a subcommand or an option. It's a value of the
     // open option if that has room. Only an option that takes separate tokens
     // has room, so the value needs no separator check.
-    return hasRoom ? valueMark : argumentReading;
+    return hasRoom ? valueMark : argumentMark;
   }
 
   /** What {@link read} would say `token` is read as, without reading it. */
@@ -981,7 +986,14 @@ class Scanner {
         ? unknownReading
         : { kind: "options", options: used, attached: attachedAt(meaning, this.scope) };
     }
-    return meaning.kind === "value" ? { kind: "value", option: this.open.option } : meaning;
+    if (meaning.kind === "value") {
+      const { option, count } = this.open;
+      return { kind: "value", option, arg: argAt(option.args, count) };
+    }
+    if (meaning.kind === "argument") {
+      return { kind: "argument", arg: argAt(this.scope.command.args, this.args.length) };
+    }
+    return meaning;
   }
 
   /**

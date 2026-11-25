@@ -294,21 +294,28 @@ test("readNext: skips unknown characters in a chain and keeps the rest", async (
 });
 
 test("readToken: says what each kind of token is read as", async () => {
-  const out: Option = { name: "--out", args: {} };
+  const dir: Arg = { name: "dir" };
+  const out: Option = { name: "--out", args: dir };
   const sub: Subcommand = { name: "sub" };
-  const spec: Spec = { name: "test", args: { isVariadic: true }, options: [out], subcommands: [sub] };
+  const file: Arg = { name: "file", isVariadic: true };
+  const spec: Spec = { name: "test", args: file, options: [out], subcommands: [sub] };
   expect(await readToken(spec, [], "--")).toEqual({ kind: "separator" });
   expect(await readToken(spec, [], "sub")).toEqual({ kind: "subcommand", command: sub });
   expect(await readToken(spec, [], "--out=a")).toEqual({
     kind: "options",
     options: [out],
-    attached: { option: out, start: 6 },
+    attached: { option: out, arg: dir, start: 6 },
   });
-  expect(await readToken(spec, ["--out"], "a")).toEqual({ kind: "value", option: out });
-  expect(await readToken(spec, ["--out"], "--nope")).toEqual({ kind: "value", option: out });
-  expect(await readToken(spec, [], "a")).toEqual({ kind: "argument" });
-  expect(await readToken(spec, ["--"], "--out")).toEqual({ kind: "argument" });
+  expect(await readToken(spec, ["--out"], "a")).toEqual({ kind: "value", option: out, arg: dir });
+  expect(await readToken(spec, ["--out"], "--nope")).toEqual({ kind: "value", option: out, arg: dir });
+  expect(await readToken(spec, [], "a")).toEqual({ kind: "argument", arg: file });
+  expect(await readToken(spec, ["--"], "--out")).toEqual({ kind: "argument", arg: file });
   expect(await readToken(spec, [], "--nope")).toEqual({ kind: "unknown" });
+});
+
+test("readToken: an argument past the command's last is for none", async () => {
+  const spec: Spec = { name: "test", args: { name: "only" } };
+  expect(await readToken(spec, ["one"], "two")).toEqual({ kind: "argument", arg: undefined });
 });
 
 test("readNext: lists the options the next token can use, with the names that read as each", async () => {
