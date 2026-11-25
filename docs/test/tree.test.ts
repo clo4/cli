@@ -27,7 +27,7 @@ test("a loaded command is found in the file it's loaded from, and at its loading
     { file: "main.ts", piece: main, ranges: specRanges(mainSource) },
     { file: "remote.ts", piece: remote, ranges: specRanges(remoteSource) },
   ]);
-  // The parser reads a copy of the loaded command.
+  // The word reads as the loading definition, not the command it loads.
   const [reading] = (await analyze(main, ["remote"])).tokens;
   expect(reading.kind).toBe("subcommand");
   const command = (reading as { command: Subcommand }).command;
