@@ -6,7 +6,7 @@
 
 import * as CLI from "@clo4/cli";
 import type { Arg, Spec } from "@clo4/cli";
-import { readNext } from "@clo4/cli/unstable";
+import { analyze, type TokenReading } from "@clo4/cli/analyze";
 import { asArray } from "./util";
 import { wordAt, words, type Word } from "./words";
 
@@ -51,7 +51,7 @@ export async function suggest(spec: Spec, line: string, caret: number): Promise<
   } else if (before[0].text === spec.name) {
     const argv = before.slice(1).map((w) => w.text);
     found = await CLI.complete(spec, argv, word.text);
-    free = freeArgument(await readNext(spec, argv, word.text));
+    free = freeArgument((await analyze(spec, [...argv, word.text])).tokens.at(-1));
   }
   const items: Item[] = [];
   for (const { name, description, incomplete } of found) {
@@ -71,12 +71,14 @@ export async function suggest(spec: Spec, line: string, caret: number): Promise<
   return { word, end: whole.end, whole: whole.text, items, selected: -1 };
 }
 
-/** The argument the word fills, if it takes any text: one with no parser. */
-function freeArgument(next: Awaited<ReturnType<typeof readNext>>): Arg | undefined {
-  if (next.partialIsOption && !next.attached) {
-    return undefined;
+/** The argument the word, read as `reading`, fills, if it takes any text: one with no parser. */
+function freeArgument(reading: TokenReading | undefined): Arg | undefined {
+  let arg: Arg | undefined;
+  if (reading?.kind === "argument" || reading?.kind === "value") {
+    arg = reading.arg;
+  } else if (reading?.kind === "options") {
+    arg = reading.attached?.arg;
   }
-  const arg = next.attached?.arg ?? (next.value ? next.value.arg : next.arg);
   return arg && arg.parse === undefined ? arg : undefined;
 }
 

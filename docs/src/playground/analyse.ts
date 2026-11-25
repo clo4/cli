@@ -1,8 +1,7 @@
 import * as CLI from "@clo4/cli";
-import type { Spec, Subcommand } from "@clo4/cli";
-import { ParseError, parse, tokenReader } from "@clo4/cli/unstable";
+import type { Spec } from "@clo4/cli";
+import { analyze, type ParseResult, type TokenReading } from "@clo4/cli/analyze";
 import type { Piece } from "./tree";
-import { asArray } from "./util";
 import { words, type Word } from "./words";
 
 /** What the parser reads a word as. */
@@ -37,7 +36,7 @@ export interface Printed {
   text: string;
 }
 
-export type ParseResult = Awaited<ReturnType<typeof parse>>;
+export type { ParseResult };
 
 export interface Analysis {
   tokens: Token[];
@@ -76,47 +75,32 @@ export async function analyse(
   }
   program.pieces = [spec];
 
-  const reader = tokenReader(spec);
-  let command: Spec | Subcommand = spec;
-  let positional = 0;
-  for (const token of rest) {
-    const reading = await reader.read(token.text);
-    token.kind = reading.kind === "options" ? "option" : reading.kind;
-    if (reading.kind === "subcommand") {
-      command = reading.command;
-      positional = 0;
-      token.pieces = [reading.command];
-    } else if (reading.kind === "options") {
-      token.pieces = [...reading.options];
-    } else if (reading.kind === "value") {
-      token.pieces = [reading.option, ...asArray(reading.option.args)];
-    } else if (reading.kind === "argument") {
-      const args = asArray(command.args);
-      const arg = args[Math.min(positional++, args.length - 1)];
-      if (arg) {
-        token.pieces = [arg];
-      }
-    }
-  }
-
   const argv = rest.map((token) => token.text);
-  let result: ParseResult | null = null;
-  try {
-    result = await parse(argv, spec);
-  } catch (error) {
-    if (!(error instanceof ParseError)) {
-      throw error;
-    }
-    for (const problem of error.problems ?? [error]) {
-      const at = problem.context.token;
-      report({
-        message: problem.message,
-        token: at === undefined ? undefined : at + 1,
-        start: problem.context.start,
-      });
-    }
+  const { tokens: readings, problems: found, result } = await analyze(spec, argv);
+  readings.forEach((reading, i) => {
+    rest[i].kind = reading.kind === "options" ? "option" : reading.kind;
+    rest[i].pieces = pieces(reading);
+  });
+  for (const { message, token, start } of found) {
+    report({ message, token: token === undefined ? undefined : token + 1, start });
   }
   return { tokens, problems, result, printed: await execute(spec, argv) };
+}
+
+/** The pieces of the spec a word read as `reading` is. */
+function pieces(reading: TokenReading): Piece[] {
+  switch (reading.kind) {
+    case "subcommand":
+      return [reading.command];
+    case "options":
+      return [...reading.options];
+    case "value":
+      return reading.arg ? [reading.option, reading.arg] : [reading.option];
+    case "argument":
+      return reading.arg ? [reading.arg] : [];
+    default:
+      return [];
+  }
 }
 
 /** What running `spec` with `argv` prints. */

@@ -1,5 +1,5 @@
 import type { Subcommand } from "@clo4/cli";
-import { tokenReader } from "@clo4/cli/unstable";
+import { analyze } from "@clo4/cli/analyze";
 import { expect, test } from "vitest";
 import { specRanges } from "@/playground/ranges";
 import { spec as build } from "@/playground/scenarios/build";
@@ -28,7 +28,7 @@ test("a loaded command is found in the file it's loaded from, and at its loading
     { file: "remote.ts", piece: remote, ranges: specRanges(remoteSource) },
   ]);
   // The parser reads a copy of the loaded command.
-  const reading = await tokenReader(main).read("remote");
+  const [reading] = (await analyze(main, ["remote"])).tokens;
   expect(reading.kind).toBe("subcommand");
   const command = (reading as { command: Subcommand }).command;
   expect(command).not.toBe(remote);

@@ -20,8 +20,8 @@ export default defineConfig({
     resolve: {
       alias: [
         {
-          find: "@clo4/cli/unstable",
-          replacement: fileURLToPath(new URL("../src/unstable.ts", import.meta.url)),
+          find: "@clo4/cli/analyze",
+          replacement: fileURLToPath(new URL("../src/analyze.ts", import.meta.url)),
         },
         { find: "@clo4/cli", replacement: fileURLToPath(new URL("../src/index.ts", import.meta.url)) },
       ],
