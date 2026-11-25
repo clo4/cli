@@ -587,10 +587,10 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    */
   requiredSeparator(option: Option): string | null {
     const required = option.requiresSeparator;
-    if (typeof required === "string") {
-      return required;
+    if (required === true) {
+      return this.directives.optionArgSeparators[0] ?? "=";
     }
-    return required ? (this.directives.optionArgSeparators[0] ?? "=") : null;
+    return required ?? null;
   }
 
   /**
@@ -599,11 +599,13 @@ export class CommandScope<Root extends Spec | Subcommand = Spec | Subcommand> {
    */
   separatorProblem(option: Option, name: string, separator: string): string | null {
     const required = option.requiresSeparator;
-    if (typeof required === "string" && separator !== required) {
-      return `Incorrect separator, use '${required}' instead of '${separator}'`;
+    if (required === true) {
+      return separator === ""
+        ? `Missing separator, use '${this.requiredSeparator(option)}' between ${name} and its value`
+        : null;
     }
-    if (required === true && separator === "") {
-      return `Missing separator, use '${this.requiredSeparator(option)}' between ${name} and its value`;
+    if (required !== undefined && separator !== required) {
+      return `Incorrect separator, use '${required}' instead of '${separator}'`;
     }
     return null;
   }

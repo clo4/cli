@@ -357,6 +357,19 @@ test("testing: assertOptionArgSeparatorsHaveCharacters", async () => {
   await runSpecCheck("assertOptionArgSeparatorsHaveCharacters", { name: "test" });
   await runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
     name: "test",
+    options: [
+      { name: "--a", args: { name: "a" }, requiresSeparator: true },
+      { name: "--b", args: { name: "b" }, requiresSeparator: "=" },
+    ],
+  });
+  await expect(
+    runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
+      name: "test",
+      options: [{ name: "--a", args: { name: "a" }, requiresSeparator: "" }],
+    }),
+  ).rejects.toThrow("Option `test --a` (index 0) requires an empty string as its separator.");
+  await runSpecCheck("assertOptionArgSeparatorsHaveCharacters", {
+    name: "test",
     parserDirectives: { optionArgSeparators: ":" },
     subcommands: [
       {

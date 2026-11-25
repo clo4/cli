@@ -967,6 +967,12 @@ const specChecks: readonly SpecCheck[] = [
           );
         }
       }
+      for (const { option, isDefinedHere, where } of walk.optionUses) {
+        assert(
+          !isDefinedHere || option.requiresSeparator !== "",
+          `${where} requires an empty string as its separator. Use \`requiresSeparator: true\` to require any of the option arg separators.`,
+        );
+      }
     },
   },
   {
